@@ -1,0 +1,7 @@
+LICENSE
+MANIFEST
+README.md
+Makefile.PL
+lib/Blast/IPS.pm
+bin/blast_ideal_point_source.pl
+t/test.t
