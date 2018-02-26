@@ -298,7 +298,8 @@ sub _setup_toa_table {
     return $rtable;
 }
 
-sub get_symmetry       { $_[0]->{_symmetry} }
+sub get_ASYM       { $_[0]->{_symmetry} }     # for backwards compatibility
+sub get_symmetry   { $_[0]->{_symmetry} }
 sub get_gamma      { $_[0]->{_gamma} }
 sub get_alpha      { $_[0]->{_alpha} }
 sub get_error      { $_[0]->{_error} }
