@@ -16,9 +16,11 @@ Blast::IPS
 
 ## DESCRIPTION
 
-Blast::IPS evaluates the shock overpressure for apoint source explosion in an ideal
-homogeneous atmosphere.  This problem does not have an analytic solution, so
-results are obtained by interpolating a table of values.
+Blast::IPS evaluates the shock overpressure for a point source explosion in an
+ideal homogeneous atmosphere.  This problem has a precise mathematical
+definition but it does not have an analytic solution except for the special
+case that the ambient atmospheric pressure is zero, so results are obtained by
+interpolating a table of values.
 
 A table of values may be supplied as a call argument, or alternatively one of
 the builtin tables may be used.  
@@ -29,7 +31,6 @@ cylindrical, spherical) and several values of the ideal gas gamma (1.1, 1.2,
 finite difference method and the method of characteristics.  The estimated
 relative accuracy of interpolated shock overpressures depends on the table but
 is below 1.e-5 in all cases.
-
 
 ## INSTALLATION
 
