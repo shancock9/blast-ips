@@ -896,19 +896,48 @@ BEGIN {
 
     # All tables
 
-    # Comments above each table give their estimated errors.  The digits after
-    # the first letter give the number of points in the finite difference
-    # calculation.  Thus S4000 is for a calculation with 4000 points between
-    # the origin and the shock front.  The finite difference (FD) calculations
-    # all converged like 1/N^2.  The error was estimated by calculating with N
-    # and N/2 and comparing the results.  The error was found to vary roughly
-    # as 10/N^2. So a spherical blast run with N=16000 points has a finite
-    # difference error of about 3.9e-8.  The method of characteristics (MOC)
-    # calculations which carried the wave to long range were found to have
-    # errors of about the same order of magnitude.  Cubic interpolation among
-    # the table points has a maximum error typically between 5.e-7 and 1.e-6,
-    # depending on the number of table points.  The maximum overall error is
-    # estimated as the sum of these individual errors.
+    # Let.. 
+    #  P0 = ambient atmospheric pressure
+    #  E  = explosion energy
+    #  n  = symmetry = 0,1, or 2  for plane, cylindrical or spherical
+    #  d = (E/P0)^(1/(n+1)) = scaling distance
+    #  lambda = scaled range = r/d, where r is distance
+    #  tau = scaled time = c0 t / d, where t is time and c0 is ambient sound speed
+
+    # The table format is:
+    #  [ X, Y, dY/dX, Z, dZ/dX ]
+    # where
+    #  X = ln(lambda) where lambda = scaled range
+    #  Y = ln(overpressure ratio) = ln (P/P0-1)
+    #  dYdX = derivative of Y with respect to X 
+    #  Z = ln ( lambda-tau) 
+    #  dZdX = derivative of X with respect to X 
+
+    # Comments above each table give their estimated errors.  The maximum error
+    # for a table is the estimated maximum error after interpolation to any
+    # range within the bounds of the table.  It is estimated as the sum of a
+    # finite difference error, a method of characteristics error, and an
+    # interpolation error.
+
+    # The finite difference (FD) calculations converged like 1/N^2, where N is
+    # the number of points between the origin and the shock front.  The digits
+    # after the first letter in a table name give the number of points used for
+    # that table.  Thus S4000 is for a table based on a calculation with 4000
+    # points between the origin and the shock front.  The error was accurately
+    # estimated by calculating with N and N/2 and comparing the results.  The
+    # error was found to vary roughly as 10/N^2.
+
+    # The method of characteristics (MOC) calculations which carried the wave
+    # to long range were found to have errors of about the same order of
+    # magnitude as the FD calculations.  
+
+    # Cubic interpolation among the table points has a maximum error typically
+    # between 5.e-7 and 1.e-6, depending on the number of table points used.  
+
+    # These errors can be made almost arbitrarily small by increasing the number 
+    # of points in the FD calculation and in the tables.  My goal for these tables
+    # was to achieve a maximum error on the order of 1.e-6.
+
     $rtables = {
 
         #    Overall Error Estimate
