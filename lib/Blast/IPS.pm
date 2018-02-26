@@ -53,7 +53,10 @@ our ($rtables_info);
 
 # TODO:
 # Needs documentation and test cases
-# More work is needed to handle interpolations beyond the ranges of the tables.
+# Work is needed to handle interpolations beyond the ranges of the tables for some variables.
+#    Right now the program writes warnings to STDERR when this happens.
+# Question: how accurate would it be to interpolate on gamma (or gamma-1) between tables?
+# Are there any theoretical results to guide this (such as low gamma theories)?
 
 sub new {
     my ( $class, $rtable, $options ) = @_;
@@ -68,18 +71,18 @@ sub _setup {
     my ( $rtable, $options, $table_name );
 
     my $gamma;
-    my $ASYM;
+    my $symmetry;
     my $alpha;
     my $description;
 
     # Convert missing arg to default spherical table
-    if ( !defined($arg) ) { $arg = { ASYM => 2 } }
+    if ( !defined($arg) ) { $arg = { symmetry => 2 } }
 
     # Handle table name abbreviations
     elsif ( !ref($arg) ) {
-        if    ( $arg eq 'S' ) { $arg = { ASYM => 2 } }
-        elsif ( $arg eq 'C' ) { $arg = { ASYM => 1 } }
-        elsif ( $arg eq 'P' ) { $arg = { ASYM => 0 } }
+        if    ( $arg eq 'S' ) { $arg = { symmetry => 2 } }
+        elsif ( $arg eq 'C' ) { $arg = { symmetry => 1 } }
+        elsif ( $arg eq 'P' ) { $arg = { symmetry => 0 } }
     }
 
     my $reftype = ref($arg);
@@ -96,19 +99,19 @@ sub _setup {
         $rtable     = $options->{rtable};
         $table_name = $options->{table_name};
         $gamma      = $options->{gamma};
-        $ASYM       = $options->{symmetry};
+        $symmetry   = $options->{symmetry};
 
-	# Allow either 'symmetry' or the older 'ASYM' for the symmetry
-        if ( !defined($ASYM) ) { $ASYM = $options->{ASYM}; }
+        # Allow either 'symmetry' or the older 'ASYM' for the symmetry
+        if ( !defined($symmetry) ) { $symmetry = $options->{ASYM}; }
 
-        # Option to lookup table from ASYM and/or gamma
+        # Option to lookup table from symmetry and/or gamma
         if (   !defined($rtable)
             && !defined($table_name)
-            && ( defined($ASYM) || defined($gamma) ) )
+            && ( defined($symmetry) || defined($gamma) ) )
         {
 
-            if ( !defined($gamma) ) { $gamma = 1.4 }
-            if ( !defined($ASYM) )  { $ASYM  = 1.4 }
+            if ( !defined($gamma) )    { $gamma    = 1.4 }
+            if ( !defined($symmetry) ) { $symmetry = 1.4 }
 
             my @keys = reverse sort keys %{$rtables_info};
 
@@ -116,9 +119,9 @@ sub _setup {
             my $err_est;
             foreach my $key (@keys) {
                 my $item = $rtables_info->{$key};
-                my ( $ASYM_t, $gamma_t, $err_est_t, $desc_t, ) = @{$item};
+                my ( $symmetry_t, $gamma_t, $err_est_t, $desc_t, ) = @{$item};
 
-                next if $ASYM_t != $ASYM;
+                next if $symmetry_t != $symmetry;
                 next if $gamma_t != $gamma;
 
                 # use table with min error estimate
@@ -137,7 +140,7 @@ sub _setup {
 
     # A scalar value is the name of a pre-defined table
     elsif ( !$reftype ) {
-        ( $rtable, $table_name ) = get_builtin_table($arg);    #$rtables->{V15};
+        ( $rtable, $table_name ) = get_builtin_table($arg);
     }
     else {
         croak "Unexpected argument type $reftype in Blast::Table";
@@ -146,7 +149,7 @@ sub _setup {
     if ( defined($table_name) ) {
         my $item = $rtables_info->{$table_name};
         if ( defined($item) ) {
-            ( $ASYM, $gamma, my $err_est, $description ) = @{$item};
+            ( $symmetry, $gamma, my $err_est, $description ) = @{$item};
         }
     }
     else {
@@ -156,14 +159,14 @@ sub _setup {
     my $error = "";
     if ( !defined($rtable) ) {
         $error .=
-"Undefined Table in Blast::Table\nfor ASYM=$ASYM, gamma=$gamma, name=$table_name\n";
+"Undefined Table in Blast::Table\nfor symmetry=$symmetry, gamma=$gamma, name=$table_name\n";
     }
 
-    $gamma = 1.4 unless defined($gamma);
-    $ASYM  = 2   unless defined($ASYM);
+    $gamma    = 1.4 unless defined($gamma);
+    $symmetry = 2   unless defined($symmetry);
     if ( $gamma <= 1.0 ) { $error .= "Bad gamma='$gamma'\n" }
-    if ( $ASYM != 0 && $ASYM != 1 && $ASYM != 2 ) {
-        $error .= "Bad ASYM='$ASYM'\n";
+    if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
+        $error .= "Bad symmetry='$symmetry'\n";
     }
 
     my $table_error = _check_table($rtable);
@@ -178,7 +181,7 @@ sub _setup {
     $self->{_rtable}     = $rtable;
     $self->{_table_name} = $table_name;
     $self->{_gamma}      = $gamma;
-    $self->{_ASYM}       = $ASYM;
+    $self->{_symmetry}   = $symmetry;
     $self->{_jl}         = -1;
     $self->{_ju}         = $num_table;    #@{$rtable};
     $self->{_error}      = $error;
@@ -295,7 +298,7 @@ sub _setup_toa_table {
     return $rtable;
 }
 
-sub get_ASYM       { $_[0]->{_ASYM} }
+sub get_symmetry       { $_[0]->{_symmetry} }
 sub get_gamma      { $_[0]->{_gamma} }
 sub get_alpha      { $_[0]->{_alpha} }
 sub get_error      { $_[0]->{_error} }
@@ -431,12 +434,12 @@ sub table_gen {
 
 sub _short_range_calc {
     my ( $self, $Q, $icol ) = @_;
-    my $rtab  = $self->{_rtable};
-    my $ASYM  = $self->{_ASYM};
-    my $gamma = $self->{_gamma};
-    my $alpha = $self->{_alpha};
-    my $delta = ( 3 + $ASYM ) / 2;
-    my $p_amb = 1;                   ## PATCH!! FIXME
+    my $rtab     = $self->{_rtable};
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $alpha    = $self->{_alpha};
+    my $delta    = ( 3 + $symmetry ) / 2;
+    my $p_amb    = 1;                       ## PATCH!! FIXME
 
     # $icol is the column number of the variable $Q which we are given
     # 0 = X
@@ -447,28 +450,28 @@ sub _short_range_calc {
     my $ovprat_from_lambda = sub {
         my ($lambda) = @_;
         my $am2;
-        if ( $ASYM == 0 ) {
+        if ( $symmetry == 0 ) {
             $am2 = 9 * $alpha * $gamma * $lambda;
         }
-        elsif ( $ASYM == 1 ) {
+        elsif ( $symmetry == 1 ) {
             $am2 = 16 * $alpha * $gamma * $lambda**2;
         }
-        elsif ( $ASYM == 2 ) {
+        elsif ( $symmetry == 2 ) {
             $am2 = 25 * $alpha * $gamma * $lambda**3;
         }
         my $up_over_c = 4 / ( $gamma + 1 ) / sqrt($am2);
         my $ovp_atm =
           4 * $gamma / $am2 / ( $gamma + 1 ) * ( 1 + sqrt( 1 + $am2 ) );
 
-        # for future reference:
-        # This is the equation on page 182 of point blast theory
-        # It is missing a factor of gamma.
+        # For future reference:
+	# This is the equation on page 182 of Korobeinikov's book "point blast
+	# theory".  It is missing a factor of gamma.
         # It is a cleaner way to code (and typeset) if you include the
         # missing factor of gamma.
-        # my $ovp_atm_check = 4 / ( $gamma + 1 ) / ( -1 + sqrt( 1 + $am2 ) );
+        #  my $ovp_atm_check = 4 / ( $gamma + 1 ) / ( -1 + sqrt( 1 + $am2 ) );
         #  my $diff = ( $ovp_atm - $ovp_atm_check );
 
-        my $dlnp_dlnr = -( $ASYM + 1 ) *
+        my $dlnp_dlnr = -( $symmetry + 1 ) *
           ( 1 - 2 * $gamma / ( ( $gamma + 1 ) * sqrt( 1 + $am2 ) * $ovp_atm ) );
         return ( $ovp_atm, $dlnp_dlnr );
     };
@@ -479,8 +482,9 @@ sub _short_range_calc {
         my $q = 2 * $gamma / ( ( $gamma + 1 ) * $prat + ( $gamma - 1 ) );
         my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
         my $C =
-          ( 4 / ( ( $gamma + 1 ) * ( $ASYM + 3 ) ) )**2 / ( $gamma * $alpha );
-        my $lambda = ( $C / ($uovcsq) )**( 1 / ( $ASYM + 1 ) );
+          ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 /
+          ( $gamma * $alpha );
+        my $lambda = ( $C / ($uovcsq) )**( 1 / ( $symmetry + 1 ) );
         return $lambda;
     };
 
@@ -488,7 +492,7 @@ sub _short_range_calc {
 
     my $z_0     = exp($Z_0);
     my $dz_dX_0 = $z_0 * $dZ_dX_0;
-    my $dY_dX_i = -( 1 + $ASYM );
+    my $dY_dX_i = -( 1 + $symmetry );
     my $X_i;
     my $Y_i;
     my $r_0   = exp($X_0);
@@ -512,7 +516,7 @@ sub _short_range_calc {
     elsif ( $icol == 3 ) {
 
         # FIXME: old coding using simple blast theory
-        # Should use the better theory
+        # Need to use the better theory
         print STDERR "FIXME: Table.pm using old blast theory\n";
         my $dX_newton = sub {
             my $lnT_i = $lnt_0 + $delta * ( $X_i - $X_0 );
@@ -567,29 +571,27 @@ sub _end_model_setup {
 
     # Set parameters for evaluation beyond the ends of the table
     # Set asymptotic wave parameters, given a table and gamma
-    my $rtable = $self->{_rtable};
-    my $gamma  = $self->{_gamma};
-    my $ASYM   = $self->{_ASYM};
+    my $rtable   = $self->{_rtable};
+    my $gamma    = $self->{_gamma};
+    my $symmetry = $self->{_symmetry};
 
     # Near region: we find the value of alpha at the first table point
-    # based on R^(ASYM+1)*u**2=constant
+    # based on R^(symmetry+1)*u**2=constant
     my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
       @{ $rtable->[0] };
     my $lambda = exp($X_near);
     my $Prat   = exp($Y_near) + 1;
     my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
     my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
-    my $C      = $lambda**( $ASYM + 1 ) * $uovcsq;
+    my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
     my $alpha =
-      ( 4 / ( ( $gamma + 1 ) * ( $ASYM + 3 ) ) )**2 / ( $gamma * $C );
+      ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
     $self->{_alpha} = $alpha;
-
-    #print "BUBBA: Calculated alpha=$alpha\n";
 
     # Near region
     my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = @{ $rtable->[-1] };
     my ( $A_far, $B_far, $Z_zero ) = ( 0, 0, 0 );
-    if ( $ASYM == 2 ) {
+    if ( $symmetry == 2 ) {
         my $mu = -( $dYdX_far + 1 );
         if ( $mu > 0 ) {
             $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
@@ -606,13 +608,13 @@ sub _end_model_setup {
 
 sub _long_range_calc {
     my ( $self, $Q, $icol ) = @_;
-    my $ASYM   = $self->{_ASYM};
-    my $A_far  = $self->{_A_far};
-    my $B_far  = $self->{_B_far};
-    my $Z_zero = $self->{_Z_zero};
-    my $gamma  = $self->{_gamma};
-    my $log_ga = 0;
-    if ( $ASYM == 2 ) {
+    my $symmetry = $self->{_symmetry};
+    my $A_far    = $self->{_A_far};
+    my $B_far    = $self->{_B_far};
+    my $Z_zero   = $self->{_Z_zero};
+    my $gamma    = $self->{_gamma};
+    my $log_ga   = 0;
+    if ( $symmetry == 2 ) {
         $log_ga = log( $gamma * $A_far );
     }
     my $kA = 0.5 * ( $gamma + 1 ) * $A_far;
@@ -856,8 +858,8 @@ sub _cubic_interpolation {
 
 BEGIN {
 
-    # name => [ASYM, gamma, error, description]
-    # ASYM = 0,1,2 for Plane, Cylindrical, Spherical
+    # name => [symmetry, gamma, error, description]
+    # symmetry = 0,1,2 for Plane, Cylindrical, Spherical
     # Error = the sum of all run errors plus log interpolation error;
 
     # name -> [symmetry, gamma, error, title ]
@@ -872,10 +874,10 @@ BEGIN {
         P4000_G3     => [ 0, 3,     3.4e-6, "Plane blast gamma 3" ],
         P4000_G7     => [ 0, 7,     2.5e-6, "Plane blast gamma 7" ],
 
-        C4000_G1X1 => [ 1, 1.1, 3.5e-6, "Cyl blast gamma 1.1" ],
-        C4000_G1X2 => [ 1, 1.2, 3.4e-6, "Cyl Blast with gamma 1.2" ],
-        C4000_G1X3 => [ 1, 1.3, 1.9e-6, "Cyl blast gamma 1.3" ],
-        C8000_G1X4 => [ 1, 1.4, 9.e-7,  "Cyl gamma 1.4" ],
+        C4000_G1X1   => [ 1, 1.1,   3.5e-6, "Cyl blast gamma 1.1" ],
+        C4000_G1X2   => [ 1, 1.2,   3.4e-6, "Cyl Blast with gamma 1.2" ],
+        C4000_G1X3   => [ 1, 1.3,   1.9e-6, "Cyl blast gamma 1.3" ],
+        C8000_G1X4   => [ 1, 1.4,   9.e-7,  "Cyl gamma 1.4" ],
         C4000_G1X667 => [ 1, 1.667, 2.2e-6, "Cyl Blast with gamma 1.667" ],
         C4000_G2     => [ 1, 2,     2.1e-6, "Cyl blast gamma 2" ],
         C4000_G3     => [ 1, 3,     1.8e-6, "Cyl blast gamma 3" ],
@@ -893,6 +895,20 @@ BEGIN {
     };
 
     # All tables
+
+    # Comments above each table give their estimated errors.  The digits after
+    # the first letter give the number of points in the finite difference
+    # calculation.  Thus S4000 is for a calculation with 4000 points between
+    # the origin and the shock front.  The finite difference (FD) calculations
+    # all converged like 1/N^2.  The error was estimated by calculating with N
+    # and N/2 and comparing the results.  The error was found to vary roughly
+    # as 10/N^2. So a spherical blast run with N=16000 points has a finite
+    # difference error of about 3.9e-8.  The method of characteristics (MOC)
+    # calculations which carried the wave to long range were found to have
+    # errors of about the same order of magnitude.  Cubic interpolation among
+    # the table points has a maximum error typically between 5.e-7 and 1.e-6,
+    # depending on the number of table points.  The maximum overall error is
+    # estimated as the sum of these individual errors.
     $rtables = {
 
         #    Overall Error Estimate
