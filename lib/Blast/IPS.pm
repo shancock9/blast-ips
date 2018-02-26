@@ -96,7 +96,10 @@ sub _setup {
         $rtable     = $options->{rtable};
         $table_name = $options->{table_name};
         $gamma      = $options->{gamma};
-        $ASYM       = $options->{ASYM};
+        $ASYM       = $options->{symmetry};
+
+	# Allow either 'symmetry' or the older 'ASYM' for the symmetry
+        if ( !defined($ASYM) ) { $ASYM = $options->{ASYM}; }
 
         # Option to lookup table from ASYM and/or gamma
         if (   !defined($rtable)
