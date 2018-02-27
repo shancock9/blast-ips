@@ -3,5 +3,5 @@ MANIFEST
 README.md
 Makefile.PL
 lib/Blast/IPS.pm
-bin/blast_ideal_point_source.pl
+bin/blast_ips.pl
 t/test.t
