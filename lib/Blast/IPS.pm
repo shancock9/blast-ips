@@ -23,19 +23,12 @@ package Blast::IPS;
 
 use strict;
 use warnings;
-use 5.008;
+use 5.006;
 our $VERSION = 20180225;
 
-use Exporter;
 use Carp;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-@ISA    = qw( Exporter );
-@EXPORT = qw(
-  lookup
-  table_gen
-);
-our $rtables;
-our ($rtables_info);
+my $rtables;
+my $rtables_info;
 
 # Evaluate the shock overpressure for point source explosion in an ideal
 # homogeneous atmosphere.  This does not have an analytic solution, so
@@ -190,6 +183,7 @@ sub _setup {
     else {
         $self->_end_model_setup();
     }
+    return;
 }
 
 sub get_builtin_table {
@@ -298,13 +292,13 @@ sub _setup_toa_table {
     return $rtable;
 }
 
-sub get_ASYM       { $_[0]->{_symmetry} }     # for backwards compatibility
-sub get_symmetry   { $_[0]->{_symmetry} }
-sub get_gamma      { $_[0]->{_gamma} }
-sub get_alpha      { $_[0]->{_alpha} }
-sub get_error      { $_[0]->{_error} }
-sub get_table      { $_[0]->{_rtable} }
-sub get_table_name { $_[0]->{_table_name} }
+sub get_ASYM       { my $self = shift; return $self->{_symmetry}; }
+sub get_symmetry   { my $self = shift; return $self->{_symmetry} }
+sub get_gamma      { my $self = shift; return $self->{_gamma} }
+sub get_alpha      { my $self = shift; return $self->{_alpha} }
+sub get_error      { my $self = shift; return $self->{_error} }
+sub get_table      { my $self = shift; return $self->{_rtable} }
+sub get_table_name { my $self = shift; return $self->{_table_name} }
 
 sub set_table {
 
@@ -312,6 +306,7 @@ sub set_table {
     # reset to defaults if called without arguments
     my ( $self, $rtable, $options ) = @_;
     $self->_setup( $rtable, $options );
+    return;
 }
 
 sub clone {
@@ -358,7 +353,7 @@ sub lookup {
     my $error = $self->{_error};
     if ($error) {
         carp "$error";
-        return undef;
+        return;
     }
 
     my $rtab = $self->{_rtable};
@@ -502,7 +497,7 @@ sub _short_range_calc {
     if ( $icol == 0 ) {
         $X_i = $Q;
         my $lambda = exp($X_i);
-        my ( $ovprat, $dY_dX_i ) = $ovprat_from_lambda->($lambda);
+        ( my $ovprat, $dY_dX_i ) = $ovprat_from_lambda->($lambda);
         $Y_i = log($ovprat);
     }
     elsif ( $icol == 1 ) {
@@ -547,7 +542,7 @@ sub _short_range_calc {
     }
     else {
         carp "Unexpected column id=$icol";    # shouldn't happen
-        return undef;
+        return;
     }
 
     #my $Y_i       = $Y_0 + $dY_dX_i * ( $X_i - $X_0 );
@@ -599,12 +594,13 @@ sub _end_model_setup {
             $B_far = 0.5 / $mu - $X_far;
         }
         else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
-        my $Z_zero =
+        $Z_zero =
           $Z_far - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
     }
     $self->{_A_far}  = $A_far;
     $self->{_B_far}  = $B_far;
     $self->{_Z_zero} = $Z_zero;
+    return;
 }
 
 sub _long_range_calc {
@@ -684,7 +680,7 @@ sub _long_range_calc {
         }
         else {
             carp "Unexpected column id=$icol";    # shouldn't happen
-            return undef;
+            return;
         }
 
         # Newton iterations
