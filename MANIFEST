@@ -11,4 +11,5 @@ t/interpolation_test.t
 t/korobeinikov_analytic.t
 t/korobeinikov_mir.t
 t/okhotshimskii.t
+t/miles_long_range.t
 t/test.t
