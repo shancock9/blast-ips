@@ -61,7 +61,8 @@ if ( !defined($blast_table) ) {
 }
 
 # Loop to calculate the maximum absolute relative error in overpressure
-my $iQ = 'X';
+my $iQ      = 'X';
+my $VERBOSE = 0;
 foreach my $interp ( 0 .. 1 ) {
     my $err_max;
     my $Z_err_max;
@@ -95,10 +96,12 @@ foreach my $interp ( 0 .. 1 ) {
 
     #    my $lambda_pr = sprintf "%0.7g", $lambda;
     my $interp_str = $interp == 0 ? 'cubic' : 'linear';
-    print
+    if ($VERBOSE) {
+        print
 "Spherical blast data $interp_str interpolation test using tolerance $TOL..\n";
-    print
+        print
 "maximum Z relative error = $Z_err_max_pr; max ovp ratio relative error=$err_max_pr\n";
+    }
 
     #print STDERR ""( $err_max <= $TOL )";
     ok( $err_max <= $TOL );

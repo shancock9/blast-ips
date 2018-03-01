@@ -2,6 +2,7 @@ use strict;
 use Test;
 
 my @test_cases;
+
 BEGIN {
 
     #  Some tests cases to check the tables
@@ -78,9 +79,10 @@ BEGIN {
     );
 
     my $ncases = @test_cases;
-    plan tests => 2*$ncases;
+    plan tests => 2 * $ncases;
 }
 
+my $VERBOSE = 0;
 foreach my $rcase (@test_cases) {
     my ( $SYM, $gamma, $ovprat_t, $lambda_t, $dlnp_dlnr_t ) = @{$rcase};
 
@@ -97,14 +99,16 @@ foreach my $rcase (@test_cases) {
     my $Q   = log($lambda_t);
     my $ret = $blast_table->lookup( $Q, $iQ );
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
-    my $ovprat = exp($Y);
-    my $lambda = exp($X);
-    my $err    = abs( $ovprat - $ovprat_t )/$ovprat_t;
+    my $ovprat    = exp($Y);
+    my $lambda    = exp($X);
+    my $err       = abs( $ovprat - $ovprat_t ) / $ovprat_t;
     my $ovprat_pr = sprintf "%0.7g", $ovprat;
     my $lambda_pr = sprintf "%0.7g", $lambda;
     my $err_pr    = sprintf "%0.3g", $err;
-    print STDERR
-	"err=$err_pr for SYM=$SYM, gamma=$gamma, ovprat=$ovprat_pr, lambda=$lambda_pr\n";
+    if ($VERBOSE) {
+        print
+"err=$err_pr for SYM=$SYM, gamma=$gamma, ovprat=$ovprat_pr, lambda=$lambda_pr\n";
+    }
     ok( $err <= 1.e-5 );
 
     # Lookup the scaled range at the given overpressure ratio
@@ -118,8 +122,11 @@ foreach my $rcase (@test_cases) {
     my $ovprat_pr = sprintf "%0.7g", $ovprat;
     my $lambda_pr = sprintf "%0.7g", $lambda;
     my $err_pr    = sprintf "%0.3g", $err;
-    print STDERR
-	"err=$err_pr for SYM=$SYM, gamma=$gamma, ovprat=$ovprat_pr, lambda=$lambda_pr\n";
+
+    if ($VERBOSE) {
+        print
+"err=$err_pr for SYM=$SYM, gamma=$gamma, ovprat=$ovprat_pr, lambda=$lambda_pr\n";
+    }
     ok( $err <= 1.e-5 );
 }
 

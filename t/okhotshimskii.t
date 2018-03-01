@@ -5,7 +5,7 @@ my $rokhotsimskii;
 
 BEGIN {
 
-    # This test compares the table of values published in two papers by D.E. Okhotsimskii et all.
+# This test compares the table of values published in two papers by D.E. Okhotsimskii et al.
 
 =pod
 
@@ -17,17 +17,17 @@ D.Ye. Okhotsimskii; Z.P. Vlasova, "The Behaviour Of Shock Waves At Large Distanc
 
 =cut
 
-    # I have converted from the scaling used in the original papers to the more modern
-    # scaling that is used here.  This table combines three different calculations: 
-    # The first part comes from the first reference above.
-    # The second part is the finite difference calculation in the second paper.
-    # The third part is the extrapolation to long range with a weak shock theory in the
-    # second paper.  
+# I have converted from the scaling used in the original papers to the more modern
+# scaling that is used here.  This table combines three different calculations:
+# The first part comes from the first reference above.
+# The second part is the finite difference calculation in the second paper.
+# The third part is the extrapolation to long range with a weak shock theory in the
+# second paper.
 
     # NOTE: The second paper is in English, but the first paper is in Russian
     # and I did my best to understand it using google translate.  If anyone has
     # a clean translation in English I would appreciate seeing it.
-    
+
     # [lambda, ovp]
 
     $rokhotsimskii = [
@@ -136,9 +136,13 @@ D.Ye. Okhotsimskii; Z.P. Vlasova, "The Behaviour Of Shock Waves At Large Distanc
 
 # This is the most accurate of the published tables that I have found.  I did
 # not see an estimate of the error in the published papers.  The error is below
-# about 1 percent over the entire table.  
-my $TOL = 0.011;
-print "Comparison with combined Okhotsimskii et al tables with tolerance $TOL\n";
+# about 1 percent over the entire table.
+my $TOL     = 0.011;
+my $VERBOSE = 0;
+if ($VERBOSE) {
+    print
+"Comparison with combined Okhotsimskii et al tables with tolerance $TOL\n";
+}
 
 # Create a table for this case
 use Blast::IPS;
@@ -166,14 +170,17 @@ foreach my $point ( @{$rokhotsimskii} ) {
     my $ovprat = exp($Y);
     my $lambda = exp($X);
     my $err    = abs( $ovprat - $ovprat_t ) / $ovprat_t;
+
     #print STDERR "lambda=$lambda, err=$err\n";
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
     if ( $lambda_t > $lambda_max ) { $lambda_max = $lambda_t }
 }
 
-my $err_max_pr = sprintf "%0.3g", $err_max;
+my $err_max_pr    = sprintf "%0.3g", $err_max;
 my $lambda_max_pr = sprintf "%0.5g", $lambda_max;
-print 
-  "Okhotsimskii combined tables error to lambda = $lambda_max_pr: $err_max_pr\n";
+if ($VERBOSE) {
+    print
+"Okhotsimskii combined tables error to lambda = $lambda_max_pr: $err_max_pr\n";
+}
 ok( $err_max <= $TOL );
 

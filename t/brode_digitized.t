@@ -5,10 +5,10 @@ my $rbrode_ideal_point_source_digitized;
 
 BEGIN {
 
-    # This test compares the graphical results for this problem published in 1954 by
-    # Hal Brode. He used a finite difference method in which the shock location is
-    # obtained with an artificial viscosity.  This has limited accuracy but can be
-    # easily applied to a wide range of problems.
+# This test compares the graphical results for this problem published in 1954 by
+# Hal Brode. He used a finite difference method in which the shock location is
+# obtained with an artificial viscosity.  This has limited accuracy but can be
+# easily applied to a wide range of problems.
 
 =pod
 References:
@@ -115,8 +115,11 @@ Brode, Harold L. 1955. "Numerical Solutions of Spherical Blast Waves". Journal o
 # Brode did not give an estimate of his computational error, but it is in the
 # range of 1 to 2 percent over most of range.  The error rises toward
 # the end but remains below 5%, so this is what is used here.
-my $TOL = 0.05;
-print "Comparison with digitized Brode Table with tolerance $TOL\n";
+my $TOL     = 0.05;
+my $VERBOSE = 0;
+if ($VERBOSE) {
+    print "Comparison with digitized Brode Table with tolerance $TOL\n";
+}
 
 # Create a table for this case
 use Blast::IPS;
@@ -144,12 +147,15 @@ foreach my $point ( @{$rbrode_ideal_point_source_digitized} ) {
     my $ovprat = exp($Y);
     my $lambda = exp($X);
     my $err    = abs( $ovprat - $ovprat_t ) / $ovprat_t;
+
     # print STDERR "lambda=$lambda, err=$err\n";
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
     if ( $lambda_t > $lambda_max ) { $lambda_max = $lambda_t }
 }
 
 my $err_max_pr = sprintf "%0.3g", $err_max;
-print "Brode digitized table error to lambda = $lambda_max: $err_max_pr\n";
+if ($VERBOSE) {
+    print "Brode digitized table error to lambda = $lambda_max: $err_max_pr\n";
+}
 ok( $err_max <= $TOL );
 

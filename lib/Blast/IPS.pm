@@ -392,6 +392,14 @@ sub lookup {
     }
 }
 
+sub table_bounds {
+
+    my ( $self ) = @_;
+
+    # return the first and last rows of the table
+    return $self->table_gen(2);
+}
+
 sub table_gen {
 
     my ( $self, $num, $X_b, $X_e ) = @_;

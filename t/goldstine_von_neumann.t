@@ -5,8 +5,8 @@ my $rgoldstine;
 
 BEGIN {
 
-    # This test compares the table of values for this problem published in 1955 by
-    # Herman Goldstine and John Von Neumann.  
+  # This test compares the table of values for this problem published in 1955 by
+  # Herman Goldstine and John Von Neumann.
 
 =pod
 Reference:
@@ -15,7 +15,7 @@ Goldstine, Herman H., and John Von Neumann. 1955. "Blast wave calculation". Comm
 DOI: 10.1002/cpa.3160080207  
 =cut
 
-    # 
+    #
     #   [lambda, ovp_atm]
     $rgoldstine = [
         [ 0.116259524252,   100.006454 ],
@@ -91,9 +91,12 @@ DOI: 10.1002/cpa.3160080207
 # below a scaled range of 6 and require that the difference be less than 2
 # percent.
 
-my $TOL        = 0.02;
+my $TOL         = 0.02;
+my $VERBOSE     = 0;
 my $lambda_stop = 6;
-print "Comparison with Goldstine-Von Neuman Tables with tolerance $TOL\n";
+if ($VERBOSE) {
+    print "Comparison with Goldstine-Von Neuman Tables with tolerance $TOL\n";
+}
 
 # Create a table for this case
 use Blast::IPS;
@@ -111,7 +114,7 @@ my $err_max;
 my $lambda_max = 0;
 foreach my $point ( @{$rgoldstine} ) {
     my ( $lambda_t, $ovprat_t ) = @{$point};
-    last if ($lambda_t > $lambda_stop);
+    last if ( $lambda_t > $lambda_stop );
 
     # Lookup the overpressure at the given scaled range
     my $Q = log($lambda_t);
@@ -120,15 +123,18 @@ foreach my $point ( @{$rgoldstine} ) {
     my $ovprat = exp($Y);
     my $lambda = exp($X);
     my $err    = abs( $ovprat - $ovprat_t ) / $ovprat_t;
-    #print STDERR "lambda=$lambda, err=$err\n";
+
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
     if ( $lambda_t > $lambda_max ) { $lambda_max = $lambda_t }
 }
 
-     my $err_max_pr    = sprintf "%0.3g", $err_max;
-     my $lambda_max_pr = sprintf "%0.5g", $lambda_max;
-#    my $lambda_pr = sprintf "%0.7g", $lambda;
-print "Goldstine-Von Neumann Table max error to lambda=$lambda_max_pr: $err_max_pr\n";
-#print STDERR ""( $err_max <= $TOL )";
+my $err_max_pr    = sprintf "%0.3g", $err_max;
+my $lambda_max_pr = sprintf "%0.5g", $lambda_max;
+
+if ($VERBOSE) {
+    print
+"Goldstine-Von Neumann Table max error to lambda=$lambda_max_pr: $err_max_pr\n";
+}
+
 ok( $err_max <= $TOL );
 

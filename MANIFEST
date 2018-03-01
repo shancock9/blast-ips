@@ -4,4 +4,11 @@ README.md
 Makefile.PL
 lib/Blast/IPS.pm
 bin/blast_ips.pl
+t/alpha_test.t
+t/brode_digitized.t
+t/goldstine_von_neumann.t
+t/interpolation_test.t
+t/korobeinikov_analytic.t
+t/korobeinikov_mir.t
+t/okhotshimskii.t
 t/test.t
