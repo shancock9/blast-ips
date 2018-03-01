@@ -2,8 +2,9 @@ use strict;
 use Test;
 use Blast::IPS;
 
-my @symmetries = ( 0, 1, 2 );
-my @gammas = ( 1.1, 1.2, 1.3, 1.4, 1.667, 2, 3 );
+my $ntests;
+my @symmetries; 
+my @gammas; 
 
 BEGIN {
 
@@ -17,13 +18,16 @@ Reference:
 
 =cut
 
-    my $nsym = @{symmetries}; 
-    my $ngam = @{gammas}; 
+    @symmetries = ( 0, 1, 2 );
+    @gammas = ( 1.1, 1.2, 1.3, 1.4, 1.667, 2, 3 );
+
+    my $nsym = @symmetries; 
+    my $ngam = @gammas; 
 
     # Cases 1 and 2 long range are not yet programmed in Blast::IPS
     # So for now, we run case3 just for spherical symmetry
     #            case 1        case 2        case3 (sym=2 only)
-    my $ntests = $nsym*$ngam + $nsym*$ngam + $ngam;
+    $ntests = $nsym*$ngam + $nsym*$ngam + $ngam;
     plan tests => $ntests;
 }
 

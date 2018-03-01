@@ -116,12 +116,12 @@ foreach my $rcase (@test_cases) {
     $Q   = log($ovprat_t);
     $ret = $blast_table->lookup( $Q, $iQ );
     ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
-    my $ovprat = exp($Y);
-    my $lambda = exp($X);
+    $ovprat = exp($Y);
+    $lambda = exp($X);
     $err = abs( $lambda - $lambda_t ) / $lambda_t;
-    my $ovprat_pr = sprintf "%0.7g", $ovprat;
-    my $lambda_pr = sprintf "%0.7g", $lambda;
-    my $err_pr    = sprintf "%0.3g", $err;
+    $ovprat_pr = sprintf "%0.7g", $ovprat;
+    $lambda_pr = sprintf "%0.7g", $lambda;
+    $err_pr    = sprintf "%0.3g", $err;
 
     if ($VERBOSE) {
         print
