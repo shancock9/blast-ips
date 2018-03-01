@@ -47,7 +47,7 @@ foreach my $symmetry (@symmetries) {
         # Use the blast table value of alpha. Another test verifies that this
         # value is accurate.
         my $alpha   = $blast_table->get_alpha();
-        my $rbounds = $blast_table->table_bounds();
+        my $rbounds = $blast_table->get_table_bounds();
 
         my $Xmin_tab = $rbounds->[0]->[0];
         my $Xmax_tab = $rbounds->[1]->[0];

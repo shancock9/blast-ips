@@ -392,7 +392,7 @@ sub lookup {
     }
 }
 
-sub table_bounds {
+sub get_table_bounds {
 
     my ( $self ) = @_;
 

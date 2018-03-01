@@ -37,7 +37,7 @@ if ( !defined($blast_table) ) {
     die "missing table for sym=$symmetry, gamma=$gamma\n";
 }
 my $table_name = $blast_table->get_table_name();
-my $rbounds    = $blast_table->table_bounds();
+my $rbounds    = $blast_table->get_table_bounds();
 my $Xmin_tab   = $rbounds->[0]->[0];
 my $Xmax_tab   = $rbounds->[1]->[0];
 
@@ -83,6 +83,10 @@ sub miles_long_range {
     # Miles estimated that A falls in the range 0.23-0.24 and B in the range 0.25-0.63
     # Miles concluded that this equation could be used to extrapolate blast strength
     # beyond lambda=10 with about 1% accuracy.
+
+    # {NOTE: The parameter A does have a limiting value of about 0.23, but B
+    # varies over the entire history of a spherical shock. But using a single
+    # fixed value of B can give a good approximation at long range}
 
     # The relative error in overpressure at very long range for these
     # parameters is about 0.006:
