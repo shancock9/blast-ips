@@ -1,4 +1,5 @@
 use strict;
+use warnings;
 use Test;
 use Blast::IPS;
 
@@ -26,47 +27,53 @@ Miles, John W. 1967. "Decay of Spherical Blast Waves". Physics of Fluids. 10 (12
     plan tests => 1;
 }
 
-my $VERBOSE  = 1;
-my $symmetry = 2;
-my $gamma    = 1.4;
+miles_test();
 
-# Create a table for this case
-my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-my $blast_table = Blast::IPS->new( \%args );
-if ( !defined($blast_table) ) {
-    die "missing table for sym=$symmetry, gamma=$gamma\n";
-}
-my $table_name = $blast_table->get_table_name();
-my $rbounds    = $blast_table->get_table_bounds();
-my $Xmin_tab   = $rbounds->[0]->[0];
-my $Xmax_tab   = $rbounds->[1]->[0];
+sub miles_test {
 
-# We are looking for about 1% max error at long range (lambda > 10)
-# Here we start closer in and accept a little more error
-my $TOL  = 0.02;
-my $Xmin = log(1.75);
-my $Xmax = $Xmax_tab + 10;
+    my $VERBOSE  = 0;
+    my $symmetry = 2;
+    my $gamma    = 1.4;
 
-# Generate a table of values for testing
-my $rtable = $blast_table->table_gen( 100, $Xmin, $Xmax );
-
-my $err_max;
-foreach my $item ( @{$rtable} ) {
-    my ( $X,   $Y,   $dYdX )   = @{$item};
-    my ( $X_k, $Y_k, $dYdX_k ) = miles_long_range($X);
-    my $err = abs( $Y - $Y_k );
-    if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
-
-    if ($VERBOSE) {
-        print "gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yk=$Y_k, err=$err\n";
+    # Create a table for this case
+    my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
+    my $blast_table = Blast::IPS->new( \%args );
+    if ( !defined($blast_table) ) {
+        die "missing table for sym=$symmetry, gamma=$gamma\n";
     }
-}
-my $err_max_pr = sprintf "%0.3g", $err_max;
+    my $table_name = $blast_table->get_table_name();
+    my $rbounds    = $blast_table->get_table_bounds();
+    my $Xmin_tab   = $rbounds->[0]->[0];
+    my $Xmax_tab   = $rbounds->[1]->[0];
 
-if ( !ok( $err_max <= $TOL ) ) {
-    my $text =
+    # We are looking for about 1% max error at long range (lambda > 10)
+    # Here we start closer in and accept a little more error
+    my $TOL  = 0.02;
+    my $Xmin = log(1.75);
+    my $Xmax = $Xmax_tab + 10;
+
+    # Generate a table of values for testing
+    my $rtable = $blast_table->table_gen( 100, $Xmin, $Xmax );
+
+    my $err_max;
+    foreach my $item ( @{$rtable} ) {
+        my ( $X,   $Y,   $dYdX )   = @{$item};
+        my ( $X_k, $Y_k, $dYdX_k ) = miles_long_range($X);
+        my $err = abs( $Y - $Y_k );
+        if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
+
+        if ($VERBOSE) {
+            print
+              "gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yk=$Y_k, err=$err\n";
+        }
+    }
+    my $err_max_pr = sprintf "%0.3g", $err_max;
+
+    if ( !ok( $err_max <= $TOL ) ) {
+        my $text =
 "# Max error for Miles long range model using '$table_name' Xmin=$Xmin, Xmax=$Xmax, is $err_max_pr\n";
-    print "$text";
+        print "$text";
+    }
 }
 
 sub miles_long_range {
@@ -108,9 +115,9 @@ sub miles_long_range {
     # print STDERR "lambda_min=$lambda_min, Xmin=$X_min\n";
 
     my $ovp_calc = sub {
-        my ($X) = @_;
-        my $lambda = exp($X);
-        my $term = $X + $B;
+        my ($XX) = @_;
+        my $lambda = exp($XX);
+        my $term = $XX + $B;
         my $ovp_atm = 1.e10;
         if ( $term > 0 ) {
             $ovp_atm = $gamma * $A / ( $lambda * sqrt($term) );

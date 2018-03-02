@@ -1,5 +1,7 @@
 use strict;
+use warnings;
 use Test;
+use Blast::IPS;
 
 my $ralpha_table;
 
@@ -72,7 +74,6 @@ foreach my $rcase ( @{$ralpha_table} ) {
     my ( $symmetry, $gamma, $alpha_t ) = @{$rcase};
 
     # Create a table for this case
-    use Blast::IPS;
     my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my $blast_table = Blast::IPS->new( \%args );
     if ( !defined($blast_table) ) {

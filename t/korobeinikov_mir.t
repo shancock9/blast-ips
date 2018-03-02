@@ -1,5 +1,7 @@
 use strict;
+use warnings;
 use Test;
+use Blast::IPS;
 
 my $rmodels;
 
@@ -95,8 +97,6 @@ my $TOL     = 0.04;
 my $VERBOSE = 0;
 
 # Create a table for this case
-use Blast::IPS;
-
 foreach my $model ( @{$rmodels} ) {
     my $symmetry    = $model->{symmetry};
     my $gamma    = $model->{gamma};

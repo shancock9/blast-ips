@@ -1,5 +1,7 @@
 use strict;
+use warnings;
 use Test;
+use Blast::IPS;
 
 my $rokhotsimskii;
 
@@ -145,7 +147,6 @@ if ($VERBOSE) {
 }
 
 # Create a table for this case
-use Blast::IPS;
 my $symmetry    = 2;
 my $gamma       = 1.4;
 my %args        = ( 'symmetry' => $symmetry, 'gamma' => $gamma );

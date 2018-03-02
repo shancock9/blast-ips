@@ -24,13 +24,17 @@ my %options        = (
 );
 my $blast_table_new = Blast::IPS->new( \%options );
 
-# Create a table for this case
+
+# Get the built-in table for this case
 my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
 my $blast_table = Blast::IPS->new( \%args );
 if ( !defined($blast_table) ) {
     die "missing table for sym=$symmetry, gamma=$gamma\n";
 }
 my $table_name = $blast_table->get_table_name();
+
+# Get a copy of the builtin table
+my $rtable = $blast_table->get_table();
 
 # The difference in absolute error between the two tables should not exceed 5.e-7
 # The maximum error for interpolating the builtin table to the new table points should
@@ -39,7 +43,6 @@ my $TOL  = 1.e-6;
 
 # Case 1: Interpolate the builtin table to the new table points
 my $err_max;
-
 # Loop over all points in the new table
 foreach my $item ( @{$rtable_new} ) {
     my ( $X_t,   $Y_t,   $dYdX_t )   = @{$item};
@@ -54,12 +57,11 @@ foreach my $item ( @{$rtable_new} ) {
         print "case 1: gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yt=$Y_t, err=$err\n";
     }
 }
-my $err_max_pr = sprintf "%0.3g", $err_max;
 
 if ( !ok( $err_max <= $TOL ) || $VERBOSE) {
-    my $text =
+    my $err_max_pr = sprintf "%0.3g", $err_max;
+    print
 "# Max error comparing '$table_name_new' with '$table_name' is $err_max_pr\n";
-    print "$text";
 }
 
 # Case 2: Interpolate the new table to the builtin table points.
@@ -69,14 +71,11 @@ if ( !ok( $err_max <= $TOL ) || $VERBOSE) {
 $TOL  = 1.5e-6;
 $err_max=undef;
 
-# Pull out the actual builtin table
-my $rtable = $blast_table->get_table();
-
 # Loop over all points in the builtin table
 foreach my $item ( @{$rtable} ) {
     my ( $X_t,   $Y_t,   $dYdX_t )   = @{$item};
 
-    # Interpolate the new table to the builtin point
+    # Interpolate the new table a builtin table point
     my $ret = $blast_table_new->lookup( $X_t, 'X' );
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $err = abs( $Y - $Y_t );
@@ -86,12 +85,11 @@ foreach my $item ( @{$rtable} ) {
         print "case 2: gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yt=$Y_t, err=$err\n";
     }
 }
-$err_max_pr = sprintf "%0.3g", $err_max;
 
 if ( !ok( $err_max <= $TOL ) || $VERBOSE ) {
-    my $text =
+    my $err_max_pr = sprintf "%0.3g", $err_max;
+    print
 "# Case 2: Max error comparing '$table_name' with '$table_name_new' is $err_max_pr\n";
-    print "$text";
 }
 
 BEGIN {
@@ -106,6 +104,8 @@ BEGIN {
         # Est Max MOC error for R>20.01: 2.87e-07 
         # Max interpolation error with cubic splines: 1.0055e-06
         # Est Max overall error after cubic interpolation: 1.4e-6
+
+        # [ X, Y, dYdX, Z, dZdX]
         
         $rtable_new = [
         [-4.61798880, 12.00032860, -2.99997850, -4.61906014, 0.99839214],

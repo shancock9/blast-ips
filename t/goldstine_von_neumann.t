@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use Test;
+use Blast::IPS;
 
 my $rgoldstine;
 
@@ -15,12 +16,12 @@ Reference:
 Goldstine, Herman H., and John Von Neumann. 1955. "Blast wave calculation". Communications on Pure and Applied Mathematics. 8 (2): 327-353. 
 DOI: 10.1002/cpa.3160080207  
 
-The radii in this calculation are need to be scaled to the scaling used here.
-There are different ways to do this.  A very accurate way is to 
-scale the radii by the factor which makes the first overpressure nearly exact
-according to the high resolution calculations.  By this method the scaled 
-range to the first overpressure should be lambda=0.1165525.
-So we will scale the radii in their calculation by 0.1165525/0.500474. 
+The radii in this calculation must be scaled to the scaling method used here.
+There are different ways to do this.  A very accurate way is to scale the radii
+by the factor which makes the first overpressure nearly exact according to the
+high resolution calculations.  By this method the scaled range to the first
+overpressure should be lambda=0.1165525.  So we will scale the radii in their
+calculation by 0.1165525/0.500474. 
 
 =cut
 
@@ -105,12 +106,8 @@ So we will scale the radii in their calculation by 0.1165525/0.500474.
 my $TOL     = 0.04;
 my $VERBOSE = 0;
 my $lambda_stop;    # Use to limit range of comparison;
-if ($VERBOSE) {
-    print "Comparison with Goldstine-Von Neuman Tables with tolerance $TOL\n";
-}
 
-# Create a table for this case
-use Blast::IPS;
+# Get a built-in table for this case
 my $symmetry    = 2;
 my $gamma       = 1.4;
 my %args        = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
@@ -119,7 +116,8 @@ if ( !defined($blast_table) ) {
     die "missing table for sym=$symmetry, gamma=$gamma\n";
 }
 
-# Loop to calculate the maximum absolute relative error in overpressure
+# Loop over the Goldstine-Von_Neumann points to calculate the maximum absolute
+# relative error in overpressure
 my $iQ = 'X';
 my $err_max;
 my $lambda_max = 0;
@@ -142,13 +140,10 @@ foreach my $point ( @{$rgoldstine} ) {
     if ( $lambda_t > $lambda_max ) { $lambda_max = $lambda_t }
 }
 
-my $err_max_pr    = sprintf "%0.3g", $err_max;
-my $lambda_max_pr = sprintf "%0.5g", $lambda_max;
-
-if ($VERBOSE) {
+if ( !ok( $err_max <= $TOL ) || $VERBOSE ) {
+    my $err_max_pr    = sprintf "%0.3g", $err_max;
+    my $lambda_max_pr = sprintf "%0.5g", $lambda_max;
     print
 "Goldstine-Von Neumann Table max error to lambda=$lambda_max_pr: $err_max_pr\n";
 }
-
-ok( $err_max <= $TOL );
 
