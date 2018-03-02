@@ -25,10 +25,8 @@ Reference:
     my $nsym = @symmetries; 
     my $ngam = @gammas; 
 
-    # Cases 1 and 2 long range are not yet programmed in Blast::IPS
-    # So for now, we run case3 just for spherical symmetry
-    #            case 1        case 2        case3 (sym=2 only)
-    $ntests = $nsym*$ngam + $nsym*$ngam + $ngam;
+    # 3 cases per symmetry and gamma
+    $ntests = 3*$nsym*$ngam; 
     plan tests => $ntests;
 }
 
@@ -74,9 +72,6 @@ foreach my $symmetry (@symmetries) {
             }
             elsif ( $case == 3 ) {
 
-		# TODO: Blast::IPS not programmed for long range cyl and plane
-		next unless ($symmetry == 2);
-
                 $Xmin = $Xmax_tab + 0.1;
                 $Xmax = $Xmin + 10;
                 $TOL  = ( $symmetry == 2 ) ? 0.2 : $symmetry == 1 ? 0.3 : 0.15;
@@ -88,7 +83,7 @@ foreach my $symmetry (@symmetries) {
             }
 
             # Generate a wide range of table of values for testing
-            my $rtable = $blast_table->table_gen( 10, $Xmin, $Xmax );
+            my $rtable = $blast_table->table_gen( 20, $Xmin, $Xmax );
 
             my $rjoin = 2;
 
@@ -108,7 +103,7 @@ foreach my $symmetry (@symmetries) {
 
                 if ($VERBOSE) {
                     print
-"gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yk=$Y_k, err=$err\n";
+"case=$case, gamma=$gamma, sym=$symmetry, X=$X, Y=$Y, Yk=$Y_k, err=$err\n";
                 }
             }
             my $err_max_pr = sprintf "%0.3g", $err_max;

@@ -32,17 +32,7 @@ finite difference method and the method of characteristics.  The estimated
 relative accuracy of interpolated shock overpressures depends on the table but
 is below 1.e-5 in all cases.
 
-## INSTALLATION
-
-Download the installation package into a temporary directory.  Then use
-
-   perl Makefile.PL
-   make
-   make test
-   make install
-
-You may need root permission for the last step.
-
+I will be adding documentation in the future. 
 
 # AUTHOR
 

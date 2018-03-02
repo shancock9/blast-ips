@@ -66,7 +66,6 @@ sub _setup {
     my $gamma;
     my $symmetry;
     my $alpha;
-    my $description;
 
     # Convert missing arg to default spherical table
     if ( !defined($arg) ) { $arg = { symmetry => 2 } }
@@ -112,7 +111,7 @@ sub _setup {
             my $err_est;
             foreach my $key (@keys) {
                 my $item = $rtables_info->{$key};
-                my ( $symmetry_t, $gamma_t, $err_est_t, $desc_t, ) = @{$item};
+                my ( $symmetry_t, $gamma_t, $err_est_t ) = @{$item};
 
                 next if $symmetry_t != $symmetry;
                 next if $gamma_t != $gamma;
@@ -142,7 +141,7 @@ sub _setup {
     if ( defined($table_name) ) {
         my $item = $rtables_info->{$table_name};
         if ( defined($item) ) {
-            ( $symmetry, $gamma, my $err_est, $description ) = @{$item};
+            ( $symmetry, $gamma, my $err_est ) = @{$item};
         }
     }
     else {
@@ -603,7 +602,8 @@ sub _end_model_setup {
         }
         else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
         $Z_zero =
-          $Z_far - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
+          exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
+	$Z_zero = log($Z_zero);
     }
     $self->{_A_far}  = $A_far;
     $self->{_B_far}  = $B_far;
@@ -612,6 +612,13 @@ sub _end_model_setup {
 }
 
 sub _long_range_calc {
+    my ( $self, $Q, $icol ) = @_;
+    my $symmetry = $self->{_symmetry};
+    return $self->_long_range_sphere($Q,$icol) if ( $symmetry == 2 );
+    return $self->_long_range_non_sphere($Q,$icol);
+}
+
+sub _long_range_sphere {
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
     my $A_far    = $self->{_A_far};
@@ -647,6 +654,7 @@ sub _long_range_calc {
         }
         elsif ( $icol == 3 ) {
 
+	    # FIXME: definition of Z has changed
             $dX_newton = sub {
                 my $term = $X_i + $B_far;
                 return 0 if ( $term <= 0 );    # shouldn't happen
@@ -674,7 +682,8 @@ sub _long_range_calc {
 
             # Since Z hardly changes with distance, an accurate first guess
             # is made using the last Z in the table
-            $X_i       = log( exp($Q) - $Z_e );
+            ##$X_i       = log( exp($Q) - $Z_e );
+            $X_i       = log( exp($Q) + exp($Z_e) );
             $dX_newton = sub {
                 my $term = $X_i + $B_far;
                 return 0 if ( $term <= 0 );    # shouldn't happen
@@ -706,12 +715,53 @@ sub _long_range_calc {
     my $d2Y_dX2_i = 2 * $mum_i**2;
 
     #    my $d3Y_d3X = -8 * $mum**3;
-    my $Z_i = $Z_zero + $kA * sqrt($term);
+    my $Z_i = log(exp($Z_zero) + $kA * sqrt($term));
 
+    # FIXME: These are incorrect because of the change in definition of Z
     # FIXME: these give slight discontinuities; can it be fixed?
     # For example, should the Z table be splined?
-    my $dZ_dX_i   = $kA * 0.5 / sqrt($term);
+    my $dZ_dX_i   = ($kA * 0.5 / sqrt($term);
     my $d2Z_dX2_i = -0.25 * $kA * $term**-1.5;
+
+    return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
+}
+
+sub _long_range_non_sphere {
+    my ( $self, $Q, $icol ) = @_;
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $rtab     = $self->{_rtable};
+    my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e ) = @{ $rtab->[-1] };
+    my ( $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i );
+    $dY_dX_i   = $dY_dX_e;
+    $dZ_dX_i   = $dZ_dX_e;
+    $d2Y_dX2_i = 0;
+    $d2Z_dX2_i = 0;
+
+    my $X_i;
+    if ( $icol == 0 ) {
+        $X_i = $Q;
+        $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
+        $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
+    }
+    elsif ( $icol == 1 ) {
+        $Y_i = $Q;
+        $X_i = $X_e + ( $Y_i - $Y_e ) / $dY_dX_i;
+        $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
+    }
+    elsif ( $icol == 3 ) {
+        $Z_i = $Q;
+        $X_i = $X_e + ( $Z_i - $Z_e ) / $dZ_dX_i;
+        $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
+    }
+    elsif ( $icol == 5 ) {
+
+        # Since Z hardly changes with distance, an accurate first guess
+        # is made using the last Z in the table
+        $X_i = log( exp($Q) + exp($Z_e) );
+        $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
+        $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
+    }
 
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
 }
@@ -863,40 +913,36 @@ sub _cubic_interpolation {
 
 BEGIN {
 
-    # name => [symmetry, gamma, error, description]
+    # name => [symmetry, gamma, error]
     # symmetry = 0,1,2 for Plane, Cylindrical, Spherical
     # Error = the sum of all run errors plus log interpolation error;
 
-    # name -> [symmetry, gamma, error, title ]
+    # name -> [symmetry, gamma, error ]
     $rtables_info = {
-        P4000_G1X1 => [ 0, 1.1, 3.9e-6, "Plane blast gamma 1.1" ],
-        P4000_G1X2 => [ 0, 1.2, 1.5e-6, "Plane blast gamma 1.2" ],
-        P4000_G1X3 => [ 0, 1.3, 2.7e-6, "Plane blast gamma 1.3" ],
-        P4000_G1X4_A =>
-          [ 0, 1.4, 1.7e-6, "Plane Blast gamma 1.4 from P4000_rerun" ],
-        P4000_G1X667 => [ 0, 1.667, 1.5e-6, "Plane Blast with gamma 1.667" ],
-        P4000_G2     => [ 0, 2,     6.7e-6, "Plane blast gamma 2" ],
-        P4000_G3     => [ 0, 3,     3.4e-6, "Plane blast gamma 3" ],
-        P4000_G7     => [ 0, 7,     2.5e-6, "Plane blast gamma 7" ],
-
-        C4000_G1X1   => [ 1, 1.1,   3.5e-6, "Cyl blast gamma 1.1" ],
-        C4000_G1X2   => [ 1, 1.2,   3.4e-6, "Cyl Blast with gamma 1.2" ],
-        C4000_G1X3   => [ 1, 1.3,   1.9e-6, "Cyl blast gamma 1.3" ],
-        C8000_G1X4   => [ 1, 1.4,   9.e-7,  "Cyl gamma 1.4" ],
-        C4000_G1X667 => [ 1, 1.667, 2.2e-6, "Cyl Blast with gamma 1.667" ],
-        C4000_G2     => [ 1, 2,     2.1e-6, "Cyl blast gamma 2" ],
-        C4000_G3     => [ 1, 3,     1.8e-6, "Cyl blast gamma 3" ],
-        C4000_G7     => [ 1, 7,     1.6e-6, "Cyl blast gamma 7" ],
-
-        S4000_G1X1   => [ 2, 1.1,   6.6e-6, "Sph blast gamma 1.1" ],
-        S4000_G1X2   => [ 2, 1.2,   1.8e-6, "Spherical blast gamma 1.2" ],
-        S4000_G1X3   => [ 2, 1.3,   1.6e-6, "Spherical blast gamma 1.3" ],
-        S8000_G1X4   => [ 2, 1.4,   1.4e-6, "Sph blast gamma 1.4" ],
-        S16000_G1X4  => [ 2, 1.4,   9.e-7,  "Spherical gamma 1.4" ],
-        S4000_G1X667 => [ 2, 1.667, 1.7e-6, "Sph Blast with gamma 1.667" ],
-        S4000_G2     => [ 2, 2,     1.9e-6, "Sph blast gamma 2" ],
-        S4000_G3     => [ 2, 3,     3.7e-6, "Sph blast gamma 3" ],
-
+        P4000_G1X1   => [ 0, 1.1,   3.9e-6 ],
+        P4000_G1X2   => [ 0, 1.2,   1.5e-6 ],
+        P4000_G1X3   => [ 0, 1.3,   2.7e-6 ],
+        P4000_G1X4_A => [ 0, 1.4,   1.7e-6 ],
+        P4000_G1X667 => [ 0, 1.667, 1.5e-6 ],
+        P4000_G2     => [ 0, 2,     6.7e-6 ],
+        P4000_G3     => [ 0, 3,     3.4e-6 ],
+        P4000_G7     => [ 0, 7,     2.5e-6 ],
+        C4000_G1X1   => [ 1, 1.1,   3.5e-6 ],
+        C4000_G1X2   => [ 1, 1.2,   3.4e-6 ],
+        C4000_G1X3   => [ 1, 1.3,   1.9e-6 ],
+        C8000_G1X4   => [ 1, 1.4,   9.e-7 ],
+        C4000_G1X667 => [ 1, 1.667, 2.2e-6 ],
+        C4000_G2     => [ 1, 2,     2.1e-6 ],
+        C4000_G3     => [ 1, 3,     1.8e-6 ],
+        C4000_G7     => [ 1, 7,     1.6e-6 ],
+        S4000_G1X1   => [ 2, 1.1,   6.6e-6 ],
+        S4000_G1X2   => [ 2, 1.2,   1.8e-6 ],
+        S4000_G1X3   => [ 2, 1.3,   1.6e-6 ],
+        S8000_G1X4   => [ 2, 1.4,   1.4e-6 ],
+        S16000_G1X4  => [ 2, 1.4,   9.e-7 ],
+        S4000_G1X667 => [ 2, 1.667, 1.7e-6 ],
+        S4000_G2     => [ 2, 2,     1.9e-6 ],
+        S4000_G3     => [ 2, 3,     3.7e-6 ],
     };
 
     # All tables
@@ -945,7 +991,7 @@ BEGIN {
 
     $rtables = {
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8.55e-07
         #    Est Max FD Error (based on N/2 run) to R=30.01: 4.5e-7
         #    Est Max MOC error for R>30.01: -2.26e-07
@@ -1076,7 +1122,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 7.22e-07
         #    Est Max FD Error (based on N/2 run) to R=30.00: 6.7e-7
         #    Est Max MOC error for R>30.00: -1.71e-06
@@ -1143,7 +1189,7 @@ BEGIN {
             [ 26.02173536, -20.97624980, -0.75000002, 5.65193815,  0.24992082 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 9e-07
         #    Est Max FD Error (based on N/2 run) to R=50.01: 5.e-7
         #    Est Max MOC error for R>50.01: -5.76e-07
@@ -1210,7 +1256,7 @@ BEGIN {
             [ 25.46974999, -20.06783443, -0.75000001, 5.87217686,  0.24991685 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 4.15e-07
         #    Est Max FD Error (based on N/2 run) to R=100.03: 6.3e-7
         #    Est Max MOC error for R>100.03: -5.79e-07
@@ -1277,7 +1323,7 @@ BEGIN {
             [ 20.00009956, -9.74542025, -0.49974825, 10.03033999, 0.50054312 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 2.91e-07
         #    Est Max FD Error (based on N/2 run) to R=100.04: 6.9e-7
         #    Est Max MOC error for R>100.04: 1.49e-06
@@ -1339,7 +1385,7 @@ BEGIN {
             [ 16.00015763, -8.17526659, -0.50008249, 7.70143149,  0.50033535 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 4.8e-07
         #    Est Max FD Error (based on N/2 run) to R=70.01: 7.e-7
         #    Est Max MOC error for R>70.01: 3.11e-07
@@ -1402,7 +1448,7 @@ BEGIN {
             [ 16.00014827, -8.38179758, -0.50007638, 7.53074775,  0.50021712 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 7.97e-07
         #    Est Max FD Error (based on N/2 run) to R=20.00: 6.7e-7
         #    Est Max MOC error for R>20.00: -2.16e-07
@@ -1523,7 +1569,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8e-07
         #    Est Max FD Error (based on N/2 run) to R=15.00: 9.3e-7
         #    Est Max MOC error for R>15.00: -2.25e-07
@@ -1648,7 +1694,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 7.47e-07
         #    Est Max FD Error (based on N/2 run) to R=50.01: 6.3e-7
         #    Est Max MOC error for R>50.01: -2.99e-07
@@ -1715,7 +1761,7 @@ BEGIN {
             [ 24.75488575, -19.86460618, -0.75000004, 5.46125340,  0.24989278 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 2.04e-07
         #    Est Max FD Error (based on N/2 run) to R=20.01: 1.6e-7
         #    Est Max MOC error for R>20.01: 2.87e-07
@@ -1838,7 +1884,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8.3e-07
         #    Est Max FD Error (based on N/2 run) to R=20.01: 1.4e-6
         #    Est Max MOC error for R>20.01: 1.13e-06
@@ -1906,7 +1952,7 @@ BEGIN {
             [ 24.75045336, -20.29140125, -0.75000006, 5.10610598,  0.24989334 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 9.28e-07
         #    Est Max FD Error (based on N/2 run) to R=30.01: 2.7e-7
         #    Est Max MOC error for R>30.01: -3.98e-07
@@ -2030,7 +2076,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 1.01e-06
         #    Est Max FD Error (based on N/2 run) to R=27.93: TBD
         #    Est Max MOC error for R>27.93: 2.15e-06
@@ -2097,7 +2143,7 @@ BEGIN {
             [ 20.00009424, -10.72739419, -0.50000784, 9.22612909,  0.50001762 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8.1e-07
         #    Est Max FD Error (based on N/2 run) to R=10.00: 3.e-6
         #    Est Max MOC error for R>10.00: -2.09e-07
@@ -2204,7 +2250,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 1.2e-06
         #    Est Max FD Error (based on N/2 run) to R=100.04: 3.5e-7
         #    Est Max MOC error for R>100.04: 4.32e-07
@@ -2271,7 +2317,7 @@ BEGIN {
             [ 26.02169453, -19.99373069, -0.75000002, 6.31587683,  0.24994228 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 9.97e-07
         #    Est Max FD Error (based on N/2 run) to R=50.01: 4.5e-7
         #    Est Max MOC error for R>50.01: -6.31e-07
@@ -2339,7 +2385,7 @@ BEGIN {
             [ 25.30332165, -19.76611620, -0.75000004, 5.94299590,  0.24991868 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8.85e-07
         #    Est Max FD Error (based on N/2 run) to R=20.00: 3.5e-7
         #    Est Max MOC error for R>20.00: -5.9e-07
@@ -2464,7 +2510,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 7.64e-07
         #    Est Max FD Error (based on N/2 run) to R=100.03: 5.8e-7
         #    Est Max MOC error for R>100.03: -5.12e-06
@@ -2531,7 +2577,7 @@ BEGIN {
             [ 20.00011492, -9.51472254, -0.49918041, 10.19508048, 0.50129585 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 1.47e-06
         #    Est Max FD Error (based on N/2 run) to R=70.01: 2.9e-7
         #    Est Max MOC error for R>70.01: -3.19e-07
@@ -2597,7 +2643,7 @@ BEGIN {
             [ 23.76067375, -17.80931110, -0.75000042, 6.08514812,  0.24993649 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 6.44e-07
         #    Est Max FD Error (based on N/2 run) to R=100.03: 4.8e-7
         #    Est Max MOC error for R>100.03: -1.89e-06
@@ -2656,7 +2702,7 @@ BEGIN {
             [ 17.98128672, -8.10961270, -0.49772102, 9.45915028,  0.50346612 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 5.12e-07
         #    Est Max FD Error (based on N/2 run) to R=500.13: 3.8e-7
         #    Est Max MOC error for R>500.13: 1.15e-06
@@ -2713,7 +2759,7 @@ BEGIN {
             [ 19.89180096, -8.44287765, -0.49704928, 10.88072484, 0.50426325 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 8.97e-07
         #    Est Max FD Error (based on N/2 run) to R=16.41: 6.9e-7
         #    Est Max MOC error for R>16.41: 4.69e-07
@@ -2778,7 +2824,7 @@ BEGIN {
             [ 22.41672584, -11.23338380, -0.50000408, 11.02913458, 0.50002414 ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 5.05e-08
         #    Est Max FD Error (based on N/2 run) to R=10.00: 2.05e-7
         #    Est Max MOC error for R>10.00: 1.95e-07
@@ -2909,7 +2955,7 @@ BEGIN {
             ],
         ],
 
-        #    Overall Error Estimate
+        #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 1.96e-07
         #    Est Max FD Error (based on N/2 run) to R=30.01: 1.5e-7
         #    Est Max MOC error for R>30.01: 2.71e-07
