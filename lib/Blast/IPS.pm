@@ -720,7 +720,7 @@ sub _long_range_sphere {
     # FIXME: These are incorrect because of the change in definition of Z
     # FIXME: these give slight discontinuities; can it be fixed?
     # For example, should the Z table be splined?
-    my $dZ_dX_i   = ($kA * 0.5 / sqrt($term);
+    my $dZ_dX_i   = $kA * 0.5 / sqrt($term);
     my $d2Z_dX2_i = -0.25 * $kA * $term**-1.5;
 
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
@@ -738,7 +738,6 @@ sub _long_range_non_sphere {
     $d2Y_dX2_i = 0;
     $d2Z_dX2_i = 0;
 
-    my $X_i;
     if ( $icol == 0 ) {
         $X_i = $Q;
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
