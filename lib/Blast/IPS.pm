@@ -46,10 +46,13 @@ my $rtables_info;
 
 # TODO:
 # Needs documentation and test cases
-# Work is needed to handle interpolations beyond the ranges of the tables for some variables.
-#    Right now the program writes warnings to STDERR when this happens.
+# Allow lookup on slope dYdX or dZdX, with quadratic interpolation
+# Work is needed to handle interpolations beyond the ranges of the tables for some
+# spherical symmetry variables.
 # Question: how accurate would it be to interpolate on gamma (or gamma-1) between tables?
 # Are there any theoretical results to guide this (such as low gamma theories)?
+# An interesting way to test is to have the driver get a builtin table, truncate at
+# both ends, reinstall it and look at the errors at both missing ends.
 
 sub new {
     my ( $class, $rtable, $options ) = @_;
@@ -591,7 +594,7 @@ sub _end_model_setup {
       ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
     $self->{_alpha} = $alpha;
 
-    # Near region
+    # Distant region
     my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = @{ $rtable->[-1] };
     my ( $A_far, $B_far, $Z_zero ) = ( 0, 0, 0 );
     if ( $symmetry == 2 ) {
@@ -619,6 +622,9 @@ sub _long_range_calc {
 }
 
 sub _long_range_sphere {
+
+    # FIXME: This routine works but needs review because the definition of Z
+    # has changed.
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
     my $A_far    = $self->{_A_far};
@@ -738,28 +744,50 @@ sub _long_range_non_sphere {
     $d2Y_dX2_i = 0;
     $d2Z_dX2_i = 0;
 
+    # For planar and cylindrical waves at long range it is a good approximation
+    # that dY_dX and dZ_dX become constant.  We can use the slopes at the end
+    # point of the table. But in fact, at long range:
+    # dY_dX is about -0.5 for sym=0 and -0.75 for sym=1
+    # dZ_dX is about +0.5 for sym=0 and +0.25 for sym=1
+
     if ( $icol == 0 ) {
+
+	# Given X
         $X_i = $Q;
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
         $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 1 ) {
+
+	# Given Y
         $Y_i = $Q;
         $X_i = $X_e + ( $Y_i - $Y_e ) / $dY_dX_i;
         $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 3 ) {
+
+	# Given Z
         $Z_i = $Q;
         $X_i = $X_e + ( $Z_i - $Z_e ) / $dZ_dX_i;
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 5 ) {
 
-        # Since Z hardly changes with distance, an accurate first guess
-        # is made using the last Z in the table
-        $X_i = log( exp($Q) + exp($Z_e) );
+	# Given W=ln(TOA). We have to iterate in this case because assuming
+	# constant dW/dX is not sufficiently accurate.  Since Z hardly changes
+	# with distance, an accurate first guess is made using the last Z in
+	# the table. Simple iteration converges in just a couple of steps.
+	$Z_i = $Z_e;
+	$X_i = $X_e;
+        foreach my $it ( 0 .. 5 ) {
+            my $X_last = $X_i;
+            $X_i = log( exp($Q) + exp($Z_i) );
+            $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
+            my $dX = $X_i - $X_last;
+            ##print STDERR "it=$it, X_i=$X_i, Z_i=$Z_i, dX=$dX\n";
+            last if ( abs($dX) < 1.e-8 );
+        }
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
-        $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
     }
 
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
