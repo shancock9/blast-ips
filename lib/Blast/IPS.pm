@@ -24,7 +24,7 @@ package Blast::IPS;
 use strict;
 use warnings;
 use 5.006;
-our $VERSION = 20180225;
+our $VERSION = 0.1.1;
 
 use Carp;
 my $rtables;
