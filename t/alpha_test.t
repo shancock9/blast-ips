@@ -32,9 +32,9 @@ Reference:
         #[2,1.1   , 3.41410750], # sedov3
         #[1,1.1   , 3.99292335], # sedov3
         #[0,1.1   , 2.24621135], # sedov3
-        #[2,1.1   , 3.41741],  # sedov.c
-        #[1,1.1   , 3.99818],  # sedov.c
-        #[0,1.1   , 2.252165], # sedov.c
+        [2,1.1   , 3.41741],  # sedov.c
+        [1,1.1   , 3.99818],  # sedov.c
+        [0,1.1   , 2.252165], # sedov.c
 
         [ 2, 1.2,   1.71980352 ],
         [ 1, 1.2,   2.00518582 ],
@@ -65,13 +65,14 @@ Reference:
     plan tests => $ncases;
 }
 
-# Except for low values of gamma, as noted above, the program 'sedov3' appears
-# to have an accuracy of better than 1.e-5.
-my $TOL     = 1.e-5;
 my $VERBOSE = 0;
 
 foreach my $rcase ( @{$ralpha_table} ) {
     my ( $symmetry, $gamma, $alpha_t ) = @{$rcase};
+
+    # Except for low values of gamma, as noted above, the program 'sedov3'
+    # appears to have an accuracy of better than 1.e-5.
+    my $TOL = $gamma == 1.1 ? 1.e-3 : 1.e-5;
 
     # Create a table for this case
     my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
