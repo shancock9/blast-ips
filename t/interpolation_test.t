@@ -68,7 +68,7 @@ foreach my $interp ( 0 .. 1 ) {
     my $err_max;
     my $Z_err_max;
     my $lambda_max = 0;
-    my $TOL = $interp == 0 ? 7.e-7 : 1.e-3;
+    my $TOL = $interp == 0 ? 7.e-7 : 1.1e-3;
     foreach my $point ( @{$rspherical_n16000} ) {
         my ( $lambda_t, $tau_t, $ovprat_t ) = @{$point};
         my $z_t = $lambda_t - $tau_t;
@@ -83,7 +83,7 @@ foreach my $interp ( 0 .. 1 ) {
         my $err    = abs( $ovprat - $ovprat_t ) / $ovprat_t;
         my $Z_err  = abs( $Z - $Z_t );
 
-        #print STDERR "lambda=$lambda, err=$err\n";
+        #print STDERR "lambda=$lambda, err=$err, Z_err=$Z_err\n";
         if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
         if ( !defined($Z_err_max) || $Z_err > $Z_err_max ) {
             $Z_err_max = $Z_err;
@@ -104,7 +104,7 @@ foreach my $interp ( 0 .. 1 ) {
 "maximum Z relative error = $Z_err_max_pr; max ovp ratio relative error=$err_max_pr\n";
     }
 
-    #print STDERR ""( $err_max <= $TOL )";
+    #print STDERR "( $err_max <= $TOL )";
     ok( $err_max <= $TOL );
 }
 
