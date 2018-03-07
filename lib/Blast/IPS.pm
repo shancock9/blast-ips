@@ -396,7 +396,7 @@ sub lookup {
 
 sub get_table_bounds {
 
-    my ( $self ) = @_;
+    my ($self) = @_;
 
     # return the first and last rows of the table
     return $self->table_gen(2);
@@ -470,8 +470,8 @@ sub _short_range_calc {
           4 * $gamma / $am2 / ( $gamma + 1 ) * ( 1 + sqrt( 1 + $am2 ) );
 
         # For future reference:
-	# This is the equation on page 182 of Korobeinikov's book "point blast
-	# theory".  It is missing a factor of gamma.
+        # This is the equation on page 182 of Korobeinikov's book "point blast
+        # theory".  It is missing a factor of gamma.
         # It is a cleaner way to code (and typeset) if you include the
         # missing factor of gamma.
         #  my $ovp_atm_check = 4 / ( $gamma + 1 ) / ( -1 + sqrt( 1 + $am2 ) );
@@ -606,7 +606,7 @@ sub _end_model_setup {
         else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
         $Z_zero =
           exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
-	$Z_zero = log($Z_zero);
+        $Z_zero = log($Z_zero);
     }
     $self->{_A_far}  = $A_far;
     $self->{_B_far}  = $B_far;
@@ -617,8 +617,8 @@ sub _end_model_setup {
 sub _long_range_calc {
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
-    return $self->_long_range_sphere($Q,$icol) if ( $symmetry == 2 );
-    return $self->_long_range_non_sphere($Q,$icol);
+    return $self->_long_range_sphere( $Q, $icol ) if ( $symmetry == 2 );
+    return $self->_long_range_non_sphere( $Q, $icol );
 }
 
 sub _long_range_sphere {
@@ -660,7 +660,7 @@ sub _long_range_sphere {
         }
         elsif ( $icol == 3 ) {
 
-	    # FIXME: definition of Z has changed
+            # FIXME: definition of Z has changed
             $dX_newton = sub {
                 my $term = $X_i + $B_far;
                 return 0 if ( $term <= 0 );    # shouldn't happen
@@ -721,7 +721,7 @@ sub _long_range_sphere {
     my $d2Y_dX2_i = 2 * $mum_i**2;
 
     #    my $d3Y_d3X = -8 * $mum**3;
-    my $Z_i = log(exp($Z_zero) + $kA * sqrt($term));
+    my $Z_i = log( exp($Z_zero) + $kA * sqrt($term) );
 
     # FIXME: These are incorrect because of the change in definition of Z
     # FIXME: these give slight discontinuities; can it be fixed?
@@ -752,33 +752,33 @@ sub _long_range_non_sphere {
 
     if ( $icol == 0 ) {
 
-	# Given X
+        # Given X
         $X_i = $Q;
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
         $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 1 ) {
 
-	# Given Y
+        # Given Y
         $Y_i = $Q;
         $X_i = $X_e + ( $Y_i - $Y_e ) / $dY_dX_i;
         $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 3 ) {
 
-	# Given Z
+        # Given Z
         $Z_i = $Q;
         $X_i = $X_e + ( $Z_i - $Z_e ) / $dZ_dX_i;
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
     }
     elsif ( $icol == 5 ) {
 
-	# Given W=ln(TOA). We have to iterate in this case because assuming
-	# constant dW/dX is not sufficiently accurate.  Since Z hardly changes
-	# with distance, an accurate first guess is made using the last Z in
-	# the table. Simple iteration converges in just a couple of steps.
-	$Z_i = $Z_e;
-	$X_i = $X_e;
+        # Given W=ln(TOA). We have to iterate in this case because assuming
+        # constant dW/dX is not sufficiently accurate.  Since Z hardly changes
+        # with distance, an accurate first guess is made using the last Z in
+        # the table. Simple iteration converges in just a couple of steps.
+        $Z_i = $Z_e;
+        $X_i = $X_e;
         foreach my $it ( 0 .. 5 ) {
             my $X_last = $X_i;
             $X_i = log( exp($Q) + exp($Z_i) );
@@ -947,7 +947,7 @@ BEGIN {
     # name -> [symmetry, gamma, error ]
     $rtables_info = {
         P4000_G1X1   => [ 0, 1.1,   3.9e-6 ],
-        P4000_G1X2   => [ 0, 1.2,   1.5e-6 ],
+        P8000_G1X2   => [ 0, 1.2,   1.e-6 ],
         P4000_G1X3   => [ 0, 1.3,   2.7e-6 ],
         P8000_G1X4   => [ 0, 1.4,   1.1e-6 ],
         P4000_G1X667 => [ 0, 1.667, 1.5e-6 ],
@@ -957,7 +957,7 @@ BEGIN {
         C4000_G1X1   => [ 1, 1.1,   3.5e-6 ],
         C4000_G1X2   => [ 1, 1.2,   3.4e-6 ],
         C4000_G1X3   => [ 1, 1.3,   1.9e-6 ],
-        C16000_G1X4   => [ 1, 1.4,   8.e-7 ],
+        C16000_G1X4  => [ 1, 1.4,   8.e-7 ],
         C4000_G1X667 => [ 1, 1.667, 2.2e-6 ],
         C4000_G2     => [ 1, 2,     2.1e-6 ],
         C4000_G3     => [ 1, 3,     1.8e-6 ],
@@ -973,22 +973,22 @@ BEGIN {
 
     # All tables
 
-    # Let.. 
-    #  P0 = ambient atmospheric pressure
-    #  E  = explosion energy
-    #  n  = symmetry = 0,1, or 2  for plane, cylindrical or spherical
-    #  d = (E/P0)^(1/(n+1)) = scaling distance
-    #  lambda = scaled range = r/d, where r is distance
-    #  tau = scaled time = c0 t / d, where t is time and c0 is ambient sound speed
+  # Let..
+  #  P0 = ambient atmospheric pressure
+  #  E  = explosion energy
+  #  n  = symmetry = 0,1, or 2  for plane, cylindrical or spherical
+  #  d = (E/P0)^(1/(n+1)) = scaling distance
+  #  lambda = scaled range = r/d, where r is distance
+  #  tau = scaled time = c0 t / d, where t is time and c0 is ambient sound speed
 
     # The table format is:
     #  [ X, Y, dY/dX, Z, dZ/dX ]
     # where
     #  X = ln(lambda) where lambda = scaled range
     #  Y = ln(overpressure ratio) = ln (P/P0-1)
-    #  dYdX = derivative of Y with respect to X 
-    #  Z = ln ( lambda-tau) 
-    #  dZdX = derivative of X with respect to X 
+    #  dYdX = derivative of Y with respect to X
+    #  Z = ln ( lambda-tau)
+    #  dZdX = derivative of X with respect to X
 
     # Comments above each table give their estimated errors.  The maximum error
     # for a table is the estimated maximum error after interpolation to any
@@ -1006,14 +1006,14 @@ BEGIN {
 
     # The method of characteristics (MOC) calculations which carried the wave
     # to long range were found to have errors of about the same order of
-    # magnitude as the FD calculations.  
+    # magnitude as the FD calculations.
 
     # Cubic interpolation among the table points has a maximum error typically
-    # between 5.e-7 and 1.e-6, depending on the number of table points used.  
+    # between 5.e-7 and 1.e-6, depending on the number of table points used.
 
-    # These errors can be made almost arbitrarily small by increasing the number 
-    # of points in the FD calculation and in the tables.  My goal for these tables
-    # was to achieve a maximum error on the order of 1.e-6.
+  # These errors can be made almost arbitrarily small by increasing the number
+  # of points in the FD calculation and in the tables.  My goal for these tables
+  # was to achieve a maximum error on the order of 1.e-6.
 
     $rtables = {
 
@@ -1409,69 +1409,6 @@ BEGIN {
             [ 11.83920472, -6.09387162, -0.50044857, 5.61663406,  0.50230574 ],
             [ 13.93580441, -7.14281551, -0.50019804, 6.66807428,  0.50089479 ],
             [ 16.00015763, -8.17526659, -0.50008249, 7.70143149,  0.50033535 ],
-        ],
-
-        #    Overall Error Estimate:
-        #    Energy error to P=0.1 P0: 4.8e-07
-        #    Est Max FD Error (based on N/2 run) to R=70.01: 7.e-7
-        #    Est Max MOC error for R>70.01: 3.11e-07
-        #    Max interpolation error with cubic splines: 1.0023e-06
-        #    Est Max overall error after cubic interpolation: 1.5e-6
-        'P4000_G1X2' => [
-            [
-                -13.01929359, 12.00011385, -0.99999415, -13.02102096,
-                0.99913557
-            ],
-            [
-                -11.82708696, 10.80792625, -0.99997322, -11.83022438,
-                0.99842887
-            ],
-            [ -10.53366369, 9.51457558, -0.99990003, -10.53966215, 0.99699209 ],
-            [ -9.50940503,  8.49049553, -0.99972143, -9.51943470,  0.99496145 ],
-            [ -8.68802751,  7.66947259, -0.99936741, -8.70318665,  0.99236792 ],
-            [ -8.00436732,  6.98643240, -0.99874935, -8.02576338,  0.98920136 ],
-            [ -7.41766910,  6.40073062, -0.99775856, -7.44644943,  0.98543625 ],
-            [ -6.90240474,  5.88697350, -0.99626587, -6.93977128,  0.98104050 ],
-            [ -6.44065979,  5.42741220, -0.99411604, -6.48790569,  0.97596505 ],
-            [ -6.01989416,  5.00970951, -0.99112564, -6.07843211,  0.97014941 ],
-            [ -5.63025488,  4.62427006, -0.98707218, -5.70167424,  0.96350868 ],
-            [ -5.26368045,  4.26336834, -0.98168138, -5.34982310,  0.95592684 ],
-            [ -4.91233330,  3.91964044, -0.97458858, -5.01544552,  0.94722284 ],
-            [ -4.56815194,  3.58573168, -0.96528356, -4.69112024,  0.93711780 ],
-            [ -4.21949196,  3.25123833, -0.95291219, -4.36642765,  0.92508141 ],
-            [ -3.84015349,  2.89293136, -0.93546304, -4.01834414,  0.90972533 ],
-            [ -3.46910045,  2.54968018, -0.91392625, -3.68394590,  0.89230365 ],
-            [ -3.13029342,  2.24392888, -0.89033489, -3.38461686,  0.87433608 ],
-            [ -2.81320766,  1.96553616, -0.86515178, -3.11026519,  0.85587241 ],
-            [ -2.51963461,  1.71524833, -0.83966676, -2.86166625,  0.83756215 ],
-            [ -2.23630163,  1.48099670, -0.81370865, -2.62696597,  0.81902930 ],
-            [ -1.95392512,  1.25496278, -0.78717837, -2.39836885,  0.79999586 ],
-            [ -1.66460675,  1.03115575, -0.76001491, -2.16977312,  0.78022085 ],
-            [ -1.36905170,  0.81055223, -0.73296205, -1.94215933,  0.76005844 ],
-            [ -1.06625547,  0.59265026, -0.70656699, -1.71510230,  0.73976186 ],
-            [ -0.75259745,  0.37507841, -0.68109934, -1.48628223,  0.71941691 ],
-            [ -0.42394054,  0.15529653, -0.65677467, -1.25321059,  0.69909965 ],
-            [ -0.07602113, -0.06912890, -0.63380462, -1.01353328, 0.67891525 ],
-            [ 0.29662565,  -0.30121656, -0.61234238, -0.76431223, 0.65894953 ],
-            [ 0.70031296,  -0.54429847, -0.59253586, -0.50233589, 0.63931308 ],
-            [ 1.11764639,  -0.78790533, -0.57544624, -0.23939164, 0.62115938 ],
-            [ 1.53610395,  -1.02565185, -0.56131630, 0.01709407,  0.60503855 ],
-            [ 1.96472032,  -1.26361945, -0.54949104, 0.27324412,  0.59052488 ],
-            [ 2.40693676,  -1.50435350, -0.53962887, 0.53142972,  0.57747180 ],
-            [ 2.86905632,  -1.75175150, -0.53139867, 0.79549952,  0.56568897 ],
-            [ 3.35424520,  -2.00786151, -0.52459289, 1.06733021,  0.55511154 ],
-            [ 3.86742094,  -2.27557463, -0.51900961, 1.34970291,  0.54565427 ],
-            [ 4.41327256,  -2.55758341, -0.51448200, 1.64518656,  0.53726081 ],
-            [ 5.11344718,  -2.91624377, -0.51025984, 2.01820098,  0.52858358 ],
-            [ 5.88013257,  -3.30615687, -0.50708774, 2.42051918,  0.52125102 ],
-            [ 6.73073710,  -3.73642564, -0.50475714, 2.86117878,  0.51517255 ],
-            [ 7.68877224,  -4.21913755, -0.50308659, 3.35224257,  0.51026836 ],
-            [ 8.78566491,  -4.77027432, -0.50191873, 3.90971996,  0.50646709 ],
-            [ 9.83848027,  -5.29831255, -0.50123120, 4.44159275,  0.50408322 ],
-            [ 11.35838846, -6.05964917, -0.50064793, 5.20603958,  0.50204640 ],
-            [ 13.26379683, -7.01319121, -0.50027885, 6.16131860,  0.50082927 ],
-            [ 15.54447178, -8.15392038, -0.50009524, 7.30279854,  0.50027196 ],
-            [ 16.00014827, -8.38179758, -0.50007638, 7.53074775,  0.50021712 ],
         ],
 
         #    Overall Error Estimate:
@@ -2796,7 +2733,7 @@ BEGIN {
         #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 4.91e-08
         #    Est Max FD Error (based on N/2 run) to R=50.01: 5.2e-8
-        #    Est Max MOC error for R>50.01: 1.79e-07 
+        #    Est Max MOC error for R>50.01: 1.79e-07
         #    Max interpolation error with cubic splines: 5.0703e-07
         #    Est Max overall error after cubic interpolation: 7.3.e-7
         C16000_G1X4 => [
@@ -2862,12 +2799,12 @@ BEGIN {
             [ 16.35000171, -13.44352035, -0.75001468, 3.44888797,  0.24914869 ],
             [ 19.61228403, -15.89025115, -0.75000155, 4.26255051,  0.24961999 ],
             [ 27.12887201, -21.52769436, -0.75000001, 6.14040822,  0.24994149 ],
-          ],
+        ],
 
         #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 2.24e-07
         #    Est Max FD Error (based on N/2 run) to R=20.70: 2.8e-7
-        #    Est Max MOC error for R>20.70: 3.86e-07 
+        #    Est Max MOC error for R>20.70: 3.86e-07
         #    Max interpolation error with cubic splines: 5.0464e-07
         #    Est Max overall error after cubic interpolation: 1.1e-6
         'P8000_G1X4' => [
@@ -2927,7 +2864,66 @@ BEGIN {
             [ 14.78381232, -7.41671609,  -0.50006989, 7.21075190,  0.50090447 ],
             [ 19.28989861, -9.66994172,  -0.50001699, 9.46554066,  0.50011249 ],
             [ 23.80817302, -11.92911182, -0.50000208, 11.72488212, 0.50001208 ],
-          ],
+        ],
+
+        'P8000_G1X2' => [
+            [
+                -13.01924624, 12.00006662, -0.99999330, -13.02097366,
+                0.99913555
+            ],
+            [
+                -11.74508114, 10.72592253, -0.99996892, -11.74835009,
+                0.99836291
+            ],
+            [ -10.29668273, 9.27762108, -0.99987332, -10.30343822, 0.99661128 ],
+            [ -9.32619421,  8.30734036, -0.99966554, -9.33719102,  0.99447325 ],
+            [ -8.53822516,  7.51977205, -0.99926547, -8.55457212,  0.99176591 ],
+            [ -7.87689999,  6.85913461, -0.99858016, -7.89971815,  0.98847752 ],
+            [ -7.30638666,  6.28971146, -0.99749691, -7.33683466,  0.98458384 ],
+            [ -6.80339434,  5.78835102, -0.99588243, -6.84268657,  0.98005247 ],
+            [ -6.35112676,  5.33842929, -0.99357633, -6.40057493,  0.97483176 ],
+            [ -5.93726665,  4.92784496, -0.99038480, -5.99832438,  0.96885054 ],
+            [ -5.55296797,  4.54801969, -0.98607953, -5.62726458,  0.96202576 ],
+            [ -5.19005655,  4.19114039, -0.98036889, -5.27950625,  0.95422694 ],
+            [ -4.84103005,  3.85020918, -0.97287071, -4.94797488,  0.94526466 ],
+            [ -4.49715440,  3.51727787, -0.96302317, -4.62466833,  0.93482003 ],
+            [ -4.14521654,  3.18057287, -0.94984088, -4.29782089,  0.92226554 ],
+            [ -3.75050417,  2.80927985, -0.93067491, -3.93696574,  0.90573567 ],
+            [ -3.38804065,  2.47581068, -0.90861694, -3.61178237,  0.88818029 ],
+            [ -3.05502659,  2.17713001, -0.88461111, -3.31896766,  0.87009022 ],
+            [ -2.74351176,  1.90544249, -0.85926738, -3.05076222,  0.85162210 ],
+            [ -2.45327220,  1.65972368, -0.83368230, -2.80622530,  0.83328727 ],
+            [ -2.17090235,  1.42797989, -0.80759774, -2.57354487,  0.81466042 ],
+            [ -1.88749328,  1.20287667, -0.78091465, -2.34537410,  0.79546825 ],
+            [ -1.59532906,  0.97872609, -0.75358747, -2.11588562,  0.77547947 ],
+            [ -1.29839390,  0.75898523, -0.72666438, -1.88862442,  0.75527858 ],
+            [ -0.99334759,  0.54135865, -0.70046354, -1.66134323,  0.73496132 ],
+            [ -0.67646290,  0.32344662, -0.67524167, -1.43169323,  0.71461112 ],
+            [ -0.34368585,  0.10281075, -0.65122076, -1.19729717,  0.69431694 ],
+            [ 0.00962984,  -0.12319069,  -0.62858881, -0.95558754, 0.67417146 ],
+            [ 0.38900813,  -0.35756176,  -0.60750478, -0.70365393, 0.65427261 ],
+            [ 0.80131514,  -0.60392059,  -0.58810048, -0.43799701, 0.63472242 ],
+            [ 1.21820172,  -0.84558479,  -0.57179349, -0.17713607, 0.61710057 ],
+            [ 1.63899933,  -1.08325003,  -0.55825044, 0.07916011,  0.60137663 ],
+            [ 2.07020253,  -1.32144560,  -0.54693971, 0.33535961,  0.58724189 ],
+            [ 2.51724141,  -1.56375825,  -0.53748790, 0.59496215,  0.57449542 ],
+            [ 2.98429285,  -1.81288532,  -0.52962751, 0.86053249,  0.56301962 ],
+            [ 3.46442832,  -2.06558940,  -0.52326700, 1.12837348,  0.55294000 ],
+            [ 3.99507719,  -2.34175390,  -0.51783417, 1.41922338,  0.54354768 ],
+            [ 4.54953187,  -2.62762149,  -0.51353667, 1.71826540,  0.53540149 ],
+            [ 5.14440164,  -2.93203645,  -0.51010602, 2.03455751,  0.52824713 ],
+            [ 5.78698754,  -3.25890949,  -0.50740980, 2.37193053,  0.52203816 ],
+            [ 6.48716390,  -3.61341271,  -0.50532516, 2.73551016,  0.51672440 ],
+            [ 7.25735988,  -4.00196343,  -0.50374212, 3.13168829,  0.51226039 ],
+            [ 8.11497494,  -4.43343846,  -0.50256016, 3.56935432,  0.50859714 ],
+            [ 9.08677925,  -4.92137379,  -0.50168868, 4.06210340,  0.50567936 ],
+            [ 10.21650530, -5.48775538,  -0.50105075, 4.63202571,  0.50344858 ],
+            [ 11.56222480, -6.16169386,  -0.50059354, 5.30835570,  0.50186117 ],
+            [ 13.17437370, -6.96845425,  -0.50029045, 6.11653122,  0.50086580 ],
+            [ 15.04799172, -7.90562699,  -0.50012090, 7.05440548,  0.50034735 ],
+            [ 17.30573323, -9.03466385,  -0.50004032, 8.18374888,  0.50011360 ],
+            [ 20.36617188, -10.56494670, -0.50000885, 9.71414663,  0.50002472 ],
+        ],
     };
 }
 
