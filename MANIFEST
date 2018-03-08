@@ -15,3 +15,4 @@ t/miles_long_range.t
 t/test.t
 t/add_table.t
 t/arkhangelskii.t
+t/check_tables.t
