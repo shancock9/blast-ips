@@ -193,6 +193,44 @@ sub get_builtin_table {
     return ( $rtables->{$table_name}, $table_name );
 }
 
+sub check_tables {
+
+    # Should be called at program installation to check the tables
+
+    my @info_keys  = keys %{$rtables_info};
+    my @table_keys = keys %{$rtables};
+
+    # Check that the keys of the two table hashes are the same
+    my @missing_info_keys =
+      grep { !exists $rtables_info->{$_} } @table_keys;
+    my @missing_table_keys =
+      grep { !exists $rtables->{$_} } @info_keys;
+    my $error = @missing_info_keys || @missing_table_keys;
+    if ($error) {
+        local $" = ')(';
+        $error =<<EOM;
+------------------------------------------------------------------------
+Program error detected checking hash keys
+Have info but not table for: (@missing_table_keys)
+Have table but no info for: (@missing_info_keys)
+------------------------------------------------------------------------
+EOM
+	croak $error;
+    }
+
+    return $error if ($error); 
+
+    foreach my $key (@info_keys) {
+	my $rtable=$rtables->{$key};
+	#print STDERR "Checking table $key\n";
+	my $error=_check_table($rtable);
+        if ($error) {
+            return "Table $key:\n" . $error;
+        }
+    } 
+    return; 
+}
+
 sub _check_table {
 
     # Do some simple checks on the table
