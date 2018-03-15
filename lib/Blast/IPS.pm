@@ -193,6 +193,38 @@ sub get_builtin_table {
     return ( $rtables->{$table_name}, $table_name );
 }
 
+sub get_info {
+    my ($self)     = @_;
+
+    # Return some information about this case
+    my $rinfo      = {};
+    my $table_name = $self->{_table_name};
+    my $item       = $rtables_info->{$table_name};
+    my ( $symmetry, $gamma, $err_est ) = @{$item};
+    $rinfo->{table_name}      = $table_name;
+    $rinfo->{alpha}           = $self->{_alpha};
+    $rinfo->{symmetry}        = $self->{_symmetry};
+    $rinfo->{gamma}           = $self->{_gamma};
+    $rinfo->{estimated_error} = $err_est;
+    return ($rinfo);
+}
+
+sub get_table_index {
+
+    # returns a list of references of the form
+    #   [NAME, symmetry, gamma, error]
+    # one per built-in table
+
+    my @table_list;
+    foreach my $key(sort keys %{$rtables_info}) {
+        my $item = $rtables_info->{$key};
+        my( $symmetry, $gamma, $err_est ) = @{$item};
+	push @table_list, [$key, $symmetry, $gamma, $err_est];
+    }
+    return ( \@table_list );
+}
+
+
 sub check_tables {
 
     # Should be called at program installation to check the tables
