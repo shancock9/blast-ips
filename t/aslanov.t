@@ -11,11 +11,11 @@ is what is used here.
 
 He shows a graph of the error out to a scaled range of about 20.  The error in
 the model has a local peak of about 14% near a scaled range of about 0.8. 
+A comparison here gives close to the same error profile over that range.
 
-A comparison here gives approximately the same error profile over that range.
-However the error increases with increasing range beyond 20 and grows to about
-16% at long distances. This is unexpected because the model is intended to be
-asymptotically accurate at long range.
+However if we look over a wider range, the error increases beyond 20 and
+rapidly grows to about 16% at long distances. This is unexpected because the
+model was presented as asymptotically accurate at long range.  
 
 Reference:
 
