@@ -99,6 +99,15 @@ sub _setup {
         # Allow either 'symmetry' or the older 'ASYM' for the symmetry
         if ( !defined($symmetry) ) { $symmetry = $options->{ASYM}; }
 
+	# look up table if name given but no table
+        if ( !defined($rtable) && defined($table_name) ) {
+            ( $rtable, $table_name ) = get_builtin_table($table_name);
+            my $item = $rtables_info->{$table_name};
+            if ( defined($item) ) {
+               ( $symmetry, $gamma, my $err_est ) = @{$item};
+            }
+        }
+
         # Option to lookup table from symmetry and/or gamma
         if (   !defined($rtable)
             && !defined($table_name)
@@ -195,6 +204,11 @@ sub get_builtin_table {
 
 sub get_info {
     my ($self) = @_;
+    if (!ref($self)) {
+	my $what=ref $self;
+	print STDERR "$what\n";
+	croak("get_info not called by a Blast::IPS object");
+    }
 
     # Return some information about this case
     my $rinfo      = {};
