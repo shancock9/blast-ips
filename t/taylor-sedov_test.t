@@ -29,7 +29,7 @@ Reference:
 
     $rindex = Blast::IPS->get_table_index();
 
-    my $ntests = @{$rindex};
+    my $ntests = 0 + keys %{$rindex};
     plan tests => $ntests;
 }
 
@@ -39,11 +39,11 @@ my $VERBOSE = 0;
 my $err_stop=0.1;
 
 print "symmetry\tgamma\tX\tY\n" if ($VERBOSE);
-foreach my $item ( @{$rindex} ) {
-    my ($table_name, $symmetry, $gamma)=@{$item};
+foreach my $table_name ( keys %{$rindex} ) {
+    my $symmetry=$rindex->{$table_name}->{symmetry};
+    my $gamma=$rindex->{$table_name}->{gamma};
 
     # Create a table for this case
-    #my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my %args = ( 'table_name' => $table_name );
     my $blast_table = Blast::IPS->new( \%args );
     if ( !defined($blast_table) ) {
