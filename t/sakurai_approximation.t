@@ -21,7 +21,7 @@ BEGIN {
 
 # Allow up to 9% error down to lambda=0.4 Actual error is 8.4% there.
 my $TOL     = 0.09; 
-my $VERBOSE = 1;
+my $VERBOSE = 0;
 
 # Create a table for this case
 my $symmetry    = 2;
