@@ -29,8 +29,9 @@ The builtin tables cover the three one-dimensional symmetries (plane,
 cylindrical, spherical) and several values of the ideal gas gamma (1.1, 1.2,
 1.3, 1.4, 1.667, 2 and 3).  They were prepared with calculations using the
 finite difference method and the method of characteristics.  The estimated
-relative accuracy of interpolated shock overpressures depends on the table but
-is below 1.e-5 in all cases.
+maximum relative error in shock overpressure obtained by interpolating
+the builtin tables is about 1.e-6 at all ranges. This is orders of magnitude
+lower than any published tables that I have found.
 
 I will be adding documentation in the future. 
 

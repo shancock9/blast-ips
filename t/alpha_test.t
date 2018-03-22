@@ -25,12 +25,12 @@ Reference:
     #   [symmetry, gamma, alpha ]
     $ralpha_table = [
 
- # NOTE: for low gamma values such as gamma 1.1 the available codes have
- # difficulty producing accurate values.  I haven't looked into this in detail
- # but I got more accurate results using Aamer Haque's program sedov.c for 
- # low gamma's so that is what is below.
+    # NOTE: for low gamma values such as gamma 1.1 the available codes have
+    # difficulty producing accurate values.  I haven't looked into this in
+    # detail but I was able to get somewhat more accurate results by reducing
+    # the tolerances in Aamer Haque's program sedov.c 
 
-        #[2,1.1   , 3.41410750], # sedov3.c; less accurate
+        #[2,1.1   , 3.41410750], # sedov3.c 
         #[1,1.1   , 3.99292335], # sedov3.c
         #[0,1.1   , 2.24621135], # sedov3.c
 
@@ -67,44 +67,50 @@ Reference:
         [2, 1.45   , 7.52578653E-01],
 
           [ 0,   1.5, 0.420393169 ],
-#          [ 1, 1.5, 0.77524613 ],
-          [ 2, 1.5, 0.673357454 ],
+#          [ 1, 1.5, 0.77524613 ], C8000 ready for moc2; not sure what happened
+        [ 2, 1.5, 0.673357454 ],
 
-          [ 0, 1.6, 0.341134760 ],
-          [ 1, 1.6, 0.634833347 ],
+        [ 0, 1.6, 0.341134760 ],
+        [ 1, 1.6, 0.634833347 ],
         [ 2, 1.6, 0.55375103 ],
+
+	# The plane second shock seems to vanish near gamma=5/3
+ 	# it would be interesting to do some runs closer around this
 
         [ 0, 1.667, 0.301289264 ],
         [ 1, 1.667, 0.563965674 ],
         [ 2, 1.667, 0.493319042 ],
 
-        #[2,1.8, 0.402941901],  # S8000 ready for moc runs
-        #[1,1.8, 0.45813829],
-        #[0,1.8, 0.242077257],
+        #[2,1.8, 0.402941901],  # S8000 doing moc run
+        #[1,1.8, 0.45813829],   # C8000 finishing fd
+        #[0,1.8, 0.242077257],  # P8000 doing moc
 
         [ 0, 2,     0.183165883 ],
         [ 1, 2,     0.351935918 ],
         [ 2, 2,     3.11987797E-01 ],
 
         [2, 2.5 , 0.191356397],
-        #[1, 2.5 , 0.211963369],
-        #[0, 2.5 , 0.106854459],
+        #[1, 2.5 , 0.211963369],  # needs moc2
+        #[0, 2.5 , 0.106854459],  # Not started
 
         [ 0, 3,     7.09617192e-02 ],
         [ 1, 3,     1.44403233e-01 ],
         [ 2, 3,     0.132524085 ],
 
         [2,4, 0.0766253961],
-        #[1,4, 0.0811006953],
-        #[0,4, 0.0383442271],
+        #[1,4, 0.0811006953],  # running moc
+        #[0,4, 0.0383442271],  # not started
 
         [ 2, 5 , 0.050894114],
         [ 1, 5,  0.0524980647],
-        #[0, 5 , 0.0241337021],
+        [0, 5 , 0.0241337021], # REDO, switch at 100 or 200 & use moc3p
 
         [2,6, 0.0366750787],
         [1,6, 0.0369407716],
         [0,6, 0.0166211108],
+
+        # It would be interesting to get closer to 7 with the sphere
+        # to see what happens to the second shock
 
         [0,7 , 1.21555899e-02],
         [1,7 , 2.74799190e-02],
