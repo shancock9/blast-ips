@@ -1,7 +1,19 @@
+# Avoid temp and backup files.
+*~
+*.log
+*.bak
+*.tmp
+*.sw?
+*.DEBUG
+*.LOG
+*.tdy
+*.tar.gz
 /NOTES.txt
 Makefile
 tmp
 blib/
+tmp*/
+junk*
 pm_to_blib
 MYMETA.json
 MYMETA.yml
