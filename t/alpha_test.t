@@ -81,9 +81,9 @@ Reference:
         [ 1, 1.667, 0.563965674 ],
         [ 2, 1.667, 0.493319042 ],
 
-        #[2,1.8, 0.402941901],  # S8000 doing moc run
-        #[1,1.8, 0.45813829],   # C8000 finishing fd
-        #[0,1.8, 0.242077257],  # P8000 doing moc
+        #[2,1.8, 0.402941901],  # S8000 : MOC2 running
+        #[1,1.8, 0.45813829],   # C8000 : MOC running
+        #[0,1.8, 0.242077257],  # P8000 : MOC2 running
 
         [ 0, 2,     0.183165883 ],
         [ 1, 2,     0.351935918 ],
@@ -91,7 +91,7 @@ Reference:
 
         [2, 2.5 , 0.191356397],
         [1, 2.5 , 0.211963369], 
-        #[0, 2.5 , 0.106854459],  # Not started
+        [0, 2.5 , 0.106854459],  
 
         [ 0, 3,     7.09617192e-02 ],
         [ 1, 3,     1.44403233e-01 ],
@@ -99,11 +99,11 @@ Reference:
 
         [2,4, 0.0766253961],
         [1,4, 0.0811006953],  
-        #[0,4, 0.0383442271],  # not started
+        [0,4, 0.0383442271],  
 
         [ 2, 5 , 0.050894114],
         [ 1, 5,  0.0524980647],
-        [0, 5 , 0.0241337021], # REDO, switch at 100 or 200 & use moc3p
+        [0, 5 , 0.0241337021], # REDOING, using moc3p
 
         [2,6, 0.0366750787],
         [1,6, 0.0369407716],
@@ -132,8 +132,9 @@ foreach my $rcase ( @{$ralpha_table} ) {
     my ( $symmetry, $gamma, $alpha_t ) = @{$rcase};
 
     # Except for low values of gamma, as noted above, the program 'sedov3'
-    # appears to have an accuracy of better than 1.e-5.
-    my $TOL = $gamma == 1.1 ? 1.e-3 : 1.e-5;
+    # appears have an accuracy of better than 1.e-5 over most of the
+    # range but as high as 5.e-5 for cylinder gamma=1.5.
+    my $TOL = $gamma < 1.2 ? 1.e-3 : 5.e-5;
 
     # Create a table for this case
     my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
@@ -146,8 +147,7 @@ foreach my $rcase ( @{$ralpha_table} ) {
     my $alpha  = $blast_table->get_alpha();
     my $err    = abs( $alpha - $alpha_t ) / $alpha_t;
     my $err_pr = sprintf "%0.3g", $err;
-    if ($VERBOSE) {
-        print "alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n";
+    if (!ok( $err <= $TOL ) || $VERBOSE ) {
+        print STDERR "alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n";
     }
-    ok( $err <= $TOL );
 }
