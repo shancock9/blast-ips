@@ -1086,12 +1086,13 @@ BEGIN {
         'P1.5'   => [ 0, 1.5,   1.7e-6, 8000 ],
         'P1.6'   => [ 0, 1.6,   1.7e-6, 8000 ],
         'P1.667' => [ 0, 1.667, 1.1e-6, 8000 ],
+        'P1.8'   => [ 0, 1.8,   1.4e-6, 8000 ],
         'P2'     => [ 0, 2,     1.3e-6, 8000 ],
-        'P2.5'   => [ 0, 2.5,   2.6e-6, 4000 ],
+        'P2.5'   => [ 0, 2.5,   2.1e-6, 4000 ],
         'P3'     => [ 0, 3,     2.7e-6, 8000 ],
-        'P4'     => [ 0, 4,     3.8e-6, 4000 ],
+        'P4'     => [ 0, 4,     3.4e-6, 4000 ],
         'P5'     => [ 0, 5,     1.7e-6, 4000 ],
-        'P6'     => [ 0, 6,     1.3e-6, 4000 ],
+        'P6'     => [ 0, 6,     1.5e-6, 4000 ],
         'P7'     => [ 0, 7,     2.5e-6, 4000 ],
         'C1.1'   => [ 1, 1.1,   1.8e-6, 8000 ],
         'C1.15'  => [ 1, 1.15,  1.1e-6, 8000 ],
@@ -1106,11 +1107,11 @@ BEGIN {
         'C1.667' => [ 1, 1.667, 6.8e-7, 8000 ],
         'C1.8'   => [ 1, 1.8,   6.8e-7, 8000 ],
         'C2'     => [ 1, 2,     8.e-7,  8000 ],
-        'C2.5'   => [ 1, 2.5,   1.2e-6, 4000 ],
+        'C2.5'   => [ 1, 2.5,   9.3e-7, 4000 ],
         'C3'     => [ 1, 3,     1.6e-6, 8000 ],
-        'C4'     => [ 1, 4,     1.2e-6, 4000 ],
+        'C4'     => [ 1, 4,     8.7e-7, 4000 ],
         'C5'     => [ 1, 5,     4.6e-6, 4000 ],
-        'C6'     => [ 1, 6,     1.2e-6, 4000 ],
+        'C6'     => [ 1, 6,     9.e-7,  4000 ],
         'C7'     => [ 1, 7,     1.6e-6, 4000 ],
         'S1.1'   => [ 2, 1.1,   2.6e-6, 8000 ],
         'S1.15'  => [ 2, 1.15,  1.0e-6, 8000 ],
@@ -1126,11 +1127,11 @@ BEGIN {
         'S1.667' => [ 2, 1.667, 8.2e-7, 8000 ],
         'S1.8'   => [ 2, 1.8,   7.5e-7, 8000 ],
         'S2'     => [ 2, 2,     8.3e-7, 8000 ],
-        'S2.5'   => [ 2, 2.5,   1.3e-6, 4000 ],
+        'S2.5'   => [ 2, 2.5,   9.8e-7, 4000 ],
         'S3'     => [ 2, 3,     1.5e-6, 8000 ],
-        'S4'     => [ 2, 4,     1.4e-6, 4000 ],
-        'S5'     => [ 2, 5,     2e-6,   4000 ],
-        'S6'     => [ 2, 6,     1.4e-6, 4000 ],
+        'S4'     => [ 2, 4,     9.1e-7, 4000 ],
+        'S5'     => [ 2, 5,     1.1e-6, 4000 ],
+        'S6'     => [ 2, 6,     1.0e-6, 4000 ],
     };
 
     # Let..
@@ -4521,11 +4522,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 9.26e-07
-#    Est Max FD Error (based on N/2 run) to R=10.00: TBD
+#    Est Max FD Error (based on N/2 run) to R=10.00: 1.6e-7
 #    Est Max MOC error for R>10.00: -4.7e-07 
 #    Max interpolation error with cubic splines: 5.1265e-07
-#    Est Max overall error after cubic interpolation: 2.e-6
-#    
+#    Est Max overall error after cubic interpolation: 1.1e-6
 
 # Run:S4000_G5
 'S5' => [
@@ -4765,10 +4765,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 9.08e-07
-#    Est Max FD Error (based on N/2 run) to R=10.00: 6.25e-7
+#    Est Max FD Error (based on N/2 run) to R=10.00: 2.8e-7
 #    Est Max MOC error for R>10.00: -2.04e-07 
 #    Max interpolation error with cubic splines: 5.123e-07
-#    Est Max overall error after cubic interpolation: 1.3e-6
+#    Est Max overall error after cubic interpolation: 9.8e-7
 #    
 
 # Run:S4000_G2x5
@@ -5051,13 +5051,12 @@ BEGIN {
 #    max_Y_lin_err = 0.00099994 at X=-0.67053
 #    max_Z_lin_err = 0.00052013 at X=-0.7844
 #    max_dYdX_lin_err = 0.0017176 at X=-0.90509
-#    
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 9.53e-07
-#    Est Max FD Error (based on N/2 run) to R=10.00: 5.e-7
+#    Est Max FD Error (based on N/2 run) to R=10.00: 1.4e-7
 #    Est Max MOC error for R>10.00: -3.57e-07 
 #    Max interpolation error with cubic splines: 5.0796e-07
-#    Est Max overall error after cubic interpolation: 1.4e-6
+#    Est Max overall error after cubic interpolation: 1.e-6
 
 # Run:S4000_G6
 'S6' => [
@@ -5161,11 +5160,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 1.23e-06
-#    Est Max FD Error (based on N/2 run) to R=100.08: 6.2.e-7
+#    Est Max FD Error (based on N/2 run) to R=100.08: 8.3e-7
 #    Est Max MOC error for R>100.08: 1.92e-07 
 #    Max interpolation error with cubic splines: 5.0368e-07
-#    Est Max overall error after cubic interpolation: 1.3e-6
-#    
+#    Est Max overall error after cubic interpolation: 1.5e-6
 
 # Run:P4000_G6
 'P6' => [
@@ -5223,10 +5221,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 1.43e-06
-#    Est Max FD Error (based on N/2 run) to R=100.04: 6.25e-7
+#    Est Max FD Error (based on N/2 run) to R=100.04: 2.9e-7
 #    Est Max MOC error for R>100.04: -1.11e-07 
 #    Max interpolation error with cubic splines: 5.0504e-07
-#    Est Max overall error after cubic interpolation: 1.2e-6
+#    Est Max overall error after cubic interpolation: 9.e-7
 #    
 
 # Run:C4000_G6
@@ -5295,10 +5293,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 9.36e-07
-#    Est Max FD Error (based on N/2 run) to R=10.00: 6.25e-7
+#    Est Max FD Error (based on N/2 run) to R=10.00: 1.82e-7
 #    Est Max MOC error for R>10.00: -2.26e-07 
 #    Max interpolation error with cubic splines: 5.0825e-07
-#    Est Max overall error after cubic interpolation: 1.36e-7
+#    Est Max overall error after cubic interpolation: 9.1e-7
 
 # Run:S4000_G4
 'S4' => [
@@ -5457,7 +5455,7 @@ BEGIN {
 #    Est Max FD Error (based on N/2 run) to R=100.08: 8.8e-7
 #    Est Max MOC error for R>100.08: 2.86e-07 
 #    Max interpolation error with cubic splines: 5.0376e-07
-#    Est Max overall error after cubic interpolation: TBD
+#    Est Max overall error after cubic interpolation: 1.7e-6
 #    
 
 # Run:P4000_G5
@@ -5514,12 +5512,10 @@ BEGIN {
 ],
 
 #    Overall Error Estimate:
-
 #    Energy error to P=0.1 P0: 1.31e-06
-#    Est Max FD Error (based on N/2 run) to R=100.04: 6.2e-7
+#    Est Max FD Error (based on N/2 run) to R=100.04: 3.1e-7
 #    Est Max MOC error for R>100.04: 6.12e-08 
 #    Max interpolation error with cubic splines: 5.0885e-07
-#    Est Max overall error after cubic interpolation: 1.2e-6
 #    
 
 # Run:C4000_G4
@@ -5589,10 +5585,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 1.12e-06
-#    Est Max FD Error (based on N/2 run) to R=61.00: 6.3e-7
+#    Est Max FD Error (based on N/2 run) to R=61.00: 3.9e-7
 #    Est Max MOC error for R>61.00: -3.83e-08 
 #    Max interpolation error with cubic splines: 5.0678e-07
-#    Est Max overall error after cubic interpolation: TBD
+#    Est Max overall error after cubic interpolation: 9.3e-7
 #    
 
 # Run:C4000_G2x5
@@ -5739,11 +5735,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 1.42e-06
-#    Est Max FD Error (based on N/2 run) to R=100.08: TBD
+#    Est Max FD Error (based on N/2 run) to R=100.08: 9.7e-7
 #    Est Max MOC error for R>100.08: -1.88e-06 
 #    Max interpolation error with cubic splines: 5.0263e-07
-#    Est Max overall error after cubic interpolation: 3.8e-6
-#    
+#    Est Max overall error after cubic interpolation: 3.35e-6
 
 # Run:P4000_G4
 'P4' => [
@@ -5802,11 +5797,10 @@ BEGIN {
 
 #    Overall Error Estimate:
 #    Energy error to P=0.1 P0: 1.72e-06
-#    Est Max FD Error (based on N/2 run) to R=100.08: TBD
+#    Est Max FD Error (based on N/2 run) to R=100.08: 1.2e-6
 #    Est Max MOC error for R>100.08: 3.71e-07 
 #    Max interpolation error with cubic splines: 5.0327e-07
-#    Est Max overall error after cubic interpolation: 2.6e-6
-#    
+#    Est Max overall error after cubic interpolation: 2.1e-6
 
 # Run:P4000_G2x5
 'P2.5' => [
@@ -6041,6 +6035,66 @@ BEGIN {
 [212.39108902, -215.92291985, -1.00234463, 1.63979641, 0.00220707],
 ],
 
+#    Overall Error Estimate:
+#    Energy error to P=0.1 P0: 5.05e-07
+#    Est Max FD Error (based on N/2 run) to R=100.04: 3.6e-7
+#    Est Max MOC error for R>100.04: 5.69e-07 
+#    Max interpolation error with cubic splines: 5.0459e-07
+#    Est Max overall error after cubic interpolation: 1.4e-6
+#    
+
+# Run:P8000_G1x8
+'P1.8' => [
+[-11.72907336, 12.00017795, -0.99999210, -11.73094871, 0.99906145],
+[-9.95528800, 10.22643255, -0.99995152, -9.95984656, 0.99771565],
+[-8.76516145, 9.03641707, -0.99984025, -8.77344161, 0.99584351],
+[-7.82937016, 8.10087291, -0.99959353, -7.84262144, 0.99333346],
+[-7.07480056, 7.34676096, -0.99913676, -7.09417907, 0.99022619],
+[-6.43771260, 6.71044123, -0.99837138, -6.46444617, 0.98647890],
+[-5.88529891, 6.15922641, -0.99718043, -5.92066363, 0.98206102],
+[-5.39600036, 5.67170283, -0.99542489, -5.44134420, 0.97693133],
+[-4.95450684, 5.23273914, -0.99293854, -5.01128762, 0.97103180],
+[-4.54988256, 4.83161853, -0.98952544, -4.61970027, 0.96429218],
+[-4.17337889, 4.45987023, -0.98494847, -4.25803899, 0.95661656],
+[-3.81749699, 4.11036206, -0.97891203, -3.91910605, 0.94787081],
+[-3.47473804, 3.77611792, -0.97101845, -3.59588478, 0.93784576],
+[-3.13666587, 3.44951078, -0.96068706, -3.28074160, 0.92620073],
+[-2.79046996, 3.11920926, -0.94690134, -2.96244526, 0.91226857],
+[-2.39990598, 2.75314402, -0.92679288, -2.60963379, 0.89393776],
+[-2.04731256, 2.43023201, -0.90412173, -2.29771390, 0.87497625],
+[-1.72267578, 2.14062461, -0.87949679, -2.01676080, 0.85561381],
+[-1.42009257, 1.87834702, -0.85367824, -1.76078026, 0.83615056],
+[-1.13773323, 1.64094171, -0.82764708, -1.52736605, 0.81703515],
+[-0.86254921, 1.41681723, -0.80112741, -1.30516457, 0.79782628],
+[-0.58628895, 1.19923411, -0.77406089, -1.08745320, 0.77829151],
+[-0.30074626, 0.98217838, -0.74634398, -0.86809513, 0.75817902],
+[-0.00880212, 0.76831572, -0.71896065, -0.64970377, 0.73803513],
+[0.29173460, 0.55628537, -0.69235823, -0.43092291, 0.71804832],
+[0.60467910, 0.34367571, -0.66680129, -0.20933429, 0.69830339],
+[0.93404696, 0.12812586, -0.64252899, 0.01742747, 0.67889422],
+[1.28457345, -0.09301167, -0.61973445, 0.25201866, 0.65990495],
+[1.66224208, -0.32296095, -0.59856267, 0.49768664, 0.64140213],
+[2.07339015, -0.56495166, -0.57918717, 0.75763953, 0.62349820],
+[2.48036974, -0.79733995, -0.56334055, 1.00815192, 0.60792313],
+[2.89302122, -1.02699500, -0.55017781, 1.25609769, 0.59411137],
+[3.31755691, -1.25815178, -0.53920397, 1.50563392, 0.58175502],
+[3.75832900, -1.49373188, -0.53008822, 1.75955144, 0.57066973],
+[4.21947489, -1.73637525, -0.52256951, 2.02035878, 0.56071728],
+[4.70556504, -1.98883277, -0.51642848, 2.29068707, 0.55178391],
+[5.21999390, -2.25316848, -0.51149312, 2.57242813, 0.54380209],
+[5.76910572, -2.53290722, -0.50758775, 2.86902059, 0.53667959],
+[6.35651051, -2.83013234, -0.50457917, 3.18235852, 0.53038186],
+[6.99260437, -3.15032624, -0.50231706, 3.51790001, 0.52482064],
+[7.68433400, -3.49718925, -0.50068868, 3.87919193, 0.51996923],
+[8.44529467, -3.87773462, -0.49957852, 4.27320407, 0.51577168],
+[9.29605000, -4.30242656, -0.49888510, 4.71039722, 0.51217273],
+[10.26571412, -4.78597437, -0.49852346, 5.20547878, 0.50912857],
+[11.38514113, -5.34395593, -0.49842254, 5.77392540, 0.50662529],
+[12.67857209, -5.98867450, -0.49851409, 6.42785086, 0.50465716],
+[14.29093097, -6.79263797, -0.49874768, 7.24017065, 0.50308632],
+[16.44721412, -7.86844488, -0.49908086, 8.32351554, 0.50186150],
+[20.49847443, -9.89134941, -0.49953018, 10.35418623, 0.50079806],
+],
     };
 }
 
