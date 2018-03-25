@@ -20,18 +20,26 @@ Blast::IPS evaluates the shock overpressure for a point source explosion in an
 ideal homogeneous atmosphere.  This problem has a precise mathematical
 definition but it does not have an analytic solution except for the special
 case that the ambient atmospheric pressure is zero, so results are obtained by
-interpolating a table of values.
-
-A table of values may be supplied as a call argument, or alternatively one of
-the builtin tables may be used.  
+interpolating a builtin table of values.
 
 The builtin tables cover the three one-dimensional symmetries (plane,
-cylindrical, spherical) and several values of the ideal gas gamma (1.1, 1.2,
-1.3, 1.4, 1.667, 2 and 3).  They were prepared with calculations using the
-finite difference method and the method of characteristics.  The estimated
-maximum relative error in shock overpressure obtained by interpolating
-the builtin tables is about 1.e-6 at all ranges. This is orders of magnitude
-lower than any published tables that I have found.
+cylindrical, spherical) and several values of the ideal gas gamma ( from 1.1 to
+about 7).  They were prepared with calculations using the finite difference
+method and the method of characteristics.  
+
+The emphasis of this project is on getting an accurate estimate of the maximum
+error in the final interpolated values.  This is needed in in statistical
+models and is largely unavailable in existing published results. The individual
+point values of shock overpressure in the builtin tables have an estimated
+maximum error of about 1.e-7 in most cases.
+
+The estimated maximum relative error in shock overpressure obtained after
+interpolating the builtin tables with cubic interpolation for one of the gamma
+values is about 1.e-6 at all ranges. This is orders of magnitude lower than any
+published tables that I have found.
+
+Interpolation to arbitrary gamma values will soon be added and should have 
+a maximum interpolation error for any gamma and any distance of about 1.e-4.
 
 I will be adding documentation in the future. 
 

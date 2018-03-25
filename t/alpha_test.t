@@ -109,11 +109,10 @@ Reference:
         [1,6, 0.0369407716],
         [0,6, 0.0166211108],
 
-        # It would be interesting to get closer to 7 with the sphere
-        # to see what happens to the second shock
+        [ 2, 6.5,  3.18160802E-02 ],
 
-        [0,7 , 1.21555899e-02],
-        [1,7 , 2.74799190e-02],
+        [ 0, 7,   1.21555899e-02 ],
+        [ 1, 7,   2.74799190e-02 ],
 
 	# I am not doing spherical blasts for gamma 7 or higher because I
 	# haven't implemented a void capability for the blast core in the
