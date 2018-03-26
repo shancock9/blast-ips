@@ -122,7 +122,7 @@ Reference:
     ];
 
     my $ncases = @{$ralpha_table};
-    plan tests => $ncases;
+    plan tests => 2*$ncases;
 }
 
 my $VERBOSE = 0;
@@ -135,6 +135,9 @@ foreach my $rcase ( @{$ralpha_table} ) {
     # range but as high as 5.e-5 for cylinder gamma=1.5.
     my $TOL = $gamma < 1.2 ? 1.e-3 : 5.e-5;
 
+    # The table_interpolate alphas get large (near .002) near gamma=1.1
+    my $TOL_i = 2*$TOL;
+
     # Create a table for this case
     my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my $blast_table = Blast::IPS->new( \%args );
@@ -142,11 +145,23 @@ foreach my $rcase ( @{$ralpha_table} ) {
         die "missing table for sym=$symmetry, gamma=$gamma\n";
     }
 
+
     # get the value of alpha and compare
     my $alpha  = $blast_table->get_alpha();
     my $err    = abs( $alpha - $alpha_t ) / $alpha_t;
     my $err_pr = sprintf "%0.3g", $err;
+
     if (!ok( $err <= $TOL ) || $VERBOSE ) {
-        print STDERR "alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n";
+        print STDERR "blast wave alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n";
     }
+
+    # Also get the alpha from the interpolation function
+    my $alpha_i  = Blast::IPS::alpha_interpolate($symmetry, $gamma);
+    my $err_i    = abs( $alpha - $alpha_i ) / $alpha_i;
+    my $err_i_pr = sprintf "%0.3g", $err_i;
+
+    if (!ok( $err_i <= $TOL_i ) || $VERBOSE ) {
+        print STDERR "table interp alpha err_i=$err_i_pr for symmetry=$symmetry, gamma=$gamma\n";
+    }
+
 }
