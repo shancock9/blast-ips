@@ -64,6 +64,225 @@ sub new {
 }
 
 sub _setup {
+    my ( $self, @args ) = @_;
+
+    my @input_keys = qw(
+      rtable
+      table_name
+      gamma
+      symmetry
+    );
+    my %valid_input_keys;
+    @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
+
+    # Convert the various input methods to a hash ref
+    my $rinput_hash;
+    my $reftype;
+    if (@args) {
+        my $arg0    = $args[0];
+        my $reftype = ref($arg0);
+        if ( !$reftype ) {
+
+            if ( defined($arg0) ) {
+
+                # simple hash of named values
+                my %input_hash = @args;
+                $rinput_hash = \%input_hash;
+            }
+
+        }
+        elsif ( $reftype eq 'HASH' ) {
+            $rinput_hash = $arg0;
+        }
+        elsif ( $reftype eq "ARRAY" ) {
+
+            # useful? maybe delete this option?
+            $rinput_hash = { rtable => $arg0 };
+        }
+        else {
+            carp "Unexpected ref type: $reftype\n";
+            return;
+        }
+    }
+    else {
+
+        # default to spherical table with gamma 1.4 if no arg given
+        $rinput_hash = { symmetry => 2, gamma => 1.4 };
+    }
+
+    # Validate input keys
+    _check_keys( $rinput_hash, \%valid_input_keys,
+        "Checking for valid input keys" );
+
+    # The following four quantities are needed:
+    my $rtable     = $rinput_hash->{rtable};
+    my $table_name = $rinput_hash->{table_name};
+    my $gamma      = $rinput_hash->{gamma};
+    my $symmetry   = $rinput_hash->{symmetry};
+
+    # Allow input of the older 'ASYM' keyword for the symmetry
+    if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
+
+    # There are three input options:
+
+    # Option 1: a user-supplied table is given
+    if ( defined($rtable) ) {
+
+        if ( !defined($gamma) )      { $gamma      = 1.4 }
+        if ( !defined($symmetry) )   { $symmetry   = 2 }
+        if ( !defined($table_name) ) { $table_name = 'NONAME' }
+    }
+
+    # Option 2: a builtin table name is given
+    elsif ( defined($table_name) ) {
+        ( $rtable, $table_name ) = get_builtin_table($table_name);
+        my $item = $rtables_info->{$table_name};
+        if ( defined($item) ) {
+            ( $symmetry, $gamma, my $err_est ) = @{$item};
+        }
+        else {
+            carp("Unknown table name: '$table_name'");
+            return;
+        }
+    }
+
+    # Option 3: lookup a table given symmetry and gamma
+    else {
+        if ( !defined($gamma) )    { $gamma    = 1.4 }
+        if ( !defined($symmetry) ) { $symmetry = 2 }
+
+	# allow simple abbreviations for symmetry
+        $symmetry = uc $symmetry;
+        if    ( $symmetry eq 'S' ) { $symmetry = 2 }
+        elsif ( $symmetry eq 'C' ) { $symmetry = 1 }
+        elsif ( $symmetry eq 'P' ) { $symmetry = 0 }
+        my @keys = reverse sort keys %{$rtables_info};
+
+        # Look through our list of tables for the best match
+        my $err_est;
+
+        # FIXME: interpolate if necessary
+
+        # allow a small roundoff error when comparing gamma
+        my $eps = 1.e-6;
+        foreach my $key (@keys) {
+            my $item = $rtables_info->{$key};
+            my ( $symmetry_t, $gamma_t, $err_est_t ) = @{$item};
+            next if $symmetry_t != $symmetry;
+            next if abs( $gamma_t - $gamma ) > $eps;
+
+            # use table with min error estimate
+            if ( !defined($table_name) || $err_est_t < $err_est ) {
+                $table_name = $key;
+                $err_est    = $err_est_t;
+            }
+        }
+
+        if ( defined($table_name) ) {
+            ( $rtable, $table_name ) = get_builtin_table($table_name);
+
+            #print "Found Table $table_name\n";
+        }
+        else {
+
+            # Make a table by interpolation
+
+        }
+    }
+
+##    # A scalar value is the name of a pre-defined table
+##    elsif ( !$reftype ) {
+##        ( $rtable, $table_name ) = get_builtin_table($rinput_hash);
+##    }
+##    else {
+##        croak "Unexpected argument type $reftype in Blast::Table";
+##    }
+##
+##?    if ( defined($table_name) ) {
+##?        my $item = $rtables_info->{$table_name};
+##?        if ( defined($item) ) {
+##?            ( $symmetry, $gamma, my $err_est ) = @{$item};
+##?        }
+##?    }
+##?    else {
+##?        $table_name = "NONAME";
+##?    }
+
+    # Now check the results
+
+    my $error = "";
+##    if ( !defined($rtable) ) {
+##        $error .=
+##"Undefined Table in Blast::Table\nfor symmetry=$symmetry, gamma=$gamma, name=$table_name\n";
+##    }
+##
+##    $gamma    = 1.4 unless defined($gamma);
+##    $symmetry = 2   unless defined($symmetry);
+
+    if ( $gamma <= 1.0 ) { $error .= "Bad gamma='$gamma'\n" }
+    if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
+        $error .= "Bad symmetry='$symmetry'\n";
+    }
+
+    my $table_error = _check_table($rtable);
+    $error .= $table_error;
+
+    my $num_table;
+    if ( !$error ) {
+        $rtable    = _setup_toa_table($rtable);
+        $num_table = @{$rtable};
+    }
+
+    $self->{_rtable}     = $rtable;
+    $self->{_table_name} = $table_name;
+    $self->{_gamma}      = $gamma;
+    $self->{_symmetry}   = $symmetry;
+    $self->{_jl}         = -1;
+    $self->{_ju}         = $num_table;    #@{$rtable};
+    $self->{_error}      = $error;
+
+    if ($error) { carp "$error\n" }
+    else {
+        $self->_end_model_setup();
+    }
+    return;
+}
+
+sub _check_keys {
+    my ( $rtest, $rvalid, $msg, $exact_match ) = @_;
+
+    # Check the keys of a hash:
+    # $rtest  = ref to hash to test
+    # $rvalid = ref to has with valid keys
+
+    # $msg = a message to write in case of error
+    # $exact_match defines the type of check:
+    #     = false: test hash must not have unknown key
+    #     = true:  test hash must have exactly same keys as known hash
+    my @unknown_keys =
+      grep { $_ && !exists $rvalid->{$_} } keys %{$rtest};
+    my @missing_keys =
+      grep { !exists $rtest->{$_} } keys %{$rvalid};
+    my $error = @unknown_keys;
+    if ($exact_match) { $error ||= @missing_keys }
+    if ($error) {
+        local $" = ')(';
+        my @expected_keys = sort keys %{$rvalid};
+        @unknown_keys = sort @unknown_keys;
+        croak(<<EOM);
+------------------------------------------------------------------------
+Program error detected checking hash keys
+Message is: '$msg'
+Expected keys: (@expected_keys)
+Unknown key(s): (@unknown_keys)
+Missing key(s): (@missing_keys)
+------------------------------------------------------------------------
+EOM
+    }
+    return;
+}
+
+sub _old_setup {
     my ( $self, $arg ) = @_;
     my ( $rtable, $options, $table_name );
 
@@ -83,6 +302,7 @@ sub _setup {
 
     my $reftype = ref($arg);
 
+    # THIS SHOULD BE DELETED BECAUSE WE NEED THE SYMMETRY AND GAMMA
     # A reference to an array gives a specific table
     if ( $reftype eq "ARRAY" ) {
         $rtable = $arg;
