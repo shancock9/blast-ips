@@ -1,14 +1,18 @@
 bin/blast_ips.pl
+examples/blast_tables_list.pl
 lib/Blast/IPS.pm
+lib/Blast/IPS/Data.pm
 LICENSE
 Makefile.PL
-MANIFEST
+MANIFEST			This list of files
 README.md
 t/add_table.t
 t/alpha_test.t
 t/arkhangelskii.t
 t/aslanov.t
+t/brode_analytic.t
 t/brode_digitized.t
+t/brode_velocity_fit.t
 t/check_tables.t
 t/goldstine_von_neumann.t
 t/interpolation_test.t
@@ -16,4 +20,6 @@ t/korobeinikov_analytic.t
 t/korobeinikov_mir.t
 t/miles_long_range.t
 t/okhotshimskii.t
+t/sakurai_approximation.t
+t/taylor-sedov_test.t
 t/test.t

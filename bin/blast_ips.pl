@@ -6,9 +6,10 @@ use strict;
 use Blast::IPS;
 
 my $symmetry=2; 
-my $gamma=1.4;
-my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-my $blast_table = Blast::IPS->new( \%args );
+my $gamma=1.23;
+#my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
+#my $blast_table = Blast::IPS->new( \%args );
+my $blast_table = Blast::IPS->new( symmetry=>$symmetry, gamma=>$gamma );
 my %symmetry_name = (
     0 => 'Plane',
     1 => 'Cylindrical',
