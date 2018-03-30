@@ -5,9 +5,9 @@ use strict;
 # This is a simple driver for Blast::IPS
 use Blast::IPS;
 
-my $ASYM=2; 
+my $symmetry=2; 
 my $gamma=1.4;
-my %args = ( 'ASYM' => $ASYM, 'gamma' => $gamma );
+my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
 my $blast_table = Blast::IPS->new( \%args );
 my %symmetry_name = (
     0 => 'Plane',
@@ -17,7 +17,7 @@ my %symmetry_name = (
 
 print <<EOM;
 Blast form a point source in an ideal atmosphere
-Symmetry=$symmetry_name{$ASYM}
+Symmetry=$symmetry_name{$symmetry}
 Gamma=$gamma
 EOM
 

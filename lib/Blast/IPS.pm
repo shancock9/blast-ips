@@ -30,6 +30,7 @@ use Carp;
 my $rtables;
 my $rtables_info;
 my $ralpha_table;
+my $rgamma_table;
 
 # Evaluate the shock overpressure for point source explosion in an ideal
 # homogeneous atmosphere.  This does not have an analytic solution, so
@@ -50,16 +51,14 @@ my $ralpha_table;
 # Allow lookup on slope dYdX or dZdX, with quadratic interpolation
 # Work is needed to handle interpolations beyond the ranges of the tables for some
 # spherical symmetry variables.
-# Question: how accurate would it be to interpolate on gamma (or gamma-1) between tables?
-# Are there any theoretical results to guide this (such as low gamma theories)?
 # An interesting way to test is to have the driver get a builtin table, truncate at
 # both ends, reinstall it and look at the errors at both missing ends.
 
 sub new {
-    my ( $class, $rtable, $options ) = @_;
+    my ( $class, @args ) = @_;
     my $self = {};
     bless $self, $class;
-    $self->_setup( $rtable, $options );
+    $self->_setup( @args );
     return $self;
 }
 
@@ -135,7 +134,8 @@ sub _setup {
 
     # Option 2: a builtin table name is given
     elsif ( defined($table_name) ) {
-        ( $rtable, $table_name ) = get_builtin_table($table_name);
+        #( $rtable, $table_name ) = get_builtin_table($table_name);
+        $rtable = get_builtin_table($table_name);
         my $item = $rtables_info->{$table_name};
         if ( defined($item) ) {
             ( $symmetry, $gamma, my $err_est ) = @{$item};
@@ -151,74 +151,47 @@ sub _setup {
         if ( !defined($gamma) )    { $gamma    = 1.4 }
         if ( !defined($symmetry) ) { $symmetry = 2 }
 
-	# allow simple abbreviations for symmetry
+        # allow simple abbreviations for symmetry
         $symmetry = uc $symmetry;
         if    ( $symmetry eq 'S' ) { $symmetry = 2 }
         elsif ( $symmetry eq 'C' ) { $symmetry = 1 }
         elsif ( $symmetry eq 'P' ) { $symmetry = 0 }
-        my @keys = reverse sort keys %{$rtables_info};
 
-        # Look through our list of tables for the best match
-        my $err_est;
+        # Search for this gamma value
+        my $result = _gamma_lookup( $symmetry, $gamma );
+        my $table_name = $result->{table_name};
 
-        # FIXME: interpolate if necessary
-
-        # allow a small roundoff error when comparing gamma
-        my $eps = 1.e-6;
-        foreach my $key (@keys) {
-            my $item = $rtables_info->{$key};
-            my ( $symmetry_t, $gamma_t, $err_est_t ) = @{$item};
-            next if $symmetry_t != $symmetry;
-            next if abs( $gamma_t - $gamma ) > $eps;
-
-            # use table with min error estimate
-            if ( !defined($table_name) || $err_est_t < $err_est ) {
-                $table_name = $key;
-                $err_est    = $err_est_t;
-            }
-        }
-
+        # Get builtin table if there is one
         if ( defined($table_name) ) {
-            ( $rtable, $table_name ) = get_builtin_table($table_name);
-
-            #print "Found Table $table_name\n";
+            $rtable = get_builtin_table($table_name);
         }
+
+        # Otherwise, make an interpolated table
         else {
 
-            # Make a table by interpolation
+            my $igam1 = $result->{igam1};
+            my $igam2 = $result->{igam2};
+            my $igam3 = $result->{igam3};
+            my $igam4 = $result->{igam4};
 
+#            print STDERR <<EOM;
+#must interpolate for sym=$symmetry, gamma=$gamma using:
+#igam1=$igam1
+#igam2=$igam2
+#igam3=$igam3
+#igam4=$igam4
+#EOM
+
+            # Make a table by interpolation
+            $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
+                $igam1, $igam2, $igam3, $igam4 );
+            $table_name = "Interpolated" unless ($table_name);
         }
     }
 
-##    # A scalar value is the name of a pre-defined table
-##    elsif ( !$reftype ) {
-##        ( $rtable, $table_name ) = get_builtin_table($rinput_hash);
-##    }
-##    else {
-##        croak "Unexpected argument type $reftype in Blast::Table";
-##    }
-##
-##?    if ( defined($table_name) ) {
-##?        my $item = $rtables_info->{$table_name};
-##?        if ( defined($item) ) {
-##?            ( $symmetry, $gamma, my $err_est ) = @{$item};
-##?        }
-##?    }
-##?    else {
-##?        $table_name = "NONAME";
-##?    }
 
     # Now check the results
-
     my $error = "";
-##    if ( !defined($rtable) ) {
-##        $error .=
-##"Undefined Table in Blast::Table\nfor symmetry=$symmetry, gamma=$gamma, name=$table_name\n";
-##    }
-##
-##    $gamma    = 1.4 unless defined($gamma);
-##    $symmetry = 2   unless defined($symmetry);
-
     if ( $gamma <= 1.0 ) { $error .= "Bad gamma='$gamma'\n" }
     if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
         $error .= "Bad symmetry='$symmetry'\n";
@@ -246,6 +219,90 @@ sub _setup {
         $self->_end_model_setup();
     }
     return;
+}
+
+sub _gamma_lookup {
+    my ( $sym, $gamma, $eps ) = @_;
+
+    # Given: a 1d symmetry (0, 1, or 2) and an ideal gas gamma
+    # Return: the names of the builtin tables with bounding gammas 
+
+    # uses $rgamma_table, the global table of gamma values for the builtin
+    # tables
+
+    # There are three possible results:
+
+    # 1. returns nothing if gamma is out of bounds or there is an error
+
+    # 2. If the gamma is within a small tolerance of one of these gammas
+    # then returns reference to a hash with
+    #     table_name => $table_name
+
+    # 3. If the gamma differs from the table entries but is within
+    # bounds of the table, returns four surrounding table names
+    # for use in cubic interpolation. These have hash keys
+    # table_name1, table_name2, table_name3 and table_name4
+
+    return if ( $sym != 0 && $sym != 1 && $sym != 2 );
+    $eps  = 1.e-5 unless ($eps);;
+
+    my $return_hash={};
+
+    # lookup this gamma in the table of gamma values for this symmetry
+    my $rtab = $rgamma_table->[$sym];
+    my $ntab = @{$rtab};
+    my $icol = 0;
+    my $rhash = {
+        _jl     => undef,
+        _ju     => undef,
+        _rtable => $rtab,
+    };
+    my ( $j2, $j3 ) = Blast::IPS::_locate_2d( $rhash, $gamma, $icol );
+    my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
+    my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
+
+    # Check if out of bounds 
+    if ( $j2 < 0 ) {
+        return if ( $gamma + $eps < $gamma_min );
+	$return_hash->{'table_name'}=$key_min;
+	$return_hash->{'igam'}=0;
+        return $return_hash;
+    }
+    if ( $j3 >= $ntab ) {
+        return if ( $gamma - $eps > $gamma_max );
+	$return_hash->{'table_name'}=$key_max;
+	$return_hash->{'igam'}=$ntab-1;
+        return $return_hash;
+    }
+
+    # Check for an exact match:
+    my ( $gamma2, $key2 ) = @{ $rtab->[$j2] };
+    my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
+    if (abs($gamma-$gamma2)<$eps) {
+	$return_hash->{'table_name'}=$key2;
+	$return_hash->{'igam'}=$j2;
+	return $return_hash;
+    }
+    if (abs($gamma-$gamma3)<$eps) {
+	$return_hash->{'table_name'}=$key3;
+	$return_hash->{'igam'}=$j3;
+	return $return_hash;
+    }
+
+    # Not an exact match: return indexes of four bounding tables in preparation
+    # for cubic interpolation.
+    my $j1 = $j2 - 1;
+    my $j4 = $j3 + 1;
+    if ( $j1 < 0 )      { $j1 = $j2 }
+    if ( $j4 >= $ntab ) { $j4 = $j3 }
+
+    $return_hash = {
+        igam1 => $j1,
+        igam2 => $j2,
+        igam3 => $j3,
+        igam4 => $j4,
+    };
+    return ($return_hash);
 }
 
 sub _check_keys {
@@ -284,7 +341,11 @@ EOM
 
 sub get_builtin_table {
     my ($table_name) = @_;
-    return ( $rtables->{$table_name}, $table_name );
+    return ( $rtables->{$table_name});
+}
+
+sub get_rgamma_table {
+    return $rgamma_table;
 }
 
 sub get_info {
@@ -1175,7 +1236,7 @@ sub alpha_interpolate {
     };
     ( $jl, $ju ) = _locate_2d( $rhash, $gamma, $icol );
     my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
-    my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
+    my ( $gamma_max, $alpha_max ) = @{ $rtab->[-1] };
     if ( $jl < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         return $alpha_min;
@@ -1193,87 +1254,204 @@ sub alpha_interpolate {
     return ($alpha);
 }
 
-sub _make_intermediate_table {
+sub _make_intermediate_gamma_table {
 
-    # Given: a symmetry, gamma, and two tables with same symmetry and
-    # bounding gamma values
-    # Return: a table of X,Y,dYdX,Z,dZdX interpolated from the two 
-    # bounding tables.
+    # Given: a symmetry, gamma, and the indexes of four bounding builtin tables
+    #     such that the gamma of interest is between numbers 2 and 3
+    #     and such that at least three are different tables
+    # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
+    #     by using cubic interpolation between the four builtin tables
 
-    # The error depends on the difference between the gamma value and the gamma
-    # values of the bounding tables. For the current set of tables, the maximum
-    # relative error in overpressure ratio for the generated table is about
-    # 5.e-4.  I would like to reduce that.
-
-    my ( $symmetry, $gamma_mid, $blast_table_lo, $blast_table_hi) = @_;
+    my ( $symmetry, $gamma_x, $igam1, $igam2, $igam3, $igam4 ) = @_;
     my $rtable_new;
-    my $alpha_mid = Blast::IPS::alpha_interpolate( $symmetry, $gamma_mid );
+    my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
 
     # Evaluate the interpolation fraction
-    my $gamma_lo = $blast_table_lo->get_gamma();
-    my $gamma_hi = $blast_table_hi->get_gamma();
-    my $alpha_lo = $blast_table_lo->get_alpha();
-    my $alpha_hi = $blast_table_hi->get_alpha();
+    my ( $gamma_1, $table_name_1 ) = @{ $rgamma_table->[$symmetry]->[$igam1] };
+    my ( $gamma_2, $table_name_2 ) = @{ $rgamma_table->[$symmetry]->[$igam2] };
+    my ( $gamma_3, $table_name_3 ) = @{ $rgamma_table->[$symmetry]->[$igam3] };
+    my ( $gamma_4, $table_name_4 ) = @{ $rgamma_table->[$symmetry]->[$igam4] };
 
-    my $A_lo  = 1 / ( ( $gamma_lo + 1 ) * $alpha_lo );
-    my $A_mid = 1 / ( ( $gamma_mid + 1 ) * $alpha_mid );
-    my $A_hi  = 1 / ( ( $gamma_hi + 1 ) * $alpha_hi );
-    my $ff = log( $A_mid / $A_lo ) / log( $A_hi / $A_lo );
+    my $alpha_1 = alpha_interpolate( $symmetry, $gamma_1 );
+    my $alpha_2 = alpha_interpolate( $symmetry, $gamma_2 );
+    my $alpha_3 = alpha_interpolate( $symmetry, $gamma_3 );
+    my $alpha_4 = alpha_interpolate( $symmetry, $gamma_4 );
 
-    # Small errors in alpha can cause ff to go out of bounds
-    if ( $ff < 0 ) { $ff = 0 }
-    if ( $ff > 1 ) { $ff = 1 }
+    my $rtable_1 = get_builtin_table($table_name_1);
+    my $rtable_2 = get_builtin_table($table_name_2);
+    my $rtable_3 = get_builtin_table($table_name_3);
+    my $rtable_4 = get_builtin_table($table_name_4);
+
+    my $A_1 = -log( ( $gamma_1 + 1 ) * $alpha_1 );
+    my $A_2 = -log( ( $gamma_2 + 1 ) * $alpha_2 );
+    my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
+    my $A_3 = -log( ( $gamma_3 + 1 ) * $alpha_3 );
+    my $A_4 = -log( ( $gamma_4 + 1 ) * $alpha_4 );
+
+    # This is the fraction that would be used for linear interpolation
+    # of X
+    my $ff = ( $A_x - $A_2 ) / ( $A_3 - $A_2 );
 
     # Use the Y values of the closest table so that we converge to it. But clip
     # the Y to the lower bounds of the other table to avoid extrapolation at
-    # long range where the theory is not great. 
+    # long range where the theory is not great.
     my $rtable_closest;
-    my $rbounds;
     if ( $ff <= 0.5 ) {
-        $rtable_closest = $blast_table_lo->get_table();
-        $rbounds        = $blast_table_hi->get_table_bounds();
+        $rtable_closest = $rtable_2;
     }
     else {
-        $rtable_closest = $blast_table_hi->get_table();
-        $rbounds        = $blast_table_lo->get_table_bounds();
+        $rtable_closest = $rtable_3;
     }
-    my $Ymax = $rbounds->[0]->[1];
-    my $Ymin = $rbounds->[1]->[1];
 
-    my $iQ = 'Y';
+    my $lookup = sub {
 
-    my $rtab_int = [];
-    my $stop;
-    foreach my $item_ref(@{$rtable_closest}){
-	last if ($stop);
-	my $Y=$item_ref->[1];
-        if ( $Y < $Ymin ) {
-            $Y    = $Ymin;
-            $stop = 1;
+        # This is a specialized version of lookup for gamma interpolation
+        # for this routine which avoids extrapolation
+
+        # Given:
+        #     $Y = a value of 'Y' = ln(overpressure) to lookup
+        #     $rtab = a builtin blast table
+
+	# Returns undef if out of bounds of table; otheerwise
+        # Returns
+        # 	[X, Y, dY/dX, Z]
+
+        my ( $Y, $rtab ) = @_;
+        my $icol   = 1;
+        my $interp = 0;   # use cubic interpolation
+
+        my $ntab  = @{$rtab};
+        my $rhash = {
+            _rtable => $rtab,
+            _jl     => undef,
+            _ju     => undef,
+        };
+
+        # Locate this point in the table
+        my ( $il, $iu ) = _locate_2d( $rhash, $Y, $icol );
+
+        # Handle case before start of the table
+        if ( $il < 0 ) {
+            return;
         }
-        my $item_lo = $blast_table_lo->lookup( $Y, $iQ );
-        my $item_hi = $blast_table_hi->lookup( $Y, $iQ );
-        my ( $X_lo, $YY_lo, $dYdX_lo, $Z_lo, $dZdX_lo ) = @{$item_lo};
-        my ( $X_hi, $YY_hi, $dYdX_hi, $Z_hi, $dZdX_hi ) = @{$item_hi};
 
-        my $X_int = $X_lo + $ff * ( $X_hi - $X_lo );
-        my $Z_int = $Z_lo + $ff * ( $Z_hi - $Z_lo );
+        # Handle case beyond end of the table
+        elsif ( $iu >= $ntab ) {
+            return;
+        }
 
-        my $dXdY_lo  = 1 / $dYdX_lo;
-        my $dXdY_hi  = 1 / $dYdX_hi;
-        my $dXdY_int = $dXdY_lo + $ff * ( $dXdY_hi - $dXdY_lo );
-        my $dYdX_int = 1 / $dXdY_int;
+        # otherwise interpolate within table
+        else {
+            return _interpolate_rows( $Y, $icol, $rtab->[$il],
+                $rtab->[$iu], $interp );
+        }
+    };
 
-        my $dXdZ_lo  = 1 / $dZdX_lo;
-        my $dXdZ_hi  = 1 / $dZdX_hi;
-        my $dXdZ_int = $dXdZ_lo + $ff * ( $dXdZ_hi - $dXdZ_lo );
-        my $dZdX_int = 1 / $dXdZ_int;
+    # Loop over all Y values in the closest table to make the interpolated
+    # table
+    my $rtab_x = [];
+    foreach my $item_ref ( @{$rtable_closest} ) {
+        my $Y      = $item_ref->[1];
+        my $item_1 = $lookup->( $Y, $rtable_1 );
+        my $item_2 = $lookup->( $Y, $rtable_2 );
+        my $item_3 = $lookup->( $Y, $rtable_3 );
+        my $item_4 = $lookup->( $Y, $rtable_4 );
 
-        #print STDERR "$Y\t$Z_lo\t$Z_int\t$Z_hi\t$dZdX_lo\t$dZdX_int\t$dZdX_hi\n";
+	# Can only interpolate if all 4 tables are defined
+        next unless ( $item_1 && $item_2 && $item_3 && $item_4 );
 
-        push @{$rtab_int}, [ $X_int, $Y, $dYdX_int, $Z_int, $dZdX_int ];
+        my ( $X_1, $YY_1, $dYdX_1, $Z_1, $dZdX_1 ) = @{$item_1};
+        my ( $X_2, $YY_2, $dYdX_2, $Z_2, $dZdX_2 ) = @{$item_2};
+        my ( $X_3, $YY_3, $dYdX_3, $Z_3, $dZdX_3 ) = @{$item_3};
+        my ( $X_4, $YY_4, $dYdX_4, $Z_4, $dZdX_4 ) = @{$item_4};
+
+        my $cubic_int = sub {
+
+            # We are given four consecutive points. The point to which
+            # we want to interpolate is between the two central points.
+            my ( $Q_1, $Q_2, $Q_3, $Q_4 ) = @_;
+            my ( $dQdA_2, $dQdA_3 );
+            if ( $A_1 != $A_2 ) {
+                ( my $slope_1, $dQdA_2, my $slope_3 ) =
+                  parabolic_slopes( $A_1, $Q_1, $A_2, $Q_2, $A_3, $Q_3 );
+                if ( $A_4 == $A_3 ) { $dQdA_3 = $slope_3 }
+            }
+
+            if ( $A_4 != $A_3 ) {
+                ( my $slope_2, $dQdA_3, my $slope_4 ) =
+                  parabolic_slopes( $A_2, $Q_2, $A_3, $Q_3, $A_4, $Q_4 );
+                if ( $A_1 == $A_2 ) { $dQdA_2 = $slope_2 }
+            }
+
+            my ( $Q_x, $dQdA_x, $d2QdA2_x, $d3QdA3_x ) =
+              _cubic_interpolation( $A_x, $A_2, $Q_2, $dQdA_2,
+                $A_3, $Q_3, $dQdA_3 );
+            return $Q_x;
+        };
+
+        my $X_x    = $cubic_int->( $X_1,    $X_2,    $X_3,    $X_4 );
+        my $Z_x    = $cubic_int->( $Z_1,    $Z_2,    $Z_3,    $Z_4 );
+        my $dYdX_x = $cubic_int->( $dYdX_1, $dYdX_2, $dYdX_3, $dYdX_4 );
+        my $dZdX_x = $cubic_int->( $dZdX_1, $dZdX_2, $dZdX_3, $dZdX_4 );
+
+        push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
     }
-    return $rtab_int;
+    return $rtab_x;
+}
+
+sub parabolic_slopes {
+
+    # Given three point (x,y), calculate the slope at each point by fitting a
+    # parabola to three points.  The slope at the central point is
+    # the most accurate.
+    my ( $xl, $yl, $xc, $yc, $xu, $yu ) = @_;
+
+    # Reference: Three-point interpolation of a real function
+    # by Stanislav Sykora
+
+    # Notation:
+    # y(x) = (d2/2)*(x-xc)^2 + d1*(x-xc)+ d0,
+    # y(xc) = yc, y(xl) = yl, y(xu) = yu.
+    # dydx = d2(x-xc)+d1
+    my $dydxl = 0;
+    my $dydxc = 0;
+    my $dydxu = 0;
+    my $dxul = $xu - $xl;
+    if ($dxul) {
+
+        my $dxuc = $xu - $xc;
+        my $dxcl = $xc - $xl;
+        my $dyuc = $yu - $yc;
+        my $dycl = $yc - $yl;
+        my $d0   = $yc;
+        my $d1   = 0;
+        my $d2   = 0;
+        if ( $dxuc && $dxcl ) {
+
+            my $dydxuc = $dyuc / $dxuc;
+            my $dydxcl = $dycl / $dxcl;
+
+            $d2 = 2 * ( $dydxuc - $dydxcl ) / $dxul;
+            $d1 = $dydxuc - $d2 / 2 * $dxuc;
+
+            # Alternate:
+            #my $d1 = $dydxcl - $d2 / 2 * $dxcl;
+
+        }
+        elsif ($dxuc) {
+            $d1 = $dyuc / $dxuc;
+        }
+        elsif ($dxcl) {
+            $d1 = $dycl / $dxcl;
+        }
+
+        #print "dxuc=$dxuc, dxcl=$dxcl, d0=$d0, d1=$d1, d2=$d2\n";
+
+        $dydxl = $d1 - $d2 * $dxcl;
+        $dydxc = $d1;
+        $dydxu = $d1 + $d2 * $dxuc;
+    }
+    return ( $dydxl, $dydxc, $dydxu );
 }
 
 ##################################################################
@@ -1933,6 +2111,46 @@ BEGIN {
         'S6'     => [ 2, 6,     1.0e-6, 4000 ],
         'S6.5'   => [ 2, 6.5,   4.1e-6, 4000 ],
     };
+
+    # given the table info with lines of data of the form
+    #    'S2.5'   => [ 2, 2.5,   9.8e-7, 4000 ],
+    # invert to make a lookup table of sorted gamma values of the form
+    #     $rgamma->[symmetry]->[gamma, table name] 
+    my $rtmp=[];
+    foreach my $key(keys %{$rtables_info}) {
+	my $item=$rtables_info->{$key};
+	my ($symmetry, $gamma, $error, $N)=@{$item};
+        if ($symmetry !=0 && $symmetry !=1 && $symmetry!=2) {
+          croak "Unexpected symmetry $symmetry in table $key of Blast::Table";
+        }
+	push @{$rtmp->[$symmetry]}, [$gamma, $key];
+    }
+
+    foreach my $sym(0,1,2) {
+	my @sorted=sort {$a->[0] <=> $b->[0]} @{$rtmp->[$sym]};
+
+	# We require a table of unique gamma values.
+	# If there are multiple tables for a given gamma, use the
+	# table with least error.
+        my @unique;
+        my ( $gamma_last, $key_last );
+        foreach my $item ( @sorted ) {
+            my ( $gamma, $key ) = @{$item};
+            if ( !$gamma_last || $gamma != $gamma_last ) {
+                push @unique, $item;
+                $gamma_last = $gamma;
+                $key_last   = $key;
+                next;
+            }
+            my $err_last = $rtables_info->{$key_last}->[2];
+            my $err      = $rtables_info->{$key}->[2];
+            next if ( $err_last < $err );
+            $unique[-1] = $item;
+        }
+
+	## $rgamma_table->[$sym]=\@sorted;
+	$rgamma_table->[$sym]=\@unique;
+    }
 
     # Let..
     #  P0 = ambient atmospheric pressure
