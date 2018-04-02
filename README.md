@@ -11,7 +11,7 @@ Blast::IPS
     make install
 
     # Run the example driver
-    perl blast_ideal_point_source.pl
+    perl bin/blast_ips.pl
 
 
 ## DESCRIPTION

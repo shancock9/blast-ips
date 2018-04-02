@@ -28,11 +28,12 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
-use Blast::IPS::Data;
-my $rtables      = $Blast::IPS::Data::rtables;
-my $rtables_info = $Blast::IPS::Data::rtables_info;
-my $ralpha_table = $Blast::IPS::Data::ralpha_table;
-my $rgamma_table = $Blast::IPS::Data::rgamma_table;
+use Blast::IPS::ShockTables;
+use Blast::IPS::AlphaTable;
+my $rtables      = $Blast::IPS::ShockTables::rtables;
+my $rtables_info = $Blast::IPS::ShockTables::rtables_info;
+my $rgamma_table = $Blast::IPS::ShockTables::rgamma_table;
+my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
 
 # Evaluate the shock overpressure for point source explosion in an ideal
 # homogeneous atmosphere.  This does not have an analytic solution, so
@@ -136,25 +137,49 @@ sub _setup {
         elsif ( $symmetry =~ /^P/i ) { $symmetry = 0 }
     }
 
-    # There are three input options:
-
     # Input Option 1: a user-supplied table is given
+    # symmetry and gamma must be given too
+    # table name is optional
     if ( defined($rtable) ) {
 
-        # the symmetry, gamma and table_name should be given too
-        # FIXME: Maybe make it an error if not given??
-        if ( !defined($gamma) )      { $gamma      = 1.4 }
-        if ( !defined($symmetry) )   { $symmetry   = 2 }
-        if ( !defined($table_name) ) { $table_name = 'NONAME' }
+        if ( !defined($symmetry) || !defined($gamma) ) {
+            carp(<<EOM);
+You must give a value for symmetry and gamma when you supply a complete table
+EOM
+            return;
+        }
+        if ( !defined($table_name) ) {
+            $table_name = _make_table_name( $symmetry, $gamma );
+            $table_name .= "_custom";
+        }
     }
 
     # Input Option 2: a builtin table name is given
+    # symmetry and gamma must match if given; it is safest not to give them. 
     elsif ( defined($table_name) ) {
 
         $rtable = get_builtin_table($table_name);
         my $item = $rtables_info->{$table_name};
         if ( defined($item) ) {
+	    my $old_symmetry=$symmetry;
+	    my $old_gamma=$gamma;
             ( $symmetry, $gamma, my $err_est ) = @{$item};
+            if ( defined($old_symmetry) && $old_symmetry != $symmetry ) {
+                carp(<<EOM);
+symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
+your value '$symmetry'.
+You should either specify a table name or else symmetry and gamma.
+EOM
+                return;
+            }
+            if ( defined($old_gamma) && $old_gamma != $gamma ) {
+                carp(<<EOM);
+gamma of builtin table name: '$table_name' is '$gamma' which differs from
+your value '$gamma'. 
+You should either specify a table name or else symmetry and gamma.
+EOM
+                return;
+            }
         }
         else {
             carp(<<EOM);
@@ -170,7 +195,7 @@ EOM
         }
     }
 
-    # Input Option 3: lookup or make a table, given symmetry and gamma
+    # Input Option 3: gamma and symmetry are given. This is the normal method.
     else {
 
         # allow default of spherical symmetry, gamma=1.4
@@ -179,7 +204,8 @@ EOM
 
         # Search for this gamma value
         my $result = _gamma_lookup( $symmetry, $gamma );
-        my $table_name = $result->{table_name};
+	my $old_table_name=$table_name;
+        $table_name = $result->{table_name};
 
         # Get builtin table if there is one
         if ( defined($table_name) ) {
@@ -196,12 +222,12 @@ EOM
             $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
                 $igam1, $igam2, $igam3, $igam4 );
             if ( !$table_name ) {
-                my $gamma_pr = sprintf "%.4g", $gamma;
-                my $char = $symmetry == 0 ? 'P' : $symmetry == 1 ? 'C' : 'S';
-                $table_name = $char . $gamma_pr;
+		$table_name = _make_table_name($symmetry, $gamma);
             }
         }
     }
+
+    # Input Option 3: lookup or make a table, given symmetry and gamma
 
     # Now check the results
     my $error = "";
@@ -232,6 +258,15 @@ EOM
         $self->_end_model_setup();
     }
     return;
+}
+
+sub _make_table_name {
+    my ( $symmetry, $gamma ) = @_;
+    my $table_name;
+    my $gamma_pr = sprintf "%.4g", $gamma;
+    my $char = $symmetry == 0 ? 'P' : $symmetry == 1 ? 'C' : 'S';
+    $table_name = $char . $gamma_pr;
+    return $table_name;
 }
 
 sub _gamma_lookup {
