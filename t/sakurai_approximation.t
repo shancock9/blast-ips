@@ -20,14 +20,13 @@ BEGIN {
 }
 
 # Allow up to 9% error down to lambda=0.4 Actual error is 8.4% there.
-my $TOL     = 0.09; 
+my $TOL     = 0.09;
 my $VERBOSE = 0;
 
 # Create a table for this case
 my $symmetry    = 2;
 my $gamma       = 1.4;
-my %args        = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-my $blast_table = Blast::IPS->new( \%args );
+my $blast_table = Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
 if ( !defined($blast_table) ) {
     die "missing table for sym=$symmetry, gamma=$gamma\n";
 }
@@ -35,15 +34,15 @@ if ( !defined($blast_table) ) {
 # Loop to calculate the maximum absolute relative error in overpressure
 my $err_max;
 my $rbounds = $blast_table->get_table_bounds();
-my $Xmin= $rbounds->[0]->[0];
-my $Xmax= log(0.4);  # max scaled range=0.4
-my $rtable = $blast_table->table_gen( 50, $Xmin, $Xmax );
-if ($VERBOSE) {print "X\tY\tdYdX\tY_b\tdYdX_b\terr\n"}
+my $Xmin    = $rbounds->[0]->[0];
+my $Xmax    = log(0.4);                                   # max scaled range=0.4
+my $rtable  = $blast_table->table_gen( 50, $Xmin, $Xmax );
+if ($VERBOSE) { print "X\tY\tdYdX\tY_b\tdYdX_b\terr\n" }
 foreach my $point ( @{$rtable} ) {
-    my ( $X, $Y,$dYdX,$Z,$dZdX ) = @{$point};
-    my ($X_b, $Y_b, $dYdX_b)= sakurai_approximation($X); 
-    my $err    = abs( $Y_b-$Y);
-    if ($VERBOSE) {print "$X\t$Y\t$dYdX\t$Y_b\t$dYdX_b\t$err\n"}
+    my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$point};
+    my ( $X_b, $Y_b, $dYdX_b ) = sakurai_approximation($X);
+    my $err = abs( $Y_b - $Y );
+    if ($VERBOSE) { print "$X\t$Y\t$dYdX\t$Y_b\t$dYdX_b\t$err\n" }
 
     my $lambda = exp($X);
     my $ovprat = exp($Y);
@@ -64,8 +63,8 @@ sub sakurai_approximation {
     # Error exceeds 1% by lambda=0.3 and rises rapidly with range beyond that.
     # The velocity approximation is much more accurate.
 
-    my ( $X)=@_;
-    my $lambda=exp($X);
+    my ($X) = @_;
+    my $lambda = exp($X);
 
     my $ovp_calc = sub {
         my ($lambda) = @_;
@@ -84,11 +83,11 @@ sub sakurai_approximation {
     my $ovp_atm = $ovp_calc->($lambda);
 
     # differentiate to get d(ln P)/d(ln R)
-    my $delta_r   = 0.001 * $lambda;
-    my ($ovpm)    = $ovp_calc->( $lambda - $delta_r );
-    my ($ovpp)    = $ovp_calc->( $lambda + $delta_r );
-    my $dYdX = 0.5 * $lambda * ( $ovpp - $ovpm ) / ( $delta_r * $ovp_atm );
-    my $Y=log($ovp_atm);
-    return ( $X, $Y, $dYdX);
+    my $delta_r = 0.001 * $lambda;
+    my ($ovpm)  = $ovp_calc->( $lambda - $delta_r );
+    my ($ovpp)  = $ovp_calc->( $lambda + $delta_r );
+    my $dYdX    = 0.5 * $lambda * ( $ovpp - $ovpm ) / ( $delta_r * $ovp_atm );
+    my $Y       = log($ovp_atm);
+    return ( $X, $Y, $dYdX );
 }
 

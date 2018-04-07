@@ -36,8 +36,8 @@ foreach my $symmetry (@symmetries) {
     foreach my $gamma (@gammas) {
 
         # Create a table for this case
-        my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-        my $blast_table = Blast::IPS->new( \%args );
+        my $blast_table =
+          Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
         if ( !defined($blast_table) ) {
             die "missing table for sym=$symmetry, gamma=$gamma\n";
         }

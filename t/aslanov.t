@@ -23,7 +23,6 @@ Aslanov, S. K. 2006. "On point blast theory". Fluid Dynamics. 41 (1): 147-151.
 
 =cut
 
-
 BEGIN {
 
     plan tests => 1;
@@ -35,8 +34,7 @@ my $symmetry = 2;
 my $gamma    = 1.4;
 
 # Create a table for this case
-my %args = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-my $blast_table = Blast::IPS->new( \%args );
+my $blast_table = Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
 if ( !defined($blast_table) ) {
     die "missing table for sym=$symmetry, gamma=$gamma\n";
 }
@@ -54,7 +52,7 @@ my $rtable = $blast_table->table_gen( 51, $Xmin, $Xmax );
 
 my $err_max;
 if ($VERBOSE) {
-        print "lambda\tX\tY\tY_k\terr\n";
+    print "lambda\tX\tY\tY_k\terr\n";
 }
 foreach my $item ( @{$rtable} ) {
     my ( $X,   $Y,   $dYdX )   = @{$item};
@@ -63,7 +61,7 @@ foreach my $item ( @{$rtable} ) {
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
 
     if ($VERBOSE) {
-	my $lambda=exp($X);
+        my $lambda = exp($X);
         print "$lambda\t$X\t$Y\t$Y_k\t$err\n";
     }
 }

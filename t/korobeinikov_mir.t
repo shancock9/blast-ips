@@ -7,7 +7,6 @@ my $rmodels;
 
 BEGIN {
 
-
 =pod
 
 This test compares some tables of values for this problem published by
@@ -26,9 +25,8 @@ Korobejnikov, Viktor Pavlovič. 1991. Problems of point-blast theory. New York:
 
 =cut
 
-
-    # The value of 'q' must be converted to overpressure
-    # The value of 'Ts' must be multiplied by sqrt(gamma) to change to my scaling
+   # The value of 'q' must be converted to overpressure
+   # The value of 'Ts' must be multiplied by sqrt(gamma) to change to my scaling
 
     $rmodels = [
         {
@@ -57,7 +55,7 @@ Korobejnikov, Viktor Pavlovič. 1991. Problems of point-blast theory. New York:
                 [ 0.7,  1.61,   2.59 ],
                 [ 0.75, 2.67,   4.06 ],
 
-		# Up to 28% error:
+                # Up to 28% error:
                 #[ 0.8,  5.17,   7.4 ],
                 #[ 0.85, 11.8,   16 ],
                 #[ 0.9,  25.4,   33.2 ],
@@ -86,7 +84,7 @@ Korobejnikov, Viktor Pavlovič. 1991. Problems of point-blast theory. New York:
                 [ 0.7,  2.08,   3.64 ],
                 [ 0.75, 3.49,   5.78 ],
 
-		# up to 22% error:
+                # up to 22% error:
                 #[ 0.8,  6.64,   10.4 ],
                 #[ 0.85, 15,     22.2 ],
                 #[ 0.9,  33.2,   47.3 ],
@@ -172,7 +170,7 @@ Korobejnikov, Viktor Pavlovič. 1991. Problems of point-blast theory. New York:
                 [ 0.8,  1.31,   2.36 ],
                 [ 0.85, 2.05,   3.41 ],
 
-		# 8.2% error:
+                # 8.2% error:
                 #[ 0.9,  3.32,   5.15 ],
             ],
         },
@@ -266,7 +264,7 @@ Korobejnikov, Viktor Pavlovič. 1991. Problems of point-blast theory. New York:
 # We will compare the shock radius and TOA at a given overpressure.  The errors
 # in TOA are comparable in magnitude to the errors in ovp.  The error in these
 # particular tables is mostly on the order of 1 percent over the the initial
-# part of the table then rises toward the end to about 3 percent. 
+# part of the table then rises toward the end to about 3 percent.
 
 # However, some of the MIR table points have particularly high errors and these
 # have been commented out.
@@ -274,11 +272,11 @@ my $VERBOSE = 0;
 
 # Create a table for this case
 foreach my $model ( @{$rmodels} ) {
-    my $symmetry    = $model->{symmetry};
+    my $symmetry = $model->{symmetry};
     my $gamma    = $model->{gamma};
-    my $rtable      = $model->{table};
-    my %args        = ( 'symmetry' => $symmetry, 'gamma' => $gamma );
-    my $blast_table = Blast::IPS->new( \%args );
+    my $rtable   = $model->{table};
+    my $blast_table =
+      Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
     if ( !defined($blast_table) ) {
         die "missing table for sym=$symmetry, gamma=$gamma\n";
     }
@@ -293,8 +291,8 @@ foreach my $model ( @{$rmodels} ) {
     foreach my $point ( @{$rtable} ) {
         my ( $q, $Ts, $Rs ) = @{$point};
 
-	# the MIR tables use two times the energy for scaling in
-	# plane symmetry compared to the present model
+        # the MIR tables use two times the energy for scaling in
+        # plane symmetry compared to the present model
         if ( $symmetry == 0 ) {
             $Rs *= 2;
             $Ts *= 2;
@@ -313,15 +311,16 @@ foreach my $model ( @{$rmodels} ) {
         my $lambda = exp($X);
         my $Toa    = $lambda - $z;
 
-        my $err   = abs( $lambda - $Rs ) / $lambda;
+        my $err = abs( $lambda - $Rs ) / $lambda;
 
-	# multiply MIR times by sqrt of gamma to get same scaling as present
-	# work
+        # multiply MIR times by sqrt of gamma to get same scaling as present
+        # work
         my $t_err = abs( $Ts * sqrt($gamma) - $Toa ) / $Toa;
 
-	if ($VERBOSE) {
-          print "sym=$symmetry, lambda=$lambda, err=$err, t_err=$t_err, Ts=$Ts, toa=$Toa\n";
-	}
+        if ($VERBOSE) {
+            print
+"sym=$symmetry, lambda=$lambda, err=$err, t_err=$t_err, Ts=$Ts, toa=$Toa\n";
+        }
         if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
         if ( !defined($t_err_max) || $t_err > $t_err_max ) {
             $t_err_max = $t_err;
@@ -331,7 +330,7 @@ foreach my $model ( @{$rmodels} ) {
 
     my $err_max_pr   = sprintf "%0.3g", $err_max;
     my $t_err_max_pr = sprintf "%0.3g", $t_err_max;
-    if (!ok( $err_max <= $TOL && $t_err_max <= $TOL)) {
+    if ( !ok( $err_max <= $TOL && $t_err_max <= $TOL ) ) {
         print <<EOM;
 Method of Integral Relations Table for symmetry $symmetry, gamma=$gamma, has these max error 
 Rel error in shock range = $err_max_pr; Relative error in TOA=$t_err_max_pr\n";
