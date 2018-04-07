@@ -408,12 +408,18 @@ sub get_info {
     my $rinfo      = {};
     my $table_name = $self->{_table_name};
     my $item       = $rtables_info->{$table_name};
-    my ( $symmetry, $gamma, $err_est ) = @{$item};
+    my (
+        $symmetry,     $gamma,    $Max_Error, $N,
+        $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
+        $Interp_Error, $rs2,      $zs2
+    ) = @{$item};
     $rinfo->{table_name}      = $table_name;
     $rinfo->{alpha}           = $self->{_alpha};
     $rinfo->{symmetry}        = $self->{_symmetry};
     $rinfo->{gamma}           = $self->{_gamma};
-    $rinfo->{estimated_error} = $err_est;
+    $rinfo->{Max_Error} = $Max_Error;
+    $rinfo->{Xs2} = $rs2?log($rs2):undef;
+    $rinfo->{Zs2} = $zs2?log($zs2):undef;
     return ($rinfo);
 }
 
@@ -434,12 +440,18 @@ sub get_table_index {
     my $rtable_index = {};
     foreach my $key ( sort keys %{$rtables_info} ) {
         my $item = $rtables_info->{$key};
-        my ( $symmetry, $gamma, $err_est, $N ) = @{$item};
+
+        #my ( $symmetry, $gamma, $Max_Error, $N ) = @{$item};
+        my (
+            $symmetry,     $gamma,    $Max_Error, $N,
+            $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
+            $Interp_Error, $rs2,      $zs2
+        ) = @{$item};
         $rtable_index->{$key} = {
-            symmetry       => $symmetry,
-            gamma          => $gamma,
-            error_estimate => $err_est,
-            N              => $N,
+            symmetry  => $symmetry,
+            gamma     => $gamma,
+            Max_Error => $Max_Error,
+            N         => $N,
         };
     }
     return ($rtable_index);

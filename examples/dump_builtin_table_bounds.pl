@@ -12,7 +12,7 @@ foreach my $key ( keys %{$rindex} ) {
     my $table_name     = $key;
     my $gamma          = $item->{gamma};
     my $symmetry       = $item->{symmetry};
-    my $error_estimate = $item->{error_estimate};
+    my $error_estimate = $item->{Max_Error};
 
     # Create a table for this case
     my $blast_table = Blast::IPS->new( 'table_name' => $table_name );
