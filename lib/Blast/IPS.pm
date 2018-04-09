@@ -28,11 +28,13 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
+use Blast::IPS::ShockTablesIndex;
 use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
+
+my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
+my $rgamma_table = $Blast::IPS::ShockTablesIndex::rgamma_table;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
-my $rtables_info = $Blast::IPS::ShockTables::rtables_info;
-my $rgamma_table = $Blast::IPS::ShockTables::rgamma_table;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
 
 # Evaluate the shock overpressure for point source explosion in an ideal
