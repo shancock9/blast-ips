@@ -33,9 +33,52 @@ use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
 
 my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
-my $rgamma_table = $Blast::IPS::ShockTablesIndex::rgamma_table;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
+
+# Make an index table for searching gamma
+my $rgamma_table;
+INIT {
+
+    # given the table info with lines of data of the form
+    #    'S2.5'   => [ 2, 2.5,   9.8e-7, 4000, ... ],
+    # invert to make a lookup table of sorted gamma values of the form
+    #     $rgamma->[symmetry]->[gamma, table name]
+    my $rtmp = [];
+    foreach my $key ( keys %{$rtables_info} ) {
+        my $item = $rtables_info->{$key};
+        my ( $symmetry, $gamma ) = @{$item};
+        if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
+            croak "Unexpected symmetry $symmetry in table $key of Blast::Table";
+        }
+        push @{ $rtmp->[$symmetry] }, [ $gamma, $key ];
+    }
+
+    foreach my $sym ( 0, 1, 2 ) {
+        my @sorted = sort { $a->[0] <=> $b->[0] } @{ $rtmp->[$sym] };
+
+        # We require a table of unique gamma values.
+        # If there are multiple tables for a given gamma, use the
+        # table with least error.
+        my @unique;
+        my ( $gamma_last, $key_last );
+        foreach my $item (@sorted) {
+            my ( $gamma, $key ) = @{$item};
+            if ( !$gamma_last || $gamma != $gamma_last ) {
+                push @unique, $item;
+                $gamma_last = $gamma;
+                $key_last   = $key;
+                next;
+            }
+            my $err_last = $rtables_info->{$key_last}->[2];
+            my $err      = $rtables_info->{$key}->[2];
+            next if ( $err_last < $err );
+            $unique[-1] = $item;
+        }
+
+        $rgamma_table->[$sym] = \@unique;
+    }
+}
 
 # Evaluate the shock overpressure for point source explosion in an ideal
 # homogeneous atmosphere.  This does not have an analytic solution, so
@@ -228,8 +271,6 @@ EOM
             }
         }
     }
-
-    # Input Option 3: lookup or make a table, given symmetry and gamma
 
     # Now check the results
     my $error = "";

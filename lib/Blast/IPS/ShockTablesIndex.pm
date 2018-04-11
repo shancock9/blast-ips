@@ -27,7 +27,6 @@ use 5.006;
 
 use Carp;
 our $rtables_info;
-our $rgamma_table;
 
 ##################################################################
 # Index to Shock Front Tables
@@ -36,7 +35,7 @@ our $rgamma_table;
 BEGIN {
 
     # Created with: ./table_data_to_hash.pl
-    # Mon Apr  9 15:36:56 2018   Inspiron-3668
+    # Wed Apr 11 06:11:56 2018   Inspiron-3668
 
     # symmetry = 0,1,2 for Plane, Cylindrical, Spherical
     # gamma = ideal gas gamma
@@ -192,8 +191,8 @@ BEGIN {
             8.267675831824938E-07, 8000,
             3.78E-07,              4,
             3.64124647470968E-08,  2.90355118435397E-07,
-            5E-07,                 4.34922101727399,
-            -0.686285022214421,
+            5E-07,                 0.59027593350696,
+            -0.838579307321098,
         ],
         'C1.1' => [
             1, 1.1, 1.756333057406828E-06, 8000, 2.1E-07, 20,
@@ -237,10 +236,18 @@ BEGIN {
             1, 1.45, 7E-07, 8000, 2.01E-07, 30, 1.44E-07, 5.2E-08, 5E-07,
             73.3886943631669, -1.112455227271,
         ],
-        'C1.5' => [
-            1, 1.5, 1.2260565038471518E-06, 8000, 2.1E-07, 50,
-            4.76056503847152E-07, 2.5E-07, 5E-07, 77.7782340877619,
-            -1.16049327255987,
+        'C1.49' => [
+            1, 1.49, 1.383785845268209E-06, 4000, 8.21E-07, 30,
+            5.63785845268209E-07, 3.2E-07, 5E-07, 76.7481691015437,
+            -1.14958050865576,
+        ],
+        'C1.51' => [
+            1,                      1.51,
+            1.1793805256347179E-06, 4000,
+            8.29E-07,               30,
+            5.57999273749961E-07,   1.21381251884757E-07,
+            5E-07,                  78.3155592640345,
+            -1.16709023313781,
         ],
         'C1.55' => [
             1, 1.55, 1.138419954658165E-06, 4000, 8.44E-07, 50,
@@ -433,44 +440,5 @@ BEGIN {
             3.80622424541362E-07, 1.15E-06, 1E-06,,,
         ],
     };
-
-    # given the table info with lines of data of the form
-    #    'S2.5'   => [ 2, 2.5,   9.8e-7, 4000, ... ],
-    # invert to make a lookup table of sorted gamma values of the form
-    #     $rgamma->[symmetry]->[gamma, table name]
-    my $rtmp = [];
-    foreach my $key ( keys %{$rtables_info} ) {
-        my $item = $rtables_info->{$key};
-        my ( $symmetry, $gamma ) = @{$item};
-        if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
-            croak "Unexpected symmetry $symmetry in table $key of Blast::Table";
-        }
-        push @{ $rtmp->[$symmetry] }, [ $gamma, $key ];
-    }
-
-    foreach my $sym ( 0, 1, 2 ) {
-        my @sorted = sort { $a->[0] <=> $b->[0] } @{ $rtmp->[$sym] };
-
-        # We require a table of unique gamma values.
-        # If there are multiple tables for a given gamma, use the
-        # table with least error.
-        my @unique;
-        my ( $gamma_last, $key_last );
-        foreach my $item (@sorted) {
-            my ( $gamma, $key ) = @{$item};
-            if ( !$gamma_last || $gamma != $gamma_last ) {
-                push @unique, $item;
-                $gamma_last = $gamma;
-                $key_last   = $key;
-                next;
-            }
-            my $err_last = $rtables_info->{$key_last}->[2];
-            my $err      = $rtables_info->{$key}->[2];
-            next if ( $err_last < $err );
-            $unique[-1] = $item;
-        }
-
-        $rgamma_table->[$sym] = \@unique;
-    }
 }
 1;

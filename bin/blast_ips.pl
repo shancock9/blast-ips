@@ -2,7 +2,9 @@
 use warnings;
 use strict;
 
-# This is a simple driver for Blast::IPS
+# This is a simple driver to illustrate usage of Blast::IPS.
+# It will ask for a symmetry and gamma, 
+# then go into a loop to evaluate the shock for any range
 use Blast::IPS;
 
 my $ans =
@@ -24,8 +26,10 @@ my %symmetry_name = (
     2 => 'Spherical',
 );
 
+#my $iQ = query("Enter 'X' to enter range, 'Y' to enter overpressure");
+
 print <<EOM;
-Blast form a point source in an ideal atmosphere
+Blast form a point source in an ideal homogeneous atmosphere
 Symmetry=$symmetry_name{$symmetry}
 Gamma=$gamma
 EOM
@@ -38,7 +42,7 @@ while (1) {
     my $ret = $blast_table->lookup( $Q, $iQ );
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $ovprat = exp($Y);
-    print "Overpressure ratio=$ovprat\n";
+    print "The overpressure ratio is: $ovprat\n";
 }
 
 sub query {
