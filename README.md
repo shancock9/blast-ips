@@ -22,26 +22,32 @@ definition but it does not have an analytic solution except for the special
 case that the ambient atmospheric pressure is zero, so results are obtained by
 interpolating a builtin table of values.
 
+This problem was one of the first problems to be addressed when digital
+computers became available, and it remains a very important theoretical model.
+My own interest in this problem came from working with models of the damaging
+effects of blast waves at long distances from accidental rocket explosions,
+but it has many other applications such as computer model verification.
+
 The builtin tables cover the three one-dimensional symmetries (plane,
 cylindrical, spherical) and several values of the ideal gas gamma ( from 1.1 to
 about 7).  They were prepared with calculations using the finite difference
 method and the method of characteristics.  
 
 The emphasis of this project is on getting an accurate estimate of the maximum
-error in the final interpolated values.  This is needed in in statistical
-models and is largely unavailable in existing published results. The individual
-point values of shock overpressure in the builtin tables have an estimated
-maximum error of about 1.e-7 in most cases.
+error in the final interpolated values.  This information is largely
+unavailable in existing published results.  The individual point values of shock
+overpressure in the builtin tables have an estimated maximum error of about
+1.e-7 in most cases.
 
 The estimated maximum relative error in shock overpressure obtained after
-interpolating the builtin tables with cubic interpolation for one of the gamma
-values is about 1.e-6 at all ranges. This is orders of magnitude lower than any
-published tables that I have found.
+interpolating the builtin tables with cubic interpolation for the gamma value
+of one of the builtin tables is about 1.e-6 at all ranges. 
 
-Interpolation to arbitrary gamma values will soon be added and should have 
-a maximum interpolation error for any gamma and any distance of about 1.e-4.
+Interpolation to arbitrary gamma values and ranges has an estimated maximum
+relative error in overpressure ratio of about 1.e-5.
 
-I will be adding documentation in the future. 
+The test problems and example script illustrate how to use the module.  I will
+be adding documentation in the future.  
 
 # AUTHOR
 
