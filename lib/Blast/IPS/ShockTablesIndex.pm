@@ -35,7 +35,7 @@ our $rtables_info;
 BEGIN {
 
     # Created with: ./table_data_to_hash.pl
-    # Wed Apr 11 06:11:56 2018   Inspiron-3668
+    # Sun Apr 22 06:32:16 2018   Inspiron-3668
 
     # symmetry = 0,1,2 for Plane, Cylindrical, Spherical
     # gamma = ideal gas gamma
@@ -48,8 +48,7 @@ BEGIN {
     # rs2 = radius of formation of second shock
     # zs2 = value of z for formation of second shock
 
-    # table_name => [symmetry, gamma, Max-Error, N, Energy-Error, R-FD-MOC,
-    # FD-Error, MOC-Error, Interp-Error, rs2, zs2],
+# table_name => [symmetry, gamma, Max-Error, N, Energy-Error, R-FD-MOC, FD-Error, MOC-Error, Interp-Error, rs2, zs2],
 
     $rtables_info = {
         'S1.1' => [
@@ -407,8 +406,8 @@ BEGIN {
             1.57E-07, 4.7E-07, 5E-07,,,
         ],
         'P1.7' => [
-            0, 1.7, 4.43702740234804E-06, 4000, 2.1E-06, 100,
-            1.47020281149324E-06, 2.4668245908548E-06, 5E-07,,,
+            0, 1.7, 1.677584137054659E-06, 8000, 5.2E-07, 100,
+            3.67584137054659E-07, 8.1E-07, 5E-07,,,
         ],
         'P1.8' => [
             0, 1.8, 1.42592736535861E-06, 8000, 5.05E-07, 100,
