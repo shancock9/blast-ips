@@ -35,15 +35,17 @@ use Blast::IPS::AlphaTable;
 my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
-
-# Make an index table for searching gamma
 my $rgamma_table;
+
 INIT {
 
-    # given the table info with lines of data of the form
-    #    'S2.5'   => [ 2, 2.5,   9.8e-7, 4000, ... ],
-    # invert to make a lookup table of sorted gamma values of the form
+    # Make an index table for searching gamma...
+
+    # Given the hash of info with data of the form:
+    #    table_name   => [ symmetry, gamma,  9.8e-7, 4000, ... ],
+    # Invert to make a lookup table of sorted gamma values of the form:
     #     $rgamma->[symmetry]->[gamma, table name]
+    # This is needed for searching for a specific gamma value.
     my $rtmp = [];
     foreach my $key ( keys %{$rtables_info} ) {
         my $item = $rtables_info->{$key};
@@ -95,16 +97,14 @@ INIT {
 # but is below 1.e-5 in all cases.
 
 # TODO:
-# Needs documentation and test cases
+# Maybe allow lookup on slope dYdX or dZdX, with quadratic interpolation
 
-# Allow lookup on slope dYdX or dZdX, with quadratic interpolation
-
-# Work is needed to handle interpolations beyond the ranges of the tables for
+# Work is needed to handle extrapolation beyond the ranges of the tables for
 # some spherical symmetry variables.
 
-# An interesting way to test is to have the driver get a builtin table,
-# truncate at both ends, reinstall it and look at the errors at both missing
-# ends.
+# An easy way to test the extrapolation is to have the driver get a
+# builtin table, truncate at both ends, reinstall it and look at the errors at
+# both missing ends.
 
 sub new {
     my ( $class, @args ) = @_;
@@ -304,6 +304,9 @@ EOM
 }
 
 sub _make_table_name {
+
+    # make a table name by combining the symmetry and gamma;
+    # i.e. 'S1.37' would be spherical symmetry with gamma=1.37
     my ( $symmetry, $gamma ) = @_;
     my $table_name;
     my $gamma_pr = sprintf "%.4g", $gamma;
@@ -1325,13 +1328,17 @@ sub alpha_interpolate {
     # The table is spaced closely enough that cubic interpolation of the
     # interpolated values have comparable accuracy.
 
+    # TODO: Generalize to allow any number of lagrange interpolation points
+
     return if ( $sym != 0 && $sym != 1 && $sym != 2 );
 
     my $rtab = $ralpha_table->[$sym];
     my $ntab = @{$rtab};
     my ( $jl, $ju );
     my $icol = 0;
-    my $eps  = 1.e-5;
+
+    # A small tolerance to avoid interpolations
+    my $eps  = 1.e-6;
 
     my $rhash = {
         _jl     => $jl,
@@ -1340,7 +1347,7 @@ sub alpha_interpolate {
     };
     ( $jl, $ju ) = _locate_2d( $rhash, $gamma, $icol );
     my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
-    my ( $gamma_max, $alpha_max ) = @{ $rtab->[-1] };
+    my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
     if ( $jl < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         return $alpha_min;
@@ -1350,11 +1357,23 @@ sub alpha_interpolate {
         return $alpha_max;
     }
 
-    # (gamma, alpha, dalpha/dgamma) =
-    my ( $x1, $y1, $dydx1 ) = @{ $rtab->[$jl] };
-    my ( $x2, $y2, $dydx2 ) = @{ $rtab->[$ju] };
-    my ( $alpha, $dydx, $d2ydx2, $d3ydx3 ) =
-      _cubic_interpolation( $gamma, $x1, $y1, $dydx1, $x2, $y2, $dydx2 );
+    my $jbase = $jl - 1;
+    if ( $jl <= 0 ) {
+        $jbase = $jl;
+    }
+    elsif ( $ju >= $ntab - 1 ) {
+        $jbase = $ju - 3;
+    }
+
+    my ( $rx, $ry );
+    for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
+        my ( $xx, $yy ) = @{ $rtab->[$jj] };
+        push @{$rx}, $xx;
+        push @{$ry}, $yy;
+    }
+
+    my ( $alpha, $dalpha ) = polint( $gamma, $rx, $ry );
+
     return ($alpha);
 }
 
@@ -1365,6 +1384,8 @@ sub _make_intermediate_gamma_table {
     #     and such that at least three are different tables
     # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
     #     by using cubic interpolation between the four builtin tables
+
+    # TODO: Generalize to allow arbitrary number of interpolation points
 
     my ( $symmetry, $gamma_x, $igam1, $igam2, $igam3, $igam4 ) = @_;
     my $rtable_new;
@@ -1469,93 +1490,100 @@ sub _make_intermediate_gamma_table {
         my ( $X_3, $YY_3, $dYdX_3, $Z_3, $dZdX_3 ) = @{$item_3};
         my ( $X_4, $YY_4, $dYdX_4, $Z_4, $dZdX_4 ) = @{$item_4};
 
-        my $cubic_int = sub {
+        my $lagrange_interp = sub {
 
-            # We are given four consecutive points. The point to which
-            # we want to interpolate is between the two central points.
             my ( $Q_1, $Q_2, $Q_3, $Q_4 ) = @_;
-            my ( $dQdA_2, $dQdA_3 );
-            if ( $A_1 != $A_2 ) {
-                ( my $slope_1, $dQdA_2, my $slope_3 ) =
-                  parabolic_slopes( $A_1, $Q_1, $A_2, $Q_2, $A_3, $Q_3 );
-                if ( $A_4 == $A_3 ) { $dQdA_3 = $slope_3 }
-            }
-
-            if ( $A_4 != $A_3 ) {
-                ( my $slope_2, $dQdA_3, my $slope_4 ) =
-                  parabolic_slopes( $A_2, $Q_2, $A_3, $Q_3, $A_4, $Q_4 );
-                if ( $A_1 == $A_2 ) { $dQdA_2 = $slope_2 }
-            }
-
-            my ( $Q_x, $dQdA_x, $d2QdA2_x, $d3QdA3_x ) =
-              _cubic_interpolation( $A_x, $A_2, $Q_2, $dQdA_2,
-                $A_3, $Q_3, $dQdA_3 );
+            my $rx = [ $A_1, $A_2, $A_3, $A_4 ];
+            my $ry = [ $Q_1, $Q_2, $Q_3, $Q_4 ];
+            my ($Q_x, $dQ) = polint( $A_x, $rx, $ry );
             return $Q_x;
         };
 
-        my $X_x    = $cubic_int->( $X_1,    $X_2,    $X_3,    $X_4 );
-        my $Z_x    = $cubic_int->( $Z_1,    $Z_2,    $Z_3,    $Z_4 );
-        my $dYdX_x = $cubic_int->( $dYdX_1, $dYdX_2, $dYdX_3, $dYdX_4 );
-        my $dZdX_x = $cubic_int->( $dZdX_1, $dZdX_2, $dZdX_3, $dZdX_4 );
+        my $X_x    = $lagrange_interp->( $X_1,    $X_2,    $X_3,    $X_4 );
+        my $Z_x    = $lagrange_interp->( $Z_1,    $Z_2,    $Z_3,    $Z_4 );
+        my $dYdX_x = $lagrange_interp->( $dYdX_1, $dYdX_2, $dYdX_3, $dYdX_4 );
+        my $dZdX_x = $lagrange_interp->( $dZdX_1, $dZdX_2, $dZdX_3, $dZdX_4 );
 
         push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
     }
     return $rtab_x;
 }
 
-sub parabolic_slopes {
+sub polint {
 
-    # Given three point (x,y), calculate the slope at each point by fitting a
-    # parabola to three points.  The slope at the central point is
-    # the most accurate.
-    my ( $xl, $yl, $xc, $yc, $xu, $yu ) = @_;
+    #  Slightly modified versions of the "polint" routine from
+    #  Press, William H., Brian P. Flannery, Saul A. Teukolsky and
+    #  William T. Vetterling, 1986, "Numerical Recipes: The Art of
+    #  Scientific Computing" (Fortran), Cambrigde University Press,
+    #  pp. 80-82.
 
-    # Reference: Three-point interpolation of a real function
-    # by Stanislav Sykora
+    # Given:
+    # $xx = an x location where y is required
+    # ($rx, $ry) = arrays of ($x,$y) lagrange interpolation points 
 
-    # Notation:
-    # y(x) = (d2/2)*(x-xc)^2 + d1*(x-xc)+ d0,
-    # y(xc) = yc, y(xl) = yl, y(xu) = yu.
-    # dydx = d2(x-xc)+d1
-    my $dydxl = 0;
-    my $dydxc = 0;
-    my $dydxu = 0;
-    my $dxul  = $xu - $xl;
-    if ($dxul) {
+    # Return:
+    #  $yy = the interpolated value at $xx
+    #  $dy = the estimated error
 
-        my $dxuc = $xu - $xc;
-        my $dxcl = $xc - $xl;
-        my $dyuc = $yu - $yc;
-        my $dycl = $yc - $yl;
-        my $d0   = $yc;
-        my $d1   = 0;
-        my $d2   = 0;
-        if ( $dxuc && $dxcl ) {
+    # Example call:
+    # my ( $yy, $dy ) = polint( $xx, $rx, $ry );
 
-            my $dydxuc = $dyuc / $dxuc;
-            my $dydxcl = $dycl / $dxcl;
+    my ( $xx, $rx, $ry ) = @_;
 
-            $d2 = 2 * ( $dydxuc - $dydxcl ) / $dxul;
-            $d1 = $dydxuc - $d2 / 2 * $dxuc;
+    my $n = @{$rx};
 
-            # Alternate:
-            #my $d1 = $dydxcl - $d2 / 2 * $dxcl;
+    # Return values
+    my ( $yy, $dy );
 
+    #..find the index ns of the closest table entry; initialize the c and d
+    # tables
+    my ( @c, @d );
+    my $ns  = 0;
+    my $dif = abs( $xx - $rx->[0] );
+    for ( my $i = 0 ; $i < $n ; ++$i ) {
+        my $dift = abs( $xx - $rx->[$i] );
+        if ( $dift < $dif ) {
+            $ns  = $i;
+            $dif = $dift;
         }
-        elsif ($dxuc) {
-            $d1 = $dyuc / $dxuc;
-        }
-        elsif ($dxcl) {
-            $d1 = $dycl / $dxcl;
-        }
-
-        #print "dxuc=$dxuc, dxcl=$dxcl, d0=$d0, d1=$d1, d2=$d2\n";
-
-        $dydxl = $d1 - $d2 * $dxcl;
-        $dydxc = $d1;
-        $dydxu = $d1 + $d2 * $dxuc;
+        $c[$i] = $ry->[$i];
+        $d[$i] = $ry->[$i];
     }
-    return ( $dydxl, $dydxc, $dydxu );
+
+    #..first guess for y
+    $yy = $ry->[$ns];
+
+    #..for each column of the table, loop over the c's and d's and update them
+    $ns = $ns - 1;
+    for ( my $m = 0 ; $m < $n - 1 ; ++$m ) {
+        for ( my $i = 0 ; $i < $n - $m - 1 ; ++$i ) {
+            my $ho  = $rx->[$i] - $xx;
+            my $hp  = $rx->[ $i + $m + 1 ] - $xx;
+            my $w   = $c[ $i + 1 ] - $d[$i];
+            my $den = $ho - $hp;
+            if ( $den == 0.0 ) {
+                print STDERR "polint: 2 rx entries are the same \n";
+                return;
+            }
+            $den   = $w / $den;
+            $d[$i] = $hp * $den;
+            $c[$i] = $ho * $den;
+        }
+
+	# after each column is completed, decide which correction c or d, to
+	# add to the accumulating value of y, that is, which path to take in
+	# the table by forking up or down. ns is updated as we go to keep track
+	# of where we are. the last dy added is the error indicator.
+        if ( 2 * ( $ns + 1 ) < $n - $m - 1 ) {
+            $dy = $c[ $ns + 1 ];
+        }
+        else {
+            $dy = $d[$ns];
+            $ns = $ns - 1;
+        }
+        $yy += $dy;
+    }
+    return wantarray ? ( $yy, $dy ) : $yy;
 }
 
 1;
