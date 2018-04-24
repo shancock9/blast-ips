@@ -261,10 +261,12 @@ EOM
         else {
             my $igam_lo = $result->{igam_lo};
             my $igam_hi = $result->{igam_hi};
-            $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
-                $igam_lo .. $igam_hi );
-            if ( !$table_name ) {
-                $table_name = _make_table_name( $symmetry, $gamma );
+            if ( defined($igam_lo) && defined($igam_hi) ) {
+                $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
+                    $igam_lo .. $igam_hi );
+                if ( !$table_name ) {
+                    $table_name = _make_table_name( $symmetry, $gamma );
+                }
             }
         }
     }
@@ -334,7 +336,7 @@ sub _gamma_lookup {
     # for use in interpolation.
 
     return if ( $sym != 0 && $sym != 1 && $sym != 2 );
-    $eps = 1.e-5 unless ($eps);
+    $eps = 1.e-6 unless ($eps);
 
     my $return_hash = {};
 
@@ -382,13 +384,6 @@ sub _gamma_lookup {
     # Not an exact match: return indexes of bounding tables in preparation
     # for interpolation.
 
-    # OLD:
-    my $j1 = $j2 - 1;
-    my $j4 = $j3 + 1;
-    if ( $j1 < 0 )      { $j1 = $j2 }
-    if ( $j4 >= $ntab ) { $j4 = $j3 }
-
-    #NEW:
     my $NLAG    = 6;
     my $igam_lo = $j2 - int( $NLAG / 2 );
     my $igam_hi = $igam_lo + $NLAG - 1;
@@ -407,13 +402,7 @@ sub _gamma_lookup {
 
     $return_hash = {
         igam_lo => $igam_lo,
-        igam_hi => $igam_lo,
-
-        # OLD: to be deleted
-        igam1 => $j1,
-        igam2 => $j2,
-        igam3 => $j3,
-        igam4 => $j4,
+        igam_hi => $igam_hi,
     };
     return ($return_hash);
 }
@@ -521,22 +510,6 @@ sub get_table_index {
     }
     return ($rtable_index);
 }
-
-##sub get_table_index_as_array_ref {
-##
-##    # OLD: to be deleted
-##    # returns a list of references of the form
-##    #   [NAME, symmetry, gamma, error]
-##    # one per built-in table
-##
-##    my @table_list;
-##    foreach my $key ( sort keys %{$rtables_info} ) {
-##        my $item = $rtables_info->{$key};
-##        my ( $symmetry, $gamma, $err_est ) = @{$item};
-##        push @table_list, [ $key, $symmetry, $gamma, $err_est ];
-##    }
-##    return ( \@table_list );
-##}
 
 sub check_tables {
 
@@ -1403,10 +1376,32 @@ sub alpha_interpolate {
         push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
     }
 
-    my ( $ff, $df ) = polint( $gamma, $rx, $ry );
+    my $ff = polint( $gamma, $rx, $ry );
     my $alpha = $ff / ( ( $gamma - 1 ) * sqrt( $gamma + 1 ) );
 
     return ($alpha);
+}
+
+sub is_monotonic_list {
+
+    # returns 1 if list is monotonic increasing
+    # returns -1 if list is monotonic decreasing
+    # returns 0 if list is non-monotonic
+
+    my ($rx) = @_;
+    my $mono = 0;
+    my $i_non_mono;    # index of non-monotonicity
+    my $num = @{$rx};
+    for ( my $i = 1 ; $i < $num ; $i++ ) {
+        my $dF = $rx->[$i] - $rx->[ $i - 1 ];
+        if ( $i == 1 ) { $mono = $dF > 0 ? 1 : $dF < 0 ? -1 : 0 }
+        elsif ( $dF * $mono < 0 ) {
+            $i_non_mono = $i;
+            $mono       = 0;
+            last;
+        }
+    }
+    return wantarray ? ( $mono, $i_non_mono ) : $mono;
 }
 
 sub _make_intermediate_gamma_table {
@@ -1425,10 +1420,7 @@ sub _make_intermediate_gamma_table {
     my $dA_min;
     my $rlag_points;
 
-    # FIXME: check that A values vary monotonically and are different
-    # Can do this in the first loop. Then we can avoid checking
-    # polint return values.
-
+    my $rA;
     foreach my $igam (@ilist) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha  = alpha_interpolate( $symmetry, $gamma );
@@ -1439,7 +1431,22 @@ sub _make_intermediate_gamma_table {
             $rtable_closest = $rtable;
         }
         push @{$rlag_points}, [ $rtable, $A, $gamma, $alpha, $table_name ];
+	push @{$rA}, $A;
     }
+
+    # check that A values vary monotonically;
+    # otherwise interpolation will fail
+    if (!is_monotonic_list($rA)) {
+
+	print STDERR <<EOM;
+Program error: non-monotonic A
+symmetry=$symmetry gamma = $gamma_x alpha=$alpha_x 
+indexes of tables = @ilist
+A values are (@{$rA})
+EOM
+	return;
+    }
+
 
     my $lookup = sub {
 
@@ -1493,7 +1500,7 @@ sub _make_intermediate_gamma_table {
 
     foreach my $item_ref ( @{$rtable_closest} ) {
         my $Y = $item_ref->[1];
-        my ( $rA, $rX, $rdYdX, $rZ, $rdZdX );
+        my ( $rX, $rdYdX, $rZ, $rdZdX );
 
 	# FIXME: move rA to first loop above and check
 
@@ -1501,9 +1508,8 @@ sub _make_intermediate_gamma_table {
         foreach my $rpoint ( @{$rlag_points} ) {
             my ( $rtable, $A ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
-            if ( !$item ) { $missing_item = 1; last }
+            if ( !defined($item) ) { $missing_item = 1; last }
             my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
-            push @{$rA},    $A;
             push @{$rX},    $X;
             push @{$rZ},    $Z;
             push @{$rdYdX}, $dYdX;
@@ -1513,7 +1519,7 @@ sub _make_intermediate_gamma_table {
 
         my $interp = sub {
             my ($ry) = @_;
-            my ( $Q_x, $dQ ) = polint( $A_x, $rA, $ry );
+            my $Q_x = polint( $A_x, $rA, $ry );
             return $Q_x;
         };
 

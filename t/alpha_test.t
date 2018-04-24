@@ -156,7 +156,8 @@ foreach my $rcase ( @{$ralpha_table} ) {
 
     if ( !ok( $err <= $TOL ) || $VERBOSE ) {
         print STDERR
-          "blast wave alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n";
+          "blast wave alpha err=$err_pr for symmetry=$symmetry, gamma=$gamma\n
+alpha=$alpha but alpha_t=$alpha_t";
     }
 
     # Also get the alpha from the interpolation function
@@ -166,7 +167,7 @@ foreach my $rcase ( @{$ralpha_table} ) {
 
     if ( !ok( $err_i <= $TOL_i ) || $VERBOSE ) {
         print STDERR
-"table interp alpha err_i=$err_i_pr for symmetry=$symmetry, gamma=$gamma\n";
+"table interp alpha err_i=$err_i_pr for symmetry=$symmetry, gamma=$gamma\nalpha_i=$alpha_i, alpha_t=$alpha_t, alpha=$alpha";
     }
 
 }

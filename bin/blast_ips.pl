@@ -17,8 +17,17 @@ if ( $ans !~ /^[012]$/ ) {
 my $gamma = get_num("Enter gamma; <cr>=1.4:");
 if ( !$gamma ) { $gamma = 1.4 }
 
-# Create a blast object with a table of values 
+# Create a blast object for this case
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
+my $err=$blast_table->get_error();
+if ($err) {
+    print "Exiting due to error: $err\n";
+    exit;
+}
+
+#my $alpha = $blast_table->get_alpha();
+#my $alpha_i = Blast::IPS::alpha_interpolate($symmetry,$gamma);
+#query("alpha=$alpha, alpha_i=$alpha_i");
 
 my %symmetry_name = (
     0 => 'Plane',
