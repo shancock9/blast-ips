@@ -200,14 +200,14 @@ EOM
     }
 
     # Input Option 2: a builtin table name is given
-    # symmetry and gamma must match if given; it is safest not to give them. 
+    # symmetry and gamma must match if given; it is safest not to give them.
     elsif ( defined($table_name) ) {
 
         $rtable = get_builtin_table($table_name);
         my $item = $rtables_info->{$table_name};
         if ( defined($item) ) {
-	    my $old_symmetry=$symmetry;
-	    my $old_gamma=$gamma;
+            my $old_symmetry = $symmetry;
+            my $old_gamma    = $gamma;
             ( $symmetry, $gamma, my $err_est ) = @{$item};
             if ( defined($old_symmetry) && $old_symmetry != $symmetry ) {
                 carp(<<EOM);
@@ -249,7 +249,7 @@ EOM
 
         # Search for this gamma value
         my $result = _gamma_lookup( $symmetry, $gamma );
-	my $old_table_name=$table_name;
+        my $old_table_name = $table_name;
         $table_name = $result->{table_name};
 
         # Get builtin table if there is one
@@ -259,16 +259,12 @@ EOM
 
         # Otherwise, make an interpolated table
         else {
-
-            my $igam1 = $result->{igam1};
-            my $igam2 = $result->{igam2};
-            my $igam3 = $result->{igam3};
-            my $igam4 = $result->{igam4};
-	##print STDERR "igam1=$igam1, igam4=$igam4\n";
+            my $igam_lo = $result->{igam_lo};
+            my $igam_hi = $result->{igam_hi};
             $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
-                $igam1, $igam2, $igam3, $igam4 );
+                $igam_lo .. $igam_hi );
             if ( !$table_name ) {
-		$table_name = _make_table_name($symmetry, $gamma);
+                $table_name = _make_table_name( $symmetry, $gamma );
             }
         }
     }
@@ -334,9 +330,8 @@ sub _gamma_lookup {
     #     table_name => $table_name
 
     # 3. If the gamma differs from the table entries but is within
-    # bounds of the table, returns four surrounding table names
-    # for use in cubic interpolation. These have hash keys
-    # table_name1, table_name2, table_name3 and table_name4
+    # bounds of the table, returns index of bounding tables
+    # for use in interpolation.
 
     return if ( $sym != 0 && $sym != 1 && $sym != 2 );
     $eps = 1.e-5 unless ($eps);
@@ -384,14 +379,37 @@ sub _gamma_lookup {
         return $return_hash;
     }
 
-    # Not an exact match: return indexes of four bounding tables in preparation
-    # for cubic interpolation.
+    # Not an exact match: return indexes of bounding tables in preparation
+    # for interpolation.
+
+    # OLD:
     my $j1 = $j2 - 1;
     my $j4 = $j3 + 1;
     if ( $j1 < 0 )      { $j1 = $j2 }
     if ( $j4 >= $ntab ) { $j4 = $j3 }
 
+    #NEW:
+    my $NLAG    = 6;
+    my $igam_lo = $j2 - int( $NLAG / 2 );
+    my $igam_hi = $igam_lo + $NLAG - 1;
+    if ( $igam_lo < 0 ) {
+        my $idiff = 0 - $igam_lo;
+        $igam_lo += $idiff;
+        $igam_hi += $idiff;
+    }
+    if ( $igam_hi > $ntab - 1 ) {
+        my $idiff = $ntab - 1 - $igam_hi;
+        $igam_lo += $idiff;
+        $igam_hi += $idiff;
+    }
+    if ( $igam_lo < 0 )         { $igam_lo = 0 }
+    if ( $igam_hi > $ntab - 1 ) { $igam_hi = $ntab - 1 }
+
     $return_hash = {
+        igam_lo => $igam_lo,
+        igam_hi => $igam_lo,
+
+        # OLD: to be deleted
         igam1 => $j1,
         igam2 => $j2,
         igam3 => $j3,
@@ -460,13 +478,13 @@ sub get_info {
         $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
         $Interp_Error, $rs2,      $zs2
     ) = @{$item};
-    $rinfo->{table_name}      = $table_name;
-    $rinfo->{alpha}           = $self->{_alpha};
-    $rinfo->{symmetry}        = $self->{_symmetry};
-    $rinfo->{gamma}           = $self->{_gamma};
-    $rinfo->{Max_Error} = $Max_Error;
-    $rinfo->{Xs2} = $rs2?log($rs2):undef;
-    $rinfo->{Zs2} = $zs2?log($zs2):undef;
+    $rinfo->{table_name} = $table_name;
+    $rinfo->{alpha}      = $self->{_alpha};
+    $rinfo->{symmetry}   = $self->{_symmetry};
+    $rinfo->{gamma}      = $self->{_gamma};
+    $rinfo->{Max_Error}  = $Max_Error;
+    $rinfo->{Xs2}        = $rs2 ? log($rs2) : undef;
+    $rinfo->{Zs2}        = $zs2 ? log($zs2) : undef;
     return ($rinfo);
 }
 
@@ -1337,7 +1355,7 @@ sub alpha_interpolate {
     my $icol = 0;
 
     # A small tolerance to avoid interpolations
-    my $eps  = 1.e-6;
+    my $eps = 1.e-6;
 
     my $rhash = {
         _jl     => $jl,
@@ -1356,20 +1374,30 @@ sub alpha_interpolate {
         return $alpha_max;
     }
 
-    # Define 4 consecutive lagrange interpolation points
-    my $jbase = $jl - 1;
-    if ( $jl <= 0 ) {
-        $jbase = $jl;
-    }
-    elsif ( $ju >= $ntab - 1 ) {
-        $jbase = $ju - 3;
-    }
+    #    # Define 4 consecutive lagrange interpolation points
+    #    my $jbase = $jl - 1;
+    #    if ( $jl <= 0 ) {
+    #        $jbase = $jl;
+    #    }
+    #    elsif ( $ju >= $ntab - 1 ) {
+    #        $jbase = $ju - 3;
+    #    }
+
+    # Define N consecutive lagrange interpolation points;
+    # Using 4 points gives sufficient accuracy
+    my $NLAG = 4;
+    my $jbot = $jl - int($NLAG / 2);
+    if ( $jbot < 0 ) { $jbot = 0 }
+    my $jtop = $jbot + $NLAG - 1;
+    if ( $jtop >= $ntab ) { $jtop = $ntab - 1 }
 
     my ( $rx, $ry );
 
     # Since alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) }, we can
-    # interpolate the function alpha*(gamma-1) which is very slowly varying
-    for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
+    # interpolate the function alpha*(gamma-1)*sqrt(gamma+1) which is very
+    # slowly varying
+    ##for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
+    for ( my $jj = $jbot ; $jj <= $jtop ; $jj += 1 ) {
         my ( $xx, $yy ) = @{ $rtab->[$jj] };
         push @{$rx}, $xx;
         push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
@@ -1383,53 +1411,34 @@ sub alpha_interpolate {
 
 sub _make_intermediate_gamma_table {
 
-    # Given: a symmetry, gamma, and the indexes of four bounding builtin tables
-    #     such that the gamma of interest is between numbers 2 and 3
-    #     and such that at least three are different tables
+    # Given: a symmetry, gamma, and a list of the indexes of the builtin tables
+    #     to be interpolated
     # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
     #     by using cubic interpolation between the four builtin tables
 
-    # TODO: Generalize to allow arbitrary number of interpolation points
-
-    my ( $symmetry, $gamma_x, $igam1, $igam2, $igam3, $igam4 ) = @_;
+    my ( $symmetry, $gamma_x, @ilist ) = @_;
     my $rtable_new;
     my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
-
-    # Evaluate the interpolation fraction
-    my ( $gamma_1, $table_name_1 ) = @{ $rgamma_table->[$symmetry]->[$igam1] };
-    my ( $gamma_2, $table_name_2 ) = @{ $rgamma_table->[$symmetry]->[$igam2] };
-    my ( $gamma_3, $table_name_3 ) = @{ $rgamma_table->[$symmetry]->[$igam3] };
-    my ( $gamma_4, $table_name_4 ) = @{ $rgamma_table->[$symmetry]->[$igam4] };
-
-    my $alpha_1 = alpha_interpolate( $symmetry, $gamma_1 );
-    my $alpha_2 = alpha_interpolate( $symmetry, $gamma_2 );
-    my $alpha_3 = alpha_interpolate( $symmetry, $gamma_3 );
-    my $alpha_4 = alpha_interpolate( $symmetry, $gamma_4 );
-
-    my $rtable_1 = get_builtin_table($table_name_1);
-    my $rtable_2 = get_builtin_table($table_name_2);
-    my $rtable_3 = get_builtin_table($table_name_3);
-    my $rtable_4 = get_builtin_table($table_name_4);
-
-    my $A_1 = -log( ( $gamma_1 + 1 ) * $alpha_1 );
-    my $A_2 = -log( ( $gamma_2 + 1 ) * $alpha_2 );
     my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
-    my $A_3 = -log( ( $gamma_3 + 1 ) * $alpha_3 );
-    my $A_4 = -log( ( $gamma_4 + 1 ) * $alpha_4 );
 
-    # This is the fraction that would be used for linear interpolation
-    # of X
-    my $ff = ( $A_x - $A_2 ) / ( $A_3 - $A_2 );
-
-    # Use the Y values of the closest table so that we converge to it. But clip
-    # the Y to the lower bounds of the other table to avoid extrapolation at
-    # long range where the theory is not great.
     my $rtable_closest;
-    if ( $ff <= 0.5 ) {
-        $rtable_closest = $rtable_2;
-    }
-    else {
-        $rtable_closest = $rtable_3;
+    my $dA_min;
+    my $rlag_points;
+
+    # FIXME: check that A values vary monotonically and are different
+    # Can do this in the first loop. Then we can avoid checking
+    # polint return values.
+
+    foreach my $igam (@ilist) {
+        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
+        my $alpha  = alpha_interpolate( $symmetry, $gamma );
+        my $rtable = get_builtin_table($table_name);
+        my $A      = -log( ( $gamma + 1 ) * $alpha );
+        my $dA     = ( $A_x - $A );
+        if ( !defined($dA_min) || abs($dA) < $dA_min ) {
+            $rtable_closest = $rtable;
+        }
+        push @{$rlag_points}, [ $rtable, $A, $gamma, $alpha, $table_name ];
     }
 
     my $lookup = sub {
@@ -1477,36 +1486,41 @@ sub _make_intermediate_gamma_table {
     };
 
     # Loop over all Y values in the closest table to make the interpolated
-    # table
+    # table.  Use the Y values of the closest table so that we converge to it.
+    # But clip the Y to the lower bounds of the other table to avoid
+    # extrapolation at long range where the theory is not great.
     my $rtab_x = [];
+
     foreach my $item_ref ( @{$rtable_closest} ) {
-        my $Y      = $item_ref->[1];
-        my $item_1 = $lookup->( $Y, $rtable_1 );
-        my $item_2 = $lookup->( $Y, $rtable_2 );
-        my $item_3 = $lookup->( $Y, $rtable_3 );
-        my $item_4 = $lookup->( $Y, $rtable_4 );
+        my $Y = $item_ref->[1];
+        my ( $rA, $rX, $rdYdX, $rZ, $rdZdX );
 
-        # Can only interpolate if all 4 tables are defined
-        next unless ( $item_1 && $item_2 && $item_3 && $item_4 );
+	# FIXME: move rA to first loop above and check
 
-        my ( $X_1, $YY_1, $dYdX_1, $Z_1, $dZdX_1 ) = @{$item_1};
-        my ( $X_2, $YY_2, $dYdX_2, $Z_2, $dZdX_2 ) = @{$item_2};
-        my ( $X_3, $YY_3, $dYdX_3, $Z_3, $dZdX_3 ) = @{$item_3};
-        my ( $X_4, $YY_4, $dYdX_4, $Z_4, $dZdX_4 ) = @{$item_4};
+        my $missing_item;
+        foreach my $rpoint ( @{$rlag_points} ) {
+            my ( $rtable, $A ) = @{$rpoint};
+            my $item = $lookup->( $Y, $rtable );
+            if ( !$item ) { $missing_item = 1; last }
+            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
+            push @{$rA},    $A;
+            push @{$rX},    $X;
+            push @{$rZ},    $Z;
+            push @{$rdYdX}, $dYdX;
+            push @{$rdZdX}, $dZdX;
+        }
+        next if ($missing_item);
 
-        my $lagrange_interp = sub {
-
-            my ( $Q_1, $Q_2, $Q_3, $Q_4 ) = @_;
-            my $rx = [ $A_1, $A_2, $A_3, $A_4 ];
-            my $ry = [ $Q_1, $Q_2, $Q_3, $Q_4 ];
-            my ($Q_x, $dQ) = polint( $A_x, $rx, $ry );
+        my $interp = sub {
+            my ($ry) = @_;
+            my ( $Q_x, $dQ ) = polint( $A_x, $rA, $ry );
             return $Q_x;
         };
 
-        my $X_x    = $lagrange_interp->( $X_1,    $X_2,    $X_3,    $X_4 );
-        my $Z_x    = $lagrange_interp->( $Z_1,    $Z_2,    $Z_3,    $Z_4 );
-        my $dYdX_x = $lagrange_interp->( $dYdX_1, $dYdX_2, $dYdX_3, $dYdX_4 );
-        my $dZdX_x = $lagrange_interp->( $dZdX_1, $dZdX_2, $dZdX_3, $dZdX_4 );
+        my $X_x    = $interp->($rX);
+        my $Z_x    = $interp->($rZ);
+        my $dYdX_x = $interp->($rdYdX);
+        my $dZdX_x = $interp->($rdZdX);
 
         push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
     }
@@ -1523,7 +1537,7 @@ sub polint {
 
     # Given:
     # $xx = an x location where y is required
-    # ($rx, $ry) = arrays of ($x,$y) lagrange interpolation points 
+    # ($rx, $ry) = arrays of ($x,$y) lagrange interpolation points
 
     # Return:
     #  $yy = the interpolated value at $xx
@@ -1574,10 +1588,10 @@ sub polint {
             $c[$i] = $ho * $den;
         }
 
-	# after each column is completed, decide which correction c or d, to
-	# add to the accumulating value of y, that is, which path to take in
-	# the table by forking up or down. ns is updated as we go to keep track
-	# of where we are. the last dy added is the error indicator.
+        # after each column is completed, decide which correction c or d, to
+        # add to the accumulating value of y, that is, which path to take in
+        # the table by forking up or down. ns is updated as we go to keep track
+        # of where we are. the last dy added is the error indicator.
         if ( 2 * ( $ns + 1 ) < $n - $m - 1 ) {
             $dy = $c[ $ns + 1 ];
         }
