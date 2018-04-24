@@ -1367,16 +1367,16 @@ sub alpha_interpolate {
 
     my ( $rx, $ry );
 
-    # Since alpha varies approximately as 1/(gamma-1), we can interpolate
-    # the function alpha*(gamma-1) which is very slowly varying
+    # Since alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) }, we can
+    # interpolate the function alpha*(gamma-1) which is very slowly varying
     for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
         my ( $xx, $yy ) = @{ $rtab->[$jj] };
         push @{$rx}, $xx;
-        push @{$ry}, $yy * ( $xx - 1 );
+        push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
     }
 
     my ( $ff, $df ) = polint( $gamma, $rx, $ry );
-    my $alpha = $ff / ( $gamma - 1 );
+    my $alpha = $ff / ( ( $gamma - 1 ) * sqrt( $gamma + 1 ) );
 
     return ($alpha);
 }
