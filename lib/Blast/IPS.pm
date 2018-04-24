@@ -264,6 +264,7 @@ EOM
             my $igam2 = $result->{igam2};
             my $igam3 = $result->{igam3};
             my $igam4 = $result->{igam4};
+	##print STDERR "igam1=$igam1, igam4=$igam4\n";
             $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
                 $igam1, $igam2, $igam3, $igam4 );
             if ( !$table_name ) {
@@ -503,21 +504,21 @@ sub get_table_index {
     return ($rtable_index);
 }
 
-sub get_table_index_as_array_ref {
-
-    # OLD: to be deleted
-    # returns a list of references of the form
-    #   [NAME, symmetry, gamma, error]
-    # one per built-in table
-
-    my @table_list;
-    foreach my $key ( sort keys %{$rtables_info} ) {
-        my $item = $rtables_info->{$key};
-        my ( $symmetry, $gamma, $err_est ) = @{$item};
-        push @table_list, [ $key, $symmetry, $gamma, $err_est ];
-    }
-    return ( \@table_list );
-}
+##sub get_table_index_as_array_ref {
+##
+##    # OLD: to be deleted
+##    # returns a list of references of the form
+##    #   [NAME, symmetry, gamma, error]
+##    # one per built-in table
+##
+##    my @table_list;
+##    foreach my $key ( sort keys %{$rtables_info} ) {
+##        my $item = $rtables_info->{$key};
+##        my ( $symmetry, $gamma, $err_est ) = @{$item};
+##        push @table_list, [ $key, $symmetry, $gamma, $err_est ];
+##    }
+##    return ( \@table_list );
+##}
 
 sub check_tables {
 
@@ -1328,8 +1329,6 @@ sub alpha_interpolate {
     # The table is spaced closely enough that cubic interpolation of the
     # interpolated values have comparable accuracy.
 
-    # TODO: Generalize to allow any number of lagrange interpolation points
-
     return if ( $sym != 0 && $sym != 1 && $sym != 2 );
 
     my $rtab = $ralpha_table->[$sym];
@@ -1357,6 +1356,7 @@ sub alpha_interpolate {
         return $alpha_max;
     }
 
+    # Define 4 consecutive lagrange interpolation points
     my $jbase = $jl - 1;
     if ( $jl <= 0 ) {
         $jbase = $jl;
@@ -1366,13 +1366,17 @@ sub alpha_interpolate {
     }
 
     my ( $rx, $ry );
+
+    # Since alpha varies approximately as 1/(gamma-1), we can interpolate
+    # the function alpha*(gamma-1) which is very slowly varying
     for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
         my ( $xx, $yy ) = @{ $rtab->[$jj] };
         push @{$rx}, $xx;
-        push @{$ry}, $yy;
+        push @{$ry}, $yy * ( $xx - 1 );
     }
 
-    my ( $alpha, $dalpha ) = polint( $gamma, $rx, $ry );
+    my ( $ff, $df ) = polint( $gamma, $rx, $ry );
+    my $alpha = $ff / ( $gamma - 1 );
 
     return ($alpha);
 }
