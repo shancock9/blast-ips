@@ -259,11 +259,11 @@ EOM
 
         # Otherwise, make an interpolated table
         else {
-            my $igam_lo = $result->{igam_lo};
-            my $igam_hi = $result->{igam_hi};
-            if ( defined($igam_lo) && defined($igam_hi) ) {
+            my $rigam_6 = $result->{rigam_6};
+            my $rigam_4 = $result->{rigam_4};
+            if ( defined($rigam_6) && defined($rigam_4) ) {
                 $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
-                    $igam_lo .. $igam_hi );
+                    $rigam_6, $rigam_4 );
                 if ( !$table_name ) {
                     $table_name = _make_table_name( $symmetry, $gamma );
                 }
@@ -384,25 +384,34 @@ sub _gamma_lookup {
     # Not an exact match: return indexes of bounding tables in preparation
     # for interpolation.
 
-    my $NLAG    = 6;
-    my $igam_lo = $j2 - int( $NLAG / 2 );
-    my $igam_hi = $igam_lo + $NLAG - 1;
-    if ( $igam_lo < 0 ) {
-        my $idiff = 0 - $igam_lo;
-        $igam_lo += $idiff;
-        $igam_hi += $idiff;
-    }
-    if ( $igam_hi > $ntab - 1 ) {
-        my $idiff = $ntab - 1 - $igam_hi;
-        $igam_lo += $idiff;
-        $igam_hi += $idiff;
-    }
-    if ( $igam_lo < 0 )         { $igam_lo = 0 }
-    if ( $igam_hi > $ntab - 1 ) { $igam_hi = $ntab - 1 }
+    my $irange = sub {
+        my ( $j2, $ntab, $NLAG ) = @_;
+
+	# find the index range for NLAG lagrange interpolation points
+	# $j2 is just below the point of interest
+        my $igam_lo = $j2 - int( $NLAG / 2 );
+        my $igam_hi = $igam_lo + $NLAG - 1;
+        if ( $igam_lo < 0 ) {
+            my $idiff = 0 - $igam_lo;
+            $igam_lo += $idiff;
+            $igam_hi += $idiff;
+        }
+        if ( $igam_hi > $ntab - 1 ) {
+            my $idiff = $ntab - 1 - $igam_hi;
+            $igam_lo += $idiff;
+            $igam_hi += $idiff;
+        }
+        if ( $igam_lo < 0 )         { $igam_lo = 0 }
+        if ( $igam_hi > $ntab - 1 ) { $igam_hi = $ntab - 1 }
+        return [ $igam_lo .. $igam_hi ];
+    };
+
+    my $rigam_4= $irange->( $j2, $ntab, 4 );
+    my $rigam_6= $irange->( $j2, $ntab, 6 );
 
     $return_hash = {
-        igam_lo => $igam_lo,
-        igam_hi => $igam_hi,
+	rigam_4 => $rigam_4,
+	rigam_6 => $rigam_6,
     };
     return ($return_hash);
 }
@@ -1411,17 +1420,19 @@ sub _make_intermediate_gamma_table {
     # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
     #     by using cubic interpolation between the four builtin tables
 
-    my ( $symmetry, $gamma_x, @ilist ) = @_;
+    my ( $symmetry, $gamma_x, $rilist_6, $rilist_4 ) = @_;
+    $rilist_4 = $rilist_6 unless defined($rilist_4);
     my $rtable_new;
     my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
     my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
 
     my $rtable_closest;
     my $dA_min;
-    my $rlag_points;
+    my $rlag_points_6;
+    my $rlag_points_4;
 
-    my $rA;
-    foreach my $igam (@ilist) {
+    my $rA_6;
+    foreach my $igam (@{$rilist_6}) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha  = alpha_interpolate( $symmetry, $gamma );
         my $rtable = get_builtin_table($table_name);
@@ -1430,23 +1441,33 @@ sub _make_intermediate_gamma_table {
         if ( !defined($dA_min) || abs($dA) < $dA_min ) {
             $rtable_closest = $rtable;
         }
-        push @{$rlag_points}, [ $rtable, $A, $gamma, $alpha, $table_name ];
-	push @{$rA}, $A;
+        push @{$rlag_points_6}, [ $rtable, $A, $gamma, $alpha, $table_name ];
+	push @{$rA_6}, $A;
+    }
+
+    my $rA_4;
+    foreach my $igam (@{$rilist_4}) {
+        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
+        my $alpha  = alpha_interpolate( $symmetry, $gamma );
+        my $rtable = get_builtin_table($table_name);
+        my $A      = -log( ( $gamma + 1 ) * $alpha );
+        push @{$rlag_points_4}, [ $rtable, $A, $gamma, $alpha, $table_name ];
+	push @{$rA_4}, $A;
     }
 
     # check that A values vary monotonically;
     # otherwise interpolation will fail
-    if (!is_monotonic_list($rA)) {
+    # NOTE: assuming that rA_4 is monotonic if rA_6 is
+    if (!is_monotonic_list($rA_6)) {
 
 	print STDERR <<EOM;
 Program error: non-monotonic A
 symmetry=$symmetry gamma = $gamma_x alpha=$alpha_x 
-indexes of tables = @ilist
-A values are (@{$rA})
+indexes of tables = @{$rilist_6}
+A values are (@{$rA_6})
 EOM
 	return;
     }
-
 
     my $lookup = sub {
 
@@ -1502,31 +1523,46 @@ EOM
         my $Y = $item_ref->[1];
         my ( $rX, $rdYdX, $rZ, $rdZdX );
 
-	# FIXME: move rA to first loop above and check
-
         my $missing_item;
-        foreach my $rpoint ( @{$rlag_points} ) {
+        foreach my $rpoint ( @{$rlag_points_6} ) {
             my ( $rtable, $A ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
             my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
             push @{$rX},    $X;
             push @{$rZ},    $Z;
+            #push @{$rdYdX}, $dYdX;
+            #push @{$rdZdX}, $dZdX;
+        }
+
+        foreach my $rpoint ( @{$rlag_points_4} ) {
+            my ( $rtable, $A ) = @{$rpoint};
+            my $item = $lookup->( $Y, $rtable );
+            if ( !defined($item) ) { $missing_item = 1; last }
+            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
+            #push @{$rX},    $X;
+            #push @{$rZ},    $Z;
             push @{$rdYdX}, $dYdX;
             push @{$rdZdX}, $dZdX;
         }
+
         next if ($missing_item);
 
-        my $interp = sub {
-            my ($ry) = @_;
-            my $Q_x = polint( $A_x, $rA, $ry );
-            return $Q_x;
-        };
+##        my $interp = sub {
+##            my ($ry) = @_;
+##            my $Q_x = polint( $A_x, $rA_6, $ry );
+##            return $Q_x;
+##        };
 
-        my $X_x    = $interp->($rX);
-        my $Z_x    = $interp->($rZ);
-        my $dYdX_x = $interp->($rdYdX);
-        my $dZdX_x = $interp->($rdZdX);
+        #my $X_x    = $interp->($rX);
+        #my $Z_x    = $interp->($rZ);
+        #my $dYdX_x = $interp->($rdYdX);
+        #my $dZdX_x = $interp->($rdZdX);
+
+        my $X_x    = polint( $A_x, $rA_6, $rX );
+        my $Z_x    = polint( $A_x, $rA_6, $rZ );
+        my $dYdX_x = polint( $A_x, $rA_4, $rdYdX );
+        my $dZdX_x = polint( $A_x, $rA_4, $rdZdX );
 
         push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
     }
