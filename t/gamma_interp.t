@@ -8,7 +8,7 @@ use Blast::IPS;
 # that would be interpolated to it if it were not in the set.
 
 # 0 = quiet, 1=summary table, 2=summary table + individual tables
-my $verbose = 2;
+my $verbose = 0;
 
 # Current allowable tolerances; these should be reduced as soon as possible
 my $X_err_tol    = 1.5e-5;
