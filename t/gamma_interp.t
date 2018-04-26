@@ -14,7 +14,6 @@ my $verbose = 0;
 my $X_err_tol    = 1.5e-5;
 my $dYdX_err_tol = 5e-5;
 
-
 my $rgamma_table;
 
 INIT {
@@ -62,35 +61,22 @@ foreach my $symmetry ( 0, 1, 2 ) {
             my $gamma_chk = $blast_table_mid->get_gamma();
 
             my $rtable_mid;
-
-            my $DEBUG = 0;
-
             my $rilist_4 = set_interpolation_points_with_gap( $igam, $ngam, 4 );
 
             # At the low gamma range, do not make the points too lopsided
             my $six = $igam == 0 ? 4 : $igam == 1 ? 5 : 6;
             my $rilist_6 =
               set_interpolation_points_with_gap( $igam, $ngam, $six );
-
-            if ($DEBUG) {
-
-                # testing local routine
-                $rtable_mid =
-                  _make_intermediate_gamma_table( $symmetry, $gamma,
-                    $rilist_6, $rilist_4 );
-
-            }
-            else {
-                $rtable_mid =
-                  Blast::IPS::_make_intermediate_gamma_table( $symmetry, $gamma,
-                    $rilist_6, $rilist_4 );
-            }
+            $rtable_mid =
+              Blast::IPS::_make_intermediate_gamma_table( $symmetry, $gamma,
+                $rilist_6, $rilist_4 );
             my $rerr =
               compare_tables( $rtable_mid, $blast_table_mid, $verbose );
             push @summary_table,
               "$symmetry\t$gamma\t$rerr->{X_err}\t$rerr->{dYdX_err}\n";
             my $X_err    = $rerr->{X_err};
             my $dYdX_err = $rerr->{dYdX_err};
+
             if ( !ok( $X_err <= $X_err_tol && $dYdX_err <= $dYdX_err_tol ) ) {
                 print STDERR
 "X Error=$X_err dYdX Error=$dYdX_err at symmetry=$symmetry gamma=$gamma\n";
@@ -180,180 +166,4 @@ sub compare_tables {
         dZdX_err        => $dZdX_err_max,
         full_comparison => \@comparison,
     };
-}
-
-# Interface routines
-sub polint {
-    return Blast::IPS::polint(@_);
-}
-
-sub alpha_interpolate {
-    return Blast::IPS::alpha_interpolate(@_);
-}
-
-sub get_builtin_table {
-    return Blast::IPS::get_builtin_table(@_);
-}
-
-sub is_monotonic_list {
-    return Blast::IPS::is_monotonic_list(@_);
-}
-
-sub _locate_2d {
-    return Blast::IPS::_locate_2d(@_);
-}
-
-sub _interpolate_rows {
-    return Blast::IPS::_interpolate_rows(@_);
-}
-
-sub _make_intermediate_gamma_table {
-
-    # Given: a symmetry, gamma, and a list of the indexes of the builtin tables
-    #     to be interpolated
-    # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
-    #     by using cubic interpolation between the four builtin tables
-
-    my ( $symmetry, $gamma_x, $rilist_6, $rilist_4 ) = @_;
-    $rilist_4 = $rilist_6 unless defined($rilist_4);
-    my $rtable_new;
-    my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
-    my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
-
-    my $rtable_closest;
-    my $dA_min;
-    my $rlag_points_6;
-    my $rlag_points_4;
-
-    my $rA_6;
-    foreach my $igam ( @{$rilist_6} ) {
-        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
-        my $alpha  = alpha_interpolate( $symmetry, $gamma );
-        my $rtable = get_builtin_table($table_name);
-        my $A      = -log( ( $gamma + 1 ) * $alpha );
-        my $dA     = ( $A_x - $A );
-        if ( !defined($dA_min) || abs($dA) < $dA_min ) {
-            $rtable_closest = $rtable;
-        }
-        push @{$rlag_points_6}, [ $rtable, $A, $gamma, $alpha, $table_name ];
-        push @{$rA_6}, $A;
-    }
-
-    my $rA_4;
-    foreach my $igam ( @{$rilist_4} ) {
-        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
-        my $alpha  = alpha_interpolate( $symmetry, $gamma );
-        my $rtable = get_builtin_table($table_name);
-        my $A      = -log( ( $gamma + 1 ) * $alpha );
-        push @{$rlag_points_4}, [ $rtable, $A, $gamma, $alpha, $table_name ];
-        push @{$rA_4}, $A;
-    }
-
-    # check that A values vary monotonically;
-    # otherwise interpolation will fail
-    # NOTE: assuming that rA_4 is monotonic if rA_6 is
-    if ( !is_monotonic_list($rA_6) ) {
-
-        print STDERR <<EOM;
-Program error: non-monotonic A
-symmetry=$symmetry gamma = $gamma_x alpha=$alpha_x 
-indexes of tables = @{$rilist_6}
-A values are (@{$rA_6})
-EOM
-        return;
-    }
-
-    my $lookup = sub {
-
-        # This is a specialized version of lookup for gamma interpolation
-        # for this routine which avoids extrapolation
-
-        # Given:
-        #     $Y = a value of 'Y' = ln(overpressure) to lookup
-        #     $rtab = a builtin blast table
-
-        # Returns undef if out of bounds of table; otheerwise
-        # Returns
-        # 	[X, Y, dY/dX, Z]
-
-        my ( $Y, $rtab ) = @_;
-        my $icol   = 1;
-        my $interp = 0;    # use cubic interpolation
-
-        my $ntab  = @{$rtab};
-        my $rhash = {
-            _rtable => $rtab,
-            _jl     => undef,
-            _ju     => undef,
-        };
-
-        # Locate this point in the table
-        my ( $il, $iu ) = _locate_2d( $rhash, $Y, $icol );
-
-        # Handle case before start of the table
-        if ( $il < 0 ) {
-            return;
-        }
-
-        # Handle case beyond end of the table
-        elsif ( $iu >= $ntab ) {
-            return;
-        }
-
-        # otherwise interpolate within table
-        else {
-            return _interpolate_rows( $Y, $icol, $rtab->[$il],
-                $rtab->[$iu], $interp );
-        }
-    };
-
-    # Loop over all Y values in the closest table to make the interpolated
-    # table.  Use the Y values of the closest table so that we converge to it.
-    # But clip the Y to the lower bounds of the other table to avoid
-    # extrapolation at long range where the theory is not great.
-
-    # FIXME: an improvement would be to start at the minimum Y value of the
-    # the collection of 6 tables, or better to extrapolate start the tables
-    # to the desired initial Y value if necessary.
-
-    # We are interpolating X and Z with 6 interpolation points.
-    # We are interpolating dYdX and dZdX with 4 interpolation points.
-    my $rtab_x = [];
-
-    foreach my $item_ref ( @{$rtable_closest} ) {
-        my $Y = $item_ref->[1];
-        my ( $rX, $rdYdX, $rZ, $rdZdX );
-
-        my $missing_item;
-        foreach my $rpoint ( @{$rlag_points_6} ) {
-            my ( $rtable, $A ) = @{$rpoint};
-            my $item = $lookup->( $Y, $rtable );
-            if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
-            push @{$rX}, $X;
-            push @{$rZ}, $Z;
-        }
-
-        # All values must exist in order to interpolate
-        # (tables all start and end at slightly different values)
-        next if ($missing_item);
-
-        foreach my $rpoint ( @{$rlag_points_4} ) {
-            my ( $rtable, $A ) = @{$rpoint};
-            my $item = $lookup->( $Y, $rtable );
-            if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
-            push @{$rdYdX}, $dYdX;
-            push @{$rdZdX}, $dZdX;
-        }
-        next if ($missing_item);
-
-        my $X_x    = polint( $A_x, $rA_6, $rX );
-        my $Z_x    = polint( $A_x, $rA_6, $rZ );
-        my $dYdX_x = polint( $A_x, $rA_4, $rdYdX );
-        my $dZdX_x = polint( $A_x, $rA_4, $rdZdX );
-
-        push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
-    }
-    return $rtab_x;
 }
