@@ -1,5 +1,34 @@
 package Blast::IPS;
 
+# This program can evaluate the shock overpressure for point source explosion
+# in an ideal homogeneous atmosphere.  This problem does not have an analytic
+# solution, so we interpolate tables of values.
+
+# The builtin tables cover the three one-dimensional symmetries (plane,
+# cylindrical, spherical) and numerous values of the ideal gas gamma (between
+# 1.1 and 6.5.  They were prepared with calculations using the finite
+# difference method and the method of characteristics.  The estimated relative
+# accuracy of interpolated shock overpressures depends on the table but is
+# below 1.e-5 in all cases.
+
+# TODO list:
+
+# - Add more tables to reduce gamma interpolation error
+
+# - in sub _make_intermediate_gamma_table, an improvement would be to start at
+# the minimum Y value of the the collection of 6 tables, or better to
+# extrapolate start the tables to the desired initial Y value if necessary.
+
+# - Work is needed to handle extrapolation beyond the ranges of the tables for
+# some spherical symmetry variables.
+
+# - An easy way to test the extrapolation is to have the driver get a
+# builtin table, truncate at both ends, reinstall it and look at the errors at
+# both missing ends.
+
+# - Maybe allow lookup on slope dYdX or dZdX, with quadratic interpolation
+
+
 # MIT License
 # Copyright (c) 2018 Steven Hancock
 #
@@ -81,30 +110,6 @@ INIT {
         $rgamma_table->[$sym] = \@unique;
     }
 }
-
-# Evaluate the shock overpressure for point source explosion in an ideal
-# homogeneous atmosphere.  This does not have an analytic solution, so
-# we interpolate tables of values.
-
-# A table of values may be supplied as a call argument, or alternatively one of
-# the builtin tables may be used.
-
-# The builtin tables cover the three one-dimensional symmetries (plane,
-# cylindrical, spherical) and several values of the ideal gas gamma (1.1, 1.2,
-# 1.3, 1.4, 1.667, 2 and 3).  They were prepared with calculations using the
-# finite difference method and the method of characteristics.  The estimated
-# relative accuracy of interpolated shock overpressures depends on the table
-# but is below 1.e-5 in all cases.
-
-# TODO:
-# Maybe allow lookup on slope dYdX or dZdX, with quadratic interpolation
-
-# Work is needed to handle extrapolation beyond the ranges of the tables for
-# some spherical symmetry variables.
-
-# An easy way to test the extrapolation is to have the driver get a
-# builtin table, truncate at both ends, reinstall it and look at the errors at
-# both missing ends.
 
 sub new {
     my ( $class, @args ) = @_;
@@ -326,20 +331,17 @@ sub set_interpolation_points {
     # Return:
     #   a reference to a list of consecutive indexes
 
-    # TODO: add option to avoid extending up or down or both, or to limit
-    # extension 
-
     return if ($ntab<=0 || $NLAG <=0);
     my $j_lo = $jfloor - int( $NLAG / 2 );
     my $j_hi = $j_lo + $NLAG - 1;
     if ( $j_lo < 0 ) {
         my $jshift = 0 - $j_lo;
         $j_lo += $jshift;
-        $j_hi += $jshift;  # FIXME: add limit
+        $j_hi += $jshift;  
     }
     if ( $j_hi > $ntab - 1 ) {
         my $jshift = $ntab - 1 - $j_hi;
-        $j_lo += $jshift;  # FIXME: add limit
+        $j_lo += $jshift;  
         $j_hi += $jshift;
     }
     if ( $j_lo < 0 )         { $j_lo = 0 }
