@@ -430,8 +430,16 @@ sub _gamma_lookup {
     # Not an exact match: return indexes of bounding tables in preparation
     # for interpolation.
 
+    # At the start of the table, in the low gamma range, results are better if
+    # we reduce the number of lagrange points to keep the points them from
+    # being too lopsided.  Thus, if we are interpolating near the first table
+    # point, we will use 4 point interpolation instead of 6 point.
+    # At the upper end of the table it is not necessary or beneficial to do
+    # this.
+    my $six = $j2 == 0 ? 4 : $j2 == 1 ? 5 : 6;
+
     my $rigam_4= set_interpolation_points( $j2, $ntab, 4 );
-    my $rigam_6= set_interpolation_points( $j2, $ntab, 6 );
+    my $rigam_6= set_interpolation_points( $j2, $ntab, $six );
 
     $return_hash = {
 	rigam_4 => $rigam_4,
