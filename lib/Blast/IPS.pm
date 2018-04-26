@@ -304,8 +304,9 @@ EOM
 
 sub _make_table_name {
 
-    # make a table name by combining the symmetry and gamma;
-    # i.e. 'S1.37' would be spherical symmetry with gamma=1.37
+    # Make a table name by combining the symmetry and gamma;
+    # i.e. make the name 'S1.37' for spherical symmetry with gamma=1.37
+
     my ( $symmetry, $gamma ) = @_;
     my $table_name;
     my $gamma_pr = sprintf "%.4g", $gamma;
@@ -314,34 +315,79 @@ sub _make_table_name {
     return $table_name;
 }
 
-sub _gamma_lookup {
-    my ( $sym, $gamma, $eps ) = @_;
+sub set_interpolation_points {
+    my ( $jfloor, $ntab, $NLAG ) = @_;
 
-    # Given: a 1d symmetry (0, 1, or 2) and an ideal gas gamma
-    # Return: the names of the builtin tables with bounding gammas
+    # Find the index range for NLAG lagrange interpolation points
+    # Given:
+    #   $jfloor is the first index before the point of interest
+    #   $ntab is the number of points in the table
+    #   $NLAG is the number of interpolation points desired
+    # Return:
+    #   a reference to a list of consecutive indexes
+
+    # TODO: add option to avoid extending up or down or both, or to limit
+    # extension 
+
+    return if ($ntab<=0 || $NLAG <=0);
+    my $j_lo = $jfloor - int( $NLAG / 2 );
+    my $j_hi = $j_lo + $NLAG - 1;
+    if ( $j_lo < 0 ) {
+        my $jshift = 0 - $j_lo;
+        $j_lo += $jshift;
+        $j_hi += $jshift;  # FIXME: add limit
+    }
+    if ( $j_hi > $ntab - 1 ) {
+        my $jshift = $ntab - 1 - $j_hi;
+        $j_lo += $jshift;  # FIXME: add limit
+        $j_hi += $jshift;
+    }
+    if ( $j_lo < 0 )         { $j_lo = 0 }
+    if ( $j_hi > $ntab - 1 ) { $j_hi = $ntab - 1 }
+    return [ $j_lo .. $j_hi ];
+}
+
+
+sub _gamma_lookup {
+    my ( $symmetry, $gamma ) = @_;
+
+    # look for a table matching a given symmetry and gamma
+
+    # Given: 
+    #   $symmetry = a 1d symmetry (0, 1, or 2) and 
+    #   $gamma = an ideal gas gamma
+    # Return: 
+    #   a return hash, with three possible results as follows;
+
+    # CASE 1. returns nothing if gamma is out of bounds or there is an error
+
+    # CASE 2. If the gamma is within a small tolerance of one of these gammas
+    # then returns reference to a hash with
+    #     table_name => $table_name
+    #     igam       => index of this table in the table of gamma values
+
+    # CASE 3. If the gamma differs from the table entries but is within
+    # bounds of the table, returns index of bounding tables
+    # for use in interpolation:
+    #    rigam_4 => $rigam_4,
+    #    rigam_6 => $rigam_6,
+    # where
+    # rigam_4 is a list of indexes for 4 point interpolation
+    # rigam_6 is a list of indexes for 6 point interpolation
 
     # uses $rgamma_table, the global table of gamma values for the builtin
     # tables
 
-    # There are three possible results:
+    return if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 );
 
-    # 1. returns nothing if gamma is out of bounds or there is an error
-
-    # 2. If the gamma is within a small tolerance of one of these gammas
-    # then returns reference to a hash with
-    #     table_name => $table_name
-
-    # 3. If the gamma differs from the table entries but is within
-    # bounds of the table, returns index of bounding tables
-    # for use in interpolation.
-
-    return if ( $sym != 0 && $sym != 1 && $sym != 2 );
-    $eps = 1.e-6 unless ($eps);
+    # The tolerance for testing gamma is currently fixed. It should be very
+    # small because we can construct very accurate interpolated tables.
+    my $eps = 1.e-7; 
 
     my $return_hash = {};
 
     # lookup this gamma in the table of gamma values for this symmetry
-    my $rtab  = $rgamma_table->[$sym];
+    my $rtab  = $rgamma_table->[$symmetry];
     my $ntab  = @{$rtab};
     my $icol  = 0;
     my $rhash = {
@@ -349,7 +395,7 @@ sub _gamma_lookup {
         _ju     => undef,
         _rtable => $rtab,
     };
-    my ( $j2, $j3 ) = Blast::IPS::_locate_2d( $rhash, $gamma, $icol );
+    my ( $j2, $j3 ) = _locate_2d( $rhash, $gamma, $icol );
     my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
 
@@ -384,30 +430,8 @@ sub _gamma_lookup {
     # Not an exact match: return indexes of bounding tables in preparation
     # for interpolation.
 
-    my $irange = sub {
-        my ( $j2, $ntab, $NLAG ) = @_;
-
-	# find the index range for NLAG lagrange interpolation points
-	# $j2 is just below the point of interest
-        my $igam_lo = $j2 - int( $NLAG / 2 );
-        my $igam_hi = $igam_lo + $NLAG - 1;
-        if ( $igam_lo < 0 ) {
-            my $idiff = 0 - $igam_lo;
-            $igam_lo += $idiff;
-            $igam_hi += $idiff;
-        }
-        if ( $igam_hi > $ntab - 1 ) {
-            my $idiff = $ntab - 1 - $igam_hi;
-            $igam_lo += $idiff;
-            $igam_hi += $idiff;
-        }
-        if ( $igam_lo < 0 )         { $igam_lo = 0 }
-        if ( $igam_hi > $ntab - 1 ) { $igam_hi = $ntab - 1 }
-        return [ $igam_lo .. $igam_hi ];
-    };
-
-    my $rigam_4= $irange->( $j2, $ntab, 4 );
-    my $rigam_6= $irange->( $j2, $ntab, 6 );
+    my $rigam_4= set_interpolation_points( $j2, $ntab, 4 );
+    my $rigam_6= set_interpolation_points( $j2, $ntab, 6 );
 
     $return_hash = {
 	rigam_4 => $rigam_4,
@@ -1356,30 +1380,16 @@ sub alpha_interpolate {
         return $alpha_max;
     }
 
-    #    # Define 4 consecutive lagrange interpolation points
-    #    my $jbase = $jl - 1;
-    #    if ( $jl <= 0 ) {
-    #        $jbase = $jl;
-    #    }
-    #    elsif ( $ju >= $ntab - 1 ) {
-    #        $jbase = $ju - 3;
-    #    }
-
     # Define N consecutive lagrange interpolation points;
     # Using 4 points gives sufficient accuracy
-    my $NLAG = 4;
-    my $jbot = $jl - int($NLAG / 2);
-    if ( $jbot < 0 ) { $jbot = 0 }
-    my $jtop = $jbot + $NLAG - 1;
-    if ( $jtop >= $ntab ) { $jtop = $ntab - 1 }
+    my $rj_interp = set_interpolation_points( $jl, $ntab, 4 );
 
     my ( $rx, $ry );
 
-    # Since alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) }, we can
-    # interpolate the function alpha*(gamma-1)*sqrt(gamma+1) which is very
-    # slowly varying
-    ##for ( my $jj = $jbase ; $jj <= $jbase + 3 ; $jj += 1 ) {
-    for ( my $jj = $jbot ; $jj <= $jtop ; $jj += 1 ) {
+    # alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) }, 
+    # so we can improve accuracy by interpolating the function
+    # alpha*(gamma-1)*sqrt(gamma+1) 
+    foreach my $jj ( @{$rj_interp} ) {
         my ( $xx, $yy ) = @{ $rtab->[$jj] };
         push @{$rx}, $xx;
         push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
@@ -1517,6 +1527,13 @@ EOM
     # table.  Use the Y values of the closest table so that we converge to it.
     # But clip the Y to the lower bounds of the other table to avoid
     # extrapolation at long range where the theory is not great.
+
+    # FIXME: an improvement would be to start at the minimum Y value of the
+    # the collection of 6 tables, or better to extrapolate start the tables
+    # to the desired initial Y value if necessary.
+
+    # We are interpolating X and Z with 6 interpolation points.
+    # We are interpolating dYdX and dZdX with 4 interpolation points.
     my $rtab_x = [];
 
     foreach my $item_ref ( @{$rtable_closest} ) {
@@ -1531,33 +1548,21 @@ EOM
             my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
             push @{$rX},    $X;
             push @{$rZ},    $Z;
-            #push @{$rdYdX}, $dYdX;
-            #push @{$rdZdX}, $dZdX;
         }
+
+	# All values must exist in order to interpolate
+        # (tables all start and end at slightly different values)
+        next if ($missing_item);
 
         foreach my $rpoint ( @{$rlag_points_4} ) {
             my ( $rtable, $A ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
             my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
-            #push @{$rX},    $X;
-            #push @{$rZ},    $Z;
             push @{$rdYdX}, $dYdX;
             push @{$rdZdX}, $dZdX;
         }
-
         next if ($missing_item);
-
-##        my $interp = sub {
-##            my ($ry) = @_;
-##            my $Q_x = polint( $A_x, $rA_6, $ry );
-##            return $Q_x;
-##        };
-
-        #my $X_x    = $interp->($rX);
-        #my $Z_x    = $interp->($rZ);
-        #my $dYdX_x = $interp->($rdYdX);
-        #my $dZdX_x = $interp->($rdZdX);
 
         my $X_x    = polint( $A_x, $rA_6, $rX );
         my $Z_x    = polint( $A_x, $rA_6, $rZ );
