@@ -40,7 +40,7 @@ foreach my $symmetry ( 0, 1, 2 ) {
     # loop over tables for each gamma
     my $imin = 1;
     my $imax = @{$rtab} - 2;
-    for ( my $i = $imin ; $i < $imax ; $i++ ) {
+    for ( my $i = $imin ; $i <= $imax ; $i++ ) {
         my $gamma = $rtab->[$i]->[0];
 
         # find this table
