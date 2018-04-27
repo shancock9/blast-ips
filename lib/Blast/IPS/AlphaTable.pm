@@ -39,8 +39,8 @@ BEGIN {
 
     # The alpha values from sedov3.f were in good agreement with the
     # finite difference runs (differences usually <=1.e-6) except for
-    # gamma<=1.2, where the finite difference runs are considered more
-    # accurate. So the table values for gamma <=1.2 are taken from
+    # gamma < 1.15, where the finite difference runs are considered more
+    # accurate. So the table values for gamma < 1.15 are taken from
     # the finite difference runs.
 
     # The table format is:

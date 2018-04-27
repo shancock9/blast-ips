@@ -538,7 +538,6 @@ sub get_table_index {
     foreach my $key ( sort keys %{$rtables_info} ) {
         my $item = $rtables_info->{$key};
 
-        #my ( $symmetry, $gamma, $Max_Error, $N ) = @{$item};
         my (
             $symmetry,     $gamma,    $Max_Error, $N,
             $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
@@ -884,7 +883,7 @@ sub _short_range_calc {
 
         # For future reference:
         # This is the equation on page 182 of Korobeinikov's book "point blast
-        # theory".  It is missing a factor of gamma.
+        # theory".  That printed equation is missing a factor of gamma.
         # It is a cleaner way to code (and typeset) if you include the
         # missing factor of gamma.
         #  my $ovp_atm_check = 4 / ( $gamma + 1 ) / ( -1 + sqrt( 1 + $am2 ) );
@@ -968,7 +967,6 @@ sub _short_range_calc {
         return;
     }
 
-    #my $Y_i       = $Y_0 + $dY_dX_i * ( $X_i - $X_0 );
     my $d2Y_dX2_i = 0;
 
     # FIXME: This still uses simple theory
