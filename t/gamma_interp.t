@@ -65,6 +65,7 @@ foreach my $symmetry ( 0, 1, 2 ) {
 
             # At the low gamma range, do not make the points too lopsided
             my $six = $igam == 0 ? 4 : $igam == 1 ? 5 : 6;
+
             my $rilist_6 =
               set_interpolation_points_with_gap( $igam, $ngam, $six );
             $rtable_mid =
