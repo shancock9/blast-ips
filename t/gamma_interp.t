@@ -8,11 +8,11 @@ use Blast::IPS;
 # that would be interpolated to it if it were not in the set.
 
 # 0 = quiet, 1=summary table, 2=summary table + individual tables
-my $verbose = 0;
+my $verbose = $ARGV[0];
 
 # Current allowable tolerances; these should be reduced as soon as possible
-my $X_err_tol    = 1.5e-5;
-my $dYdX_err_tol = 5e-5;
+my $Y_err_tol    = 7.e-6;
+my $dYdX_err_tol = 4e-5;
 
 my $rgamma_table;
 
@@ -30,7 +30,7 @@ INIT {
 
 my @full_comparison;
 my @summary_table;
-push @summary_table, "symmetry\tgamma\trerr->{X_err}\trerr->{dYdX_err}\n";
+push @summary_table, "symmetry\tgamma\trerr->{Y_err}\trerr->{dYdX_err}\n";
 
 # loop over symmetry
 foreach my $symmetry ( 0, 1, 2 ) {
@@ -73,13 +73,13 @@ foreach my $symmetry ( 0, 1, 2 ) {
             my $rerr =
               compare_tables( $rtable_mid, $blast_table_mid, $verbose );
             push @summary_table,
-              "$symmetry\t$gamma\t$rerr->{X_err}\t$rerr->{dYdX_err}\n";
-            my $X_err    = $rerr->{X_err};
+              "$symmetry\t$gamma\t$rerr->{Y_err}\t$rerr->{dYdX_err}\n";
+            my $Y_err    = $rerr->{Y_err};
             my $dYdX_err = $rerr->{dYdX_err};
 
-            if ( !ok( $X_err <= $X_err_tol && $dYdX_err <= $dYdX_err_tol ) ) {
+            if ( !ok( $Y_err <= $Y_err_tol && $dYdX_err <= $dYdX_err_tol ) ) {
                 print STDERR
-"X Error=$X_err dYdX Error=$dYdX_err at symmetry=$symmetry gamma=$gamma\n";
+"Y Error=$Y_err dYdX Error=$dYdX_err at symmetry=$symmetry gamma=$gamma\n";
             }
             push @full_comparison, @{ $rerr->{full_comparison} };
             next;
@@ -96,7 +96,7 @@ if ($verbose) {
     $fh->close();
 }
 
-if ( $verbose > 1 ) {
+if ( $verbose && $verbose > 1 ) {
     my $fall = "gamma_interp.full_comparison.txt";
     open( my $fh, ">", $fall ) || die "cannot open $fall: $!\n";
     foreach my $line (@full_comparison) {
@@ -135,6 +135,43 @@ sub set_interpolation_points_with_gap {
 }
 
 sub compare_tables {
+
+    # Make a detailed comparison of the original and interpolated tables
+    my ( $rtable_mid, $blast_table_mid, $verbose ) = @_;
+    my $gamma_mid = $blast_table_mid->get_gamma();
+    my ( $X_err_max, $Y_err_max, $dYdX_err_max, $Z_err_max, $dZdX_err_max ) =
+      ( 0, 0, 0, 0, 0 );
+    my @comparison;
+    push @comparison,
+"Y_int\tX_mid\tX_int\tX_err\tY_err\tdYdX_mid\tdYdX_int\tdYdX_err\tZ_mid\tZ_int\tZ_err\tdZdX_mid\tdZdX_err\n";
+    foreach my $item ( @{$rtable_mid} ) {
+        my ( $X_int, $Y_int, $dYdX_int, $Z_int, $dZdX_int ) = @{$item};
+        my $item_mid = $blast_table_mid->lookup( $Y_int, 'Y' );
+        my ( $X_mid, $Y_mid, $dYdX_mid, $Z_mid, $dZdX_mid ) = @{$item_mid};
+        my $X_err    = $X_int - $X_mid;
+        my $Y_err = $X_err * $dYdX_mid;
+        my $dYdX_err = $dYdX_int - $dYdX_mid;
+        my $Z_err    = $Z_int - $Z_mid;
+        my $dZdX_err = $dZdX_int - $dZdX_mid;
+        if ( abs($X_err) > $X_err_max )       { $X_err_max    = abs($X_err) }
+        if ( abs($Y_err) > $Y_err_max )       { $Y_err_max    = abs($Y_err) }
+        if ( abs($dYdX_err) > $dYdX_err_max ) { $dYdX_err_max = abs($dYdX_err) }
+        if ( abs($Z_err) > $Z_err_max )       { $Z_err_max    = abs($Z_err) }
+        if ( abs($dZdX_err) > $dZdX_err_max ) { $dZdX_err_max = abs($dZdX_err) }
+        push @comparison,
+"$Y_int\t$X_mid\t$X_int\t$X_err\t$Y_err\t$dYdX_mid\t$dYdX_int\t$dYdX_err\t$Z_mid\t$Z_int\t$Z_err\t$dZdX_mid\t$dZdX_err\n";
+    }
+    return {
+        X_err           => $X_err_max,
+	Y_err		=> $Y_err_max,
+        dYdX_err        => $dYdX_err_max,
+        Z_err           => $Z_err_max,
+        dZdX_err        => $dZdX_err_max,
+        full_comparison => \@comparison,
+    };
+}
+
+sub old_compare_tables {
 
     # Make a detailed comparison of the original and interpolated tables
     my ( $rtable_mid, $blast_table_mid, $verbose ) = @_;

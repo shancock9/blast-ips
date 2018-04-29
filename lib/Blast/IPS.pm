@@ -1390,7 +1390,8 @@ sub alpha_interpolate {
 
     # Define N consecutive lagrange interpolation points;
     # Using 4 points gives sufficient accuracy
-    my $rj_interp = set_interpolation_points( $jl, $ntab, 4 );
+    my $NLAG = 4;
+    my $rj_interp = set_interpolation_points( $jl, $ntab, $NLAG );
 
     my ( $rx, $ry );
 
