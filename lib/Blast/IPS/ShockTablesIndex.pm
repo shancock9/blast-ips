@@ -35,7 +35,7 @@ our $rtables_info;
 BEGIN {
 
 # Created with: ./update_shock_table_index.pl 
-# Sun Apr 29 07:10:07 2018   Inspiron-3668
+# Sun Apr 29 07:27:04 2018   Inspiron-3668
 
 # symmetry = 0,1,2 for Plane, Cylindrical, Spherical
 # gamma = ideal gas gamma
