@@ -66,8 +66,10 @@ foreach my $symmetry ( 0, 1, 2 ) {
             # At the low gamma range, do not make the points too lopsided
             my $six = $igam == 0 ? 4 : $igam == 1 ? 5 : 6;
 
-            my $rilist_6 =
-              set_interpolation_points_with_gap( $igam, $ngam, $six );
+            my $rilist_6 = set_interpolation_points_with_gap( $igam, $ngam, $six );
+
+            ##my $rilist_6 = new_set_interpolation_points_with_gap( $igam, $rgamma_table->[$symmetry], $six );
+
             $rtable_mid =
               Blast::IPS::_make_intermediate_gamma_table( $symmetry, $gamma,
                 $rilist_6, $rilist_4 );
@@ -104,6 +106,79 @@ if ( $verbose && $verbose > 1 ) {
         $fh->print($line);
     }
     $fh->close();
+}
+
+sub new_set_interpolation_points_with_gap {
+    my ( $j_mid, $rtab, $NLAG ) = @_;
+
+    # Find the index range for NLAG lagrange interpolation points
+    # Given:
+    #   $j_mid the table index to be skipped (must not be end point)
+    #   $ntab is the number of points in the table
+    #   $NLAG is the number of interpolation points desired
+    # Return:
+    #   a reference to a list of consecutive indexes
+
+    my $ntab=@{$rtab};
+
+    return if ( $ntab <= 0 || $NLAG <= 0 || $j_mid < 0 || $j_mid > $ntab - 1 );
+    my $gamma_mid = $rtab->[$j_mid]->[0];
+
+    my $j_lo = $j_mid - int( $NLAG / 2 );
+    my $j_hi = $j_lo + $NLAG;
+
+    if ( $j_lo < 0 ) {
+        my $jshift = 0 - $j_lo;
+        $j_lo += $jshift;
+        $j_hi += $jshift;    # FIXME: optional
+    }
+    if ( $j_hi > $ntab - 1 ) {
+        my $jshift = $ntab - 1 - $j_hi;
+        $j_lo += $jshift;    # FIXME: optional
+        $j_hi += $jshift;
+    }
+    if ( $j_lo < 0 )         { $j_lo = 0 }
+    if ( $j_hi > $ntab - 1 ) { $j_hi = $ntab - 1 }
+
+    my $ratmax=3;
+    my $n_lo = $j_mid - $j_lo;
+    my $dg_min;
+    my $clip_lo=0;
+    if ( $n_lo > 2 ) {
+        for ( my $i = 1 ; $i <= $n_lo ; $i++ ) {
+            $j_lo = $j_mid - $i;
+            my $dg  = $rtab->[ $j_lo+1 ]->[0] - $rtab->[$j_lo]->[0];
+            my $adg = abs($dg);
+            if ( !defined($dg_min) ) { $dg_min = $adg ; next}
+            if ( $i > 2 && $adg > $ratmax * $dg_min || $adg < $dg_min/$ratmax) {
+                $j_lo++;
+		$clip_lo=1;
+                last;
+            }
+	    if ($adg<$dg_min) {$dg_min=$adg}
+        }
+    }
+
+    my $n_hi = $j_hi - $j_mid; 
+    $dg_min=undef;
+    my $clip_hi=0;
+    if ( $n_hi > 2 ) {
+        for ( my $i = 1 ; $i <= $n_hi ; $i++ ) {
+            $j_hi = $j_mid + $i;
+            my $dg  = $rtab->[ $j_hi ]->[0] - $rtab->[$j_hi-1]->[0];
+            my $adg = abs($dg);
+            if ( !defined($dg_min)) { $dg_min = $adg ; next}
+            #if ( $i > 2 && $adg > $ratmax * $dg_min ) {
+            if ( $i > 2 && $adg > $ratmax * $dg_min || $adg < $dg_min/$ratmax) {
+                $j_hi--;
+		$clip_hi=1;
+                last;
+            }
+	    if ($adg<$dg_min) {$dg_min=$adg}
+        }
+    }
+    print STDERR "gamma=$gamma_mid nlo=$n_lo nhi=$n_hi clip_lo=$clip_lo clip_hi=$clip_hi j= $j_lo .. $j_mid - 1, $j_mid + 1 .. $j_hi\n"; 
+    return [ $j_lo .. $j_mid - 1, $j_mid + 1 .. $j_hi ];
 }
 
 sub set_interpolation_points_with_gap {
