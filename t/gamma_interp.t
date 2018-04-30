@@ -11,9 +11,6 @@ use Blast::IPS;
 my $verbose = $ARGV[0];
 
 # Current allowable tolerances; these should be reduced as soon as possible
-my $Y_err_tol    = 7.e-6;
-my $dYdX_err_tol = 4e-5;
-
 my $rgamma_table;
 
 INIT {
@@ -32,9 +29,19 @@ my @full_comparison;
 my @summary_table;
 push @summary_table, "symmetry\tgamma\trerr->{Y_err}\trerr->{dYdX_err}\n";
 
+# maximum allowable relative errors for any gamma
+# [$Y_err_tol, $dYdX_err_tol]
+my $rtol=[
+  [5.e-6, 1.e-5],
+  [7.e-6, 3.e-5],
+  [3.e-6, 4.e-5],
+];
+
 # loop over symmetry
 foreach my $symmetry ( 0, 1, 2 ) {
     my $rtab = $rgamma_table->[$symmetry];
+
+    my ($Y_err_tol,$dYdX_err_tol)=@{$rtol->[$symmetry]};    
 
     # loop over tables for each gamma
     my $imin = 1;
