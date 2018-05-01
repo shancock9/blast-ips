@@ -307,6 +307,49 @@ EOM
     return;
 }
 
+sub _end_model_setup {
+    my ($self) = @_;
+
+    # Set parameters for evaluation beyond the ends of the table
+    # Set asymptotic wave parameters, given a table and gamma
+    my $rtable   = $self->{_rtable};
+    my $gamma    = $self->{_gamma};
+    my $symmetry = $self->{_symmetry};
+
+    # Near region: we find the value of alpha at the first table point
+    # based on R^(symmetry+1)*u**2=constant
+    my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
+      @{ $rtable->[0] };
+    my $lambda = exp($X_near);
+    my $Prat   = exp($Y_near) + 1;
+    my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
+    my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
+    my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
+    my $alpha =
+      ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
+    $self->{_alpha} = $alpha;
+
+    # Distant region
+    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = @{ $rtable->[-1] };
+    my ( $A_far, $B_far, $Z_zero ) = ( 0, 0, 0 );
+    if ( $symmetry == 2 ) {
+        my $mu = -( $dYdX_far + 1 );
+        if ( $mu > 0 ) {
+            $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
+            $B_far = 0.5 / $mu - $X_far;
+        }
+        else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
+        $Z_zero =
+          exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
+        $Z_zero = log($Z_zero);
+    }
+    $self->{_A_far}  = $A_far;
+    $self->{_B_far}  = $B_far;
+    $self->{_Z_zero} = $Z_zero;
+    return;
+}
+
+
 sub _make_table_name {
 
     # Make a table name by combining the symmetry and gamma;
@@ -323,27 +366,34 @@ sub _make_table_name {
 sub set_interpolation_points {
     my ( $jfloor, $ntab, $NLAG ) = @_;
 
-    # Find the index range for NLAG lagrange interpolation points
+    # Find the index range for NLAG valid lagrange interpolation points
     # Given:
     #   $jfloor is the first index before the point of interest
     #   $ntab is the number of points in the table
     #   $NLAG is the number of interpolation points desired
     # Return:
     #   a reference to a list of consecutive indexes
+    #   the actual number may be less than NLAG for small tables
 
     return if ($ntab<=0 || $NLAG <=0);
+
+    # First add points on both sides (will be lopsided if NLAG is odd)
     my $j_lo = $jfloor - int( $NLAG / 2 );
     my $j_hi = $j_lo + $NLAG - 1;
+ 
+    # Shift points if too near an edge
     if ( $j_lo < 0 ) {
-        my $jshift = 0 - $j_lo;
-        $j_lo += $jshift;
-        $j_hi += $jshift;  
+        my $nshift = 0 - $j_lo;
+        $j_lo += $nshift;
+        $j_hi += $nshift;  
     }
     if ( $j_hi > $ntab - 1 ) {
-        my $jshift = $ntab - 1 - $j_hi;
-        $j_lo += $jshift;  
-        $j_hi += $jshift;
+        my $nshift = $ntab - 1 - $j_hi;
+        $j_lo += $nshift;  
+        $j_hi += $nshift;
     }
+
+    # Be sure points are in bounds
     if ( $j_lo < 0 )         { $j_lo = 0 }
     if ( $j_hi > $ntab - 1 ) { $j_hi = $ntab - 1 }
     return [ $j_lo .. $j_hi ];
@@ -353,7 +403,7 @@ sub set_interpolation_points {
 sub _gamma_lookup {
     my ( $symmetry, $gamma ) = @_;
 
-    # look for a table matching a given symmetry and gamma
+    # Look for a table matching a given symmetry and gamma
 
     # Given: 
     #   $symmetry = a 1d symmetry (0, 1, or 2) and 
@@ -401,7 +451,7 @@ sub _gamma_lookup {
     my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
 
-    # Check if out of bounds
+    # Check if out of bounds (CASE 1)
     if ( $j2 < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         $return_hash->{'table_name'} = $key_min;
@@ -415,7 +465,7 @@ sub _gamma_lookup {
         return $return_hash;
     }
 
-    # Check for an exact match:
+    # Check for an exact match (CASE 2)
     my ( $gamma2, $key2 ) = @{ $rtab->[$j2] };
     my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
     if ( abs( $gamma - $gamma2 ) < $eps ) {
@@ -429,8 +479,8 @@ sub _gamma_lookup {
         return $return_hash;
     }
 
-    # Not an exact match: return indexes of bounding tables in preparation
-    # for interpolation.
+    # CASE 3: Not an exact match: return indexes of bounding tables in
+    # preparation for interpolation.
 
     # At the start of the table, in the low gamma range, results are better if
     # we reduce the number of lagrange points to keep the points them from
@@ -453,7 +503,7 @@ sub _gamma_lookup {
 sub _check_keys {
     my ( $rtest, $rvalid, $msg, $exact_match ) = @_;
 
-    # Check the keys of a hash:
+    # Check the keys of a hash for validity:
     # $rtest  = ref to hash to test
     # $rvalid = ref to has with valid keys
 
@@ -983,48 +1033,6 @@ sub _short_range_calc {
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2z_dX2_i ];
 }
 
-sub _end_model_setup {
-    my ($self) = @_;
-
-    # Set parameters for evaluation beyond the ends of the table
-    # Set asymptotic wave parameters, given a table and gamma
-    my $rtable   = $self->{_rtable};
-    my $gamma    = $self->{_gamma};
-    my $symmetry = $self->{_symmetry};
-
-    # Near region: we find the value of alpha at the first table point
-    # based on R^(symmetry+1)*u**2=constant
-    my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
-      @{ $rtable->[0] };
-    my $lambda = exp($X_near);
-    my $Prat   = exp($Y_near) + 1;
-    my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
-    my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
-    my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
-    my $alpha =
-      ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
-    $self->{_alpha} = $alpha;
-
-    # Distant region
-    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = @{ $rtable->[-1] };
-    my ( $A_far, $B_far, $Z_zero ) = ( 0, 0, 0 );
-    if ( $symmetry == 2 ) {
-        my $mu = -( $dYdX_far + 1 );
-        if ( $mu > 0 ) {
-            $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
-            $B_far = 0.5 / $mu - $X_far;
-        }
-        else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
-        $Z_zero =
-          exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
-        $Z_zero = log($Z_zero);
-    }
-    $self->{_A_far}  = $A_far;
-    $self->{_B_far}  = $B_far;
-    $self->{_Z_zero} = $Z_zero;
-    return;
-}
-
 sub _long_range_calc {
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
@@ -1161,8 +1169,17 @@ sub _long_range_non_sphere {
     # For planar and cylindrical waves at long range it is a good approximation
     # that dY_dX and dZ_dX become constant.  We can use the slopes at the end
     # point of the table. But in fact, at long range:
-    # dY_dX is about -0.5 for sym=0 and -0.75 for sym=1
-    # dZ_dX is about +0.5 for sym=0 and +0.25 for sym=1
+    #   dY_dX is about -0.5 for sym=0 and -0.75 for sym=1
+    #   dZ_dX is about +0.5 for sym=0 and +0.25 for sym=1
+    # Here we will use these limiting values:
+    if ( $symmetry == 0 ) {
+        $dY_dX_i = -0.5;
+        $dZ_dX_i = 0.5;
+    }
+    elsif ( $symmetry == 1 ) {
+        $dY_dX_i = -0.75;
+        $dZ_dX_i = 0.25;
+    }
 
     if ( $icol == 0 ) {
 
@@ -1532,21 +1549,34 @@ EOM
         }
     };
 
-    # Loop over all Y values in the closest table to make the interpolated
-    # table.  Use the Y values of the closest table so that we converge to it.
-    # But clip the Y to the lower bounds of the other table to avoid
-    # extrapolation at long range where the theory is not great.
+    # find the minimum Ymax and maximum Ymin of the collection
+    my ( $Ymin, $Ymax );
+    foreach my $rpoint ( @{$rlag_points_6}, @{$rlag_points_4} ) {
+        my ( $rtable, $A ) = @{$rpoint};
+        my $Ymax_i = $rtable->[0]->[1];
+        my $Ymin_i = $rtable->[-1]->[1];
+        if ( !defined($Ymax) || $Ymax_i < $Ymax ) { $Ymax = $Ymax_i }
+        if ( !defined($Ymin) || $Ymin_i > $Ymin ) { $Ymin = $Ymin_i }
+    }
 
-    # FIXME: an improvement would be to start at the minimum Y value of the
-    # the collection of 6 tables, or better to extrapolate start the tables
-    # to the desired initial Y value if necessary.
+    # add a small tolerance for floating point comparisons near table edges
+    my $eps = 1.e-8;
+    $Ymax -= $eps;
+    $Ymin += $eps;
+
+    # Set the list of Y points equal to the closest table
+    my @Ylist = ($Ymax);
+    foreach my $item_ref ( @{$rtable_closest} ) {
+        my $YY = $item_ref->[1];
+        push @Ylist, $YY if ( $YY > $Ymin && $YY < $Ymax );
+    }
+    push @Ylist, $Ymin;
 
     # We are interpolating X and Z with 6 interpolation points.
     # We are interpolating dYdX and dZdX with 4 interpolation points.
     my $rtab_x = [];
 
-    foreach my $item_ref ( @{$rtable_closest} ) {
-        my $Y = $item_ref->[1];
+    foreach my $Y ( @Ylist ) {
         my ( $rX, $rdYdX, $rZ, $rdZdX );
 
         my $missing_item;

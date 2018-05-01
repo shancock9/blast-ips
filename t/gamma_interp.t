@@ -32,7 +32,7 @@ push @summary_table, "symmetry\tgamma\trerr->{Y_err}\trerr->{dYdX_err}\n";
 # maximum allowable relative errors for any gamma
 # [$Y_err_tol, $dYdX_err_tol]
 my $rtol=[
-  [5.e-6, 1.e-5],
+  [8.e-6, 3.e-5],
   [7.e-6, 3.e-5],
   [3.e-6, 4.e-5],
 ];
@@ -153,6 +153,11 @@ sub compare_tables {
     my @comparison;
     push @comparison,
 "Y_int\tX_mid\tX_int\tX_err\tY_err\tdYdX_mid\tdYdX_int\tdYdX_err\tZ_mid\tZ_int\tZ_err\tdZdX_mid\tdZdX_err\n";
+
+    my $rbounds = $blast_table_mid->get_table_bounds();
+    my $Xmin= $rbounds->[0]->[0];
+    my $Xmax= $rbounds->[1]->[0];
+
     foreach my $item ( @{$rtable_mid} ) {
         my ( $X_int, $Y_int, $dYdX_int, $Z_int, $dZdX_int ) = @{$item};
         my $item_mid = $blast_table_mid->lookup( $Y_int, 'Y' );
@@ -162,11 +167,15 @@ sub compare_tables {
         my $dYdX_err = $dYdX_int - $dYdX_mid;
         my $Z_err    = $Z_int - $Z_mid;
         my $dZdX_err = $dZdX_int - $dZdX_mid;
+
+	# Tentative: do not include points out of bounds in comparison
+	if ($X_mid >= $Xmin && $X_mid <= $Xmax) {
         if ( abs($X_err) > $X_err_max )       { $X_err_max    = abs($X_err) }
         if ( abs($Y_err) > $Y_err_max )       { $Y_err_max    = abs($Y_err) }
         if ( abs($dYdX_err) > $dYdX_err_max ) { $dYdX_err_max = abs($dYdX_err) }
         if ( abs($Z_err) > $Z_err_max )       { $Z_err_max    = abs($Z_err) }
         if ( abs($dZdX_err) > $dZdX_err_max ) { $dZdX_err_max = abs($dZdX_err) }
+	}
         push @comparison,
 "$Y_int\t$X_mid\t$X_int\t$X_err\t$Y_err\t$dYdX_mid\t$dYdX_int\t$dYdX_err\t$Z_mid\t$Z_int\t$Z_err\t$dZdX_mid\t$dZdX_err\n";
     }
