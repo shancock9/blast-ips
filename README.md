@@ -43,8 +43,8 @@ error in the final interpolated values.  Accuracy information is largely
 unavailable in existing published results, and when it is given it is usually
 highly approximate.  The numerical methods employed here produce smooth results
 and converge as 1/N^2, where N is the number of spatial points in the finite
-difference calculation. Thus, by increasing N, the maximum error to be driven
-to very small values.
+difference calculation. This makes it easy to obtain an accurate error estimate,
+and the maximum error can be driven to very small values by increasing N.
 
 The estimated maximum relative error in shock overpressure obtained after
 interpolating the builtin tables with cubic interpolation for the gamma value
