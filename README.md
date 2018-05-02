@@ -26,7 +26,7 @@ This problem was one of the first problems to be addressed when digital
 computers became available, and it remains a very important theoretical model.
 Despite the importance of this problem, and a significant amount of past research,
 someone wishing to evaluate the solution to this problem for a specific case,
-and estimate the error in such a solution, would have great difficulty.
+*and estimate the error in such a solution*, would have great difficulty.
 This software can make such an evaluation a simple task.
 
 My own interest in this problem came from working with models of the damaging
