@@ -24,29 +24,39 @@ interpolating a builtin table of values.
 
 This problem was one of the first problems to be addressed when digital
 computers became available, and it remains a very important theoretical model.
+Despite the importance of this problem, and a significant amount of past research,
+someone wishing to evaluate the solution to this problem for a specific case,
+and estimate the error in such a solution, would have great difficulty.
+This software can make such an evaluation a simple task.
+
 My own interest in this problem came from working with models of the damaging
 effects of blast waves at long distances from accidental rocket explosions,
 but it has many other applications such as computer model verification.
 
 The builtin tables cover the three one-dimensional symmetries (plane,
-cylindrical, spherical) and several values of the ideal gas gamma ( from 1.1 to
-about 7).  They were prepared with calculations using the finite difference
-method and the method of characteristics.  
+cylindrical, spherical) and values of the ideal gas gamma from 1.1 to 7 (6.5
+for spherical symmetry).  They were prepared with calculations using a finite
+difference method and the method of characteristics.  
 
 The emphasis of this project is on getting an accurate estimate of the maximum
-error in the final interpolated values.  This information is largely
-unavailable in existing published results.  The individual point values of shock
-overpressure in the builtin tables have an estimated maximum error of about
-1.e-7 in most cases.
+error in the final interpolated values.  Accuracy information is largely
+unavailable in existing published results, and when it is given it is usually
+highly approximate.  The numerical methods employed here produce smooth results
+and converge as 1/N^2, where N is the number of spatial points in the finite
+difference calculation. Thus, by increasing N, the maximum error to be driven
+to very small values.
 
 The estimated maximum relative error in shock overpressure obtained after
 interpolating the builtin tables with cubic interpolation for the gamma value
 of one of the builtin tables is about 1.e-6 at all ranges. 
 
-Interpolation to arbitrary gamma values and ranges has an estimated maximum
-relative error in overpressure ratio of about 1.e-5.
+The software can also perform accurate interpolation to arbitrary gamma values,
+not just the gamma values of the builtin tables. This interpolation increases
+the relative error in overpressure ratio by about 1.e-6 over most of the range
+(above about gamma=1.2), so the maximum estimated relative error in
+overpressure ratio for arbitrary gamma and range is only about 2.e-6.
 
-The test problems and example script illustrate how to use the module.  I will
+Test problems and example scripts illustrate how to use the module.  I will
 be adding documentation in the future.  
 
 # AUTHOR
