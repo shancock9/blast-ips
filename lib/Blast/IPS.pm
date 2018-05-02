@@ -1100,7 +1100,6 @@ sub _long_range_sphere {
 
             # Since Z hardly changes with distance, an accurate first guess
             # is made using the last Z in the table
-            ##$X_i       = log( exp($Q) - $Z_e );
             $X_i       = log( exp($Q) + exp($Z_e) );
             $dX_newton = sub {
                 my $term = $X_i + $B_far;

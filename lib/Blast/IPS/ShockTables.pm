@@ -36,7 +36,7 @@ our $rtables;
 # or 7 (cylindrical and plane).  They were prepared with calculations using the
 # finite difference method and the method of characteristics.  The estimated
 # relative accuracy of interpolated shock overpressures depends on the table
-# but is well below 1.e-5 in all cases.
+# but is typically about 1.e-6, and well below 1.e-5 in all cases.
 
 ##################################################################
 # SHOCK FRONT TABLES
@@ -76,16 +76,17 @@ BEGIN {
     # estimated by calculating with N and N/2 and comparing the results.  The
     # error was found to vary roughly as 10/N^2.
 
+    # So the maximum error can be made almost arbitrarily small by increasing
+    # the number of points in the FD calculation and in the tables.  My goal
+    # for these tables was to achieve a maximum error, after interpolation, on
+    # the order of 1.e-6.
+
     # The method of characteristics (MOC) calculations which carried the wave
     # to long range were found to have errors of about the same order of
     # magnitude as the FD calculations.
 
-    # Cubic interpolation among the table points has a maximum error typically
-    # between 5.e-7 and 1.e-6, depending on the number of table points used.
-
-    # These errors can be made almost arbitrarily small by increasing the
-    # number of points in the FD calculation and in the tables.  My goal for
-    # these tables was to achieve a maximum error on the order of 1.e-6.
+    # Table points were selected so that cubic interpolation has a maximum
+    # error of 5.e-7. Linear interpolation has a maximum error of about 1.e-3.
 
     $rtables = {
 
