@@ -13,13 +13,7 @@ package Blast::IPS;
 
 # TODO list:
 
-# - Add more tables to reduce gamma interpolation error
-
-# - in sub _make_intermediate_gamma_table, an improvement would be to start at
-# the minimum Y value of the the collection of 6 tables, or better to
-# extrapolate start the tables to the desired initial Y value if necessary.
-
-# - Work is needed to handle extrapolation beyond the ranges of the tables for
+# - Needed to check the extrapolation method beyond the ranges of the tables for
 # some spherical symmetry variables.
 
 # - An easy way to test the extrapolation is to have the driver get a
@@ -27,7 +21,6 @@ package Blast::IPS;
 # both missing ends.
 
 # - Maybe allow lookup on slope dYdX or dZdX, with quadratic interpolation
-
 
 # MIT License
 # Copyright (c) 2018 Steven Hancock
