@@ -78,8 +78,7 @@ Reference:
         [ 1, 1.6, 0.634833347 ],
         [ 2, 1.6, 0.55375103 ],
 
-        # The plane second shock seems to vanish near gamma=5/3
-        # it would be interesting to do some runs closer around this
+        # Note: The second shock vanishes in plane symmetry at gamma=1.6
 
         [ 0, 1.667, 0.301289264 ],
         [ 1, 1.667, 0.563965674 ],
