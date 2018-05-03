@@ -513,14 +513,15 @@ sub _check_keys {
     if ($error) {
         local $" = ')(';
         my @expected_keys = sort keys %{$rvalid};
+        @missing_keys = sort @missing_keys;
         @unknown_keys = sort @unknown_keys;
         croak(<<EOM);
 ------------------------------------------------------------------------
 Program error detected checking hash keys
 Message is: '$msg'
-Expected keys: (@expected_keys)
+Valid keys are: (@expected_keys)
+Keys not seen : (@missing_keys)
 Unknown key(s): (@unknown_keys)
-Missing key(s): (@missing_keys)
 ------------------------------------------------------------------------
 EOM
     }
@@ -780,9 +781,144 @@ sub clone {
     return $newobj;
 }
 
-sub lookup {
+sub wavefront {
 
     # This is the main entry for external calls.
+    # Lookup wavefront properties at a given range, 
+
+    # Given:
+    #     a hash of the form
+    #     id_Q => Q
+
+    # where
+    #     Q = a value to lookup
+
+    #     id_Q defines what Q contains:
+    #       'X' if Q = ln(R), where R=scaled range
+    #       'Y' if Q = ln(overpressure ratio)
+    #       'Z' if Q = ln(R-cT), where T=scaled time of arrival
+    #       'W' if Q = ln(T), where T=scaled time of arrival
+
+    # for debugging, the hash may also contain  
+    #      'interpolation_flag' => $interp 
+    #	     interp = 0 for cubic [This is the default and recommended method]
+    #	     interp = 1 for linear [This is only intended for error checking]
+
+    # Returns
+    # 	[X, Y, dY/dX, Z]
+
+    # Positive phase duration and length can be computed from Z.
+    # Note that W is not returned but Toa can be computed from
+    #   Toa = exp(X)-Z
+
+    my ( $self, @args ) = @_;
+
+    # do not proceed unless the table is good
+    my $error = $self->{_error};
+    if ($error) {
+        carp "$error";
+        return;
+    }
+
+    my $rtab = $self->{_rtable};
+    my $ntab = @{$rtab};
+
+    if (@args == 0) {
+	croak "Missing call parameters";
+    }
+
+    # default input is a hash 
+    my %input_hash = @args;
+    my $rinput_hash = \%input_hash;
+
+    # but also allow a hash ref
+    if ( @args == 1 ) {
+        my $arg0    = $args[0];
+        my $reftype = ref($arg0);
+        if ( $reftype && $reftype eq 'HASH' ) {
+            $rinput_hash = $arg0;
+        }
+    }
+
+    my @input_keys = qw(
+      X
+      Y
+      Z
+      W
+      interpolation_flag
+    );
+    my %valid_input_keys;
+    @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
+
+    # Validate input keys
+    _check_keys( $rinput_hash, \%valid_input_keys,
+        "Checking for valid input keys" );
+
+    # this interpolation flag is for debugging;
+    # the default and recommended interpolation is cubic 
+    my $interp = 0; 
+
+    # get table column number and value to search
+    my $icol;
+    my $Q;
+    my $id_Q;
+    foreach my $key ( keys %{$rinput_hash} ) {
+        my $val = $rinput_hash->{$key};
+        if ( $key eq 'interpolation_flag' ) { $interp = $val }
+        else {
+
+            if ( defined($Q) ) {
+                croak(
+"Expecting only one input value but saw both $id_Q and $key\n"
+                );
+            }
+            $Q = $val;
+	    $id_Q = $key;
+            if    ( $key eq 'X' ) { $icol = 0 }
+            elsif ( $key eq 'Y' ) { $icol = 1 }
+            elsif ( $key eq 'Z' ) { $icol = 3 }
+            elsif ( $key eq 'W' ) { $icol = 5 }
+            else                  { croak "unexpected key=$key\n"; }
+        }
+    }
+
+    # Locate this point in the table
+    my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
+
+    my $result;
+
+    # Handle case before start of the table
+    if ( $il < 0 ) {
+        $result=$self->_short_range_calc( $Q, $icol );
+    }
+
+    # Handle case beyond end of the table
+    elsif ( $iu >= $ntab ) {
+        $result=$self->_long_range_calc( $Q, $icol );
+    }
+
+    # otherwise interpolate within table
+    else {
+        $result= _interpolate_rows( $Q, $icol, $rtab->[$il], $rtab->[$iu],
+            $interp );
+    }
+
+    my $return_hash = {
+        'X'    => $result->[0],
+        'Y'    => $result->[1],
+        'dYdX' => $result->[2],
+        'Z'    => $result->[3],
+        'dZdX' => $result->[4],
+    };
+    return $return_hash;
+}
+
+sub lookup {
+
+    #####################################################################
+    # This is the OLD main entry for external calls.
+    # Please call 'wavefront' instead; it will be more general.
+    #####################################################################
 
     # Given:
     #     $Q = a value to lookup

@@ -48,8 +48,9 @@ while (1) {
     last unless ( $lambda && $lambda > 0 );
     my $iQ  = 'X';
     my $Q   = log($lambda);
-    my $ret = $blast_table->lookup( $Q, $iQ );
-    my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
+    my $ret = $blast_table->wavefront( $iQ => $Q );
+    #my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
+    my $Y=$ret->{Y};
     my $ovprat = exp($Y);
     print "The overpressure ratio is: $ovprat\n";
 }
