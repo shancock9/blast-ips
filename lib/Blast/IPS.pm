@@ -20,7 +20,10 @@ package Blast::IPS;
 # builtin table, truncate at both ends, reinstall it and look at the errors at
 # both missing ends.
 
-# - Maybe allow lookup on slope dYdX or dZdX, with quadratic interpolation
+# - allow lookup on slope dYdX or dZdX, with quadratic interpolation
+#   and handle case where they exceed limiting values
+
+# - Need clear 'out of bounds' signal
 
 # MIT License
 # Copyright (c) 2018 Steven Hancock
@@ -783,8 +786,8 @@ sub clone {
 
 sub wavefront {
 
+    # Lookup wavefront properties at a given range. 
     # This is the main entry for external calls.
-    # Lookup wavefront properties at a given range, 
 
     # Given:
     #     a hash of the form
@@ -794,18 +797,21 @@ sub wavefront {
     #     Q = a value to lookup
 
     #     id_Q defines what Q contains:
-    #       'X' if Q = ln(R), where R=scaled range
-    #       'Y' if Q = ln(overpressure ratio)
-    #       'Z' if Q = ln(R-cT), where T=scaled time of arrival
-    #       'W' if Q = ln(T), where T=scaled time of arrival
+    #       'X'    if Q = ln(R), where R=scaled range
+    #       'Y'    if Q = ln(overpressure ratio)
+    #       'dYdX' if Q = dY/dX = d(ln p)/d(ln r)
+    #       'Z'    if Q = ln(R-cT), where T=scaled time of arrival
+    #       'dZdX' if Q = dZ/dX 
+    #       'W'    if Q = ln(T), where T=scaled time of arrival
+    #       'dWdX' if Q = dW/dX 
 
-    # for debugging, the hash may also contain  
+    # The hash may also contain (mainly for debugging):
     #      'interpolation_flag' => $interp 
     #	     interp = 0 for cubic [This is the default and recommended method]
     #	     interp = 1 for linear [This is only intended for error checking]
 
     # Returns
-    # 	[X, Y, dY/dX, Z]
+    # 	[X, Y, dY/dX, Z, dZdX]
 
     # Positive phase duration and length can be computed from Z.
     # Note that W is not returned but Toa can be computed from
@@ -840,15 +846,18 @@ sub wavefront {
         }
     }
 
-    my @input_keys = qw(
-      X
-      Y
-      Z
-      W
-      interpolation_flag
+    # For interpolation variables, This lists the corresponding table columns.
+    # For the interpolation flag it lists the default value
+    my %valid_input_keys = (
+        X                  => 0,
+        Y                  => 1,
+        dYdX               => 2,
+        Z                  => 3,
+        dZdX               => 4,
+        W                  => 5,
+        dWdX               => 6,
+        interpolation_flag => 0,
     );
-    my %valid_input_keys;
-    @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
 
     # Validate input keys
     _check_keys( $rinput_hash, \%valid_input_keys,
@@ -856,7 +865,7 @@ sub wavefront {
 
     # this interpolation flag is for debugging;
     # the default and recommended interpolation is cubic 
-    my $interp = 0; 
+    my $interp = $valid_input_keys{'interpolation_flag'}; #0; 
 
     # get table column number and value to search
     my $icol;
@@ -872,13 +881,9 @@ sub wavefront {
 "Expecting only one input value but saw both $id_Q and $key\n"
                 );
             }
-            $Q = $val;
-	    $id_Q = $key;
-            if    ( $key eq 'X' ) { $icol = 0 }
-            elsif ( $key eq 'Y' ) { $icol = 1 }
-            elsif ( $key eq 'Z' ) { $icol = 3 }
-            elsif ( $key eq 'W' ) { $icol = 5 }
-            else                  { croak "unexpected key=$key\n"; }
+            $Q    = $val;
+            $id_Q = $key;
+	    $icol = $valid_input_keys{$key};
         }
     }
 
@@ -903,12 +908,17 @@ sub wavefront {
             $interp );
     }
 
+    # RowLoc  shows which table rows were interpolated
+    # RowVals shows the interpolated row values
+
     my $return_hash = {
-        'X'    => $result->[0],
-        'Y'    => $result->[1],
-        'dYdX' => $result->[2],
-        'Z'    => $result->[3],
-        'dZdX' => $result->[4],
+        'X'        => $result->[0],
+        'Y'        => $result->[1],
+        'dYdX'     => $result->[2],
+        'Z'        => $result->[3],
+        'dZdX'     => $result->[4],
+	'RowLoc'   => [$il, $iu, $ntab],
+        'RowVals'  => $result,
     };
     return $return_hash;
 }
@@ -1044,6 +1054,9 @@ sub _short_range_calc {
     # 3 = Z
     # 5 = W = ln(TOA)
 
+    # FIXME:
+    # for icol=2,4,6  we should just return the first line of the table
+
     my $ovprat_from_lambda = sub {
         my ($lambda) = @_;
         my $am2;
@@ -1165,6 +1178,10 @@ sub _short_range_calc {
 sub _long_range_calc {
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
+
+    # FIXME:
+    # for icol=2,4,6  we should just return the first line of the table
+
     return $self->_long_range_sphere( $Q, $icol ) if ( $symmetry == 2 );
     return $self->_long_range_non_sphere( $Q, $icol );
 }
@@ -1405,6 +1422,10 @@ sub _interpolate_rows {
     my ( $X_b, $Y_b, $dY_dX_b, $Z_b, $dZ_dX_b, $W_b, $dW_dX_b ) = @{$row_b};
     my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e, $W_e, $dW_dX_e ) = @{$row_e};
 
+    # FIXME: for slope interpolation, we are currently doing liner interp
+    # We should either iterate or do parabolic interpolation using the
+    # second derivatives at the segment ends
+
     # If this is an inverse problem, first find X=X_i
     my $X_i;
     if ( $icol == 0 ) {
@@ -1415,15 +1436,30 @@ sub _interpolate_rows {
           _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
             $Y_e, $X_e, 1 / $dY_dX_e, $interp );
     }
+    elsif ( $icol == 2 ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dY_dX_b, $X_b, 0,
+            $dY_dX_e, $X_e, 0, 1 );
+    }
     elsif ( $icol == 3 ) {
         ( $X_i, my $dX_dZ_i, my $d2X_dZ2_i ) =
           _interpolate_scalar( $Q, $Z_b, $X_b, 1 / $dZ_dX_b,
             $Z_e, $X_e, 1 / $dZ_dX_e, $interp );
     }
+    elsif ( $icol == 4 ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dZ_dX_b, $X_b, 0,
+            $dZ_dX_e, $X_e, 0, 1 );
+    }
     elsif ( $icol == 5 ) {
         ( $X_i, my $dX_dW_i, my $d2X_dW2_i ) =
           _interpolate_scalar( $Q, $W_b, $X_b, 1 / $dW_dX_b,
             $W_e, $X_e, 1 / $dW_dX_e, $interp );
+    }
+    elsif ( $icol == 6 ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dW_dX_b, $X_b, 0,
+            $dW_dX_e, $X_e, 0, 1 );
     }
     else {
         carp "unknown call type icol='$icol'";    # Shouldn't happen
@@ -1437,6 +1473,7 @@ sub _interpolate_rows {
       _interpolate_scalar( $X_i, $X_b, $Z_b, $dZ_dX_b, $X_e, $Z_e, $dZ_dX_e,
         $interp );
 
+    # FIXME: also return W_i and dW_dX_i
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
 }
 
