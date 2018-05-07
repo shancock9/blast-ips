@@ -160,7 +160,8 @@ sub compare_tables {
 
     foreach my $item ( @{$rtable_mid} ) {
         my ( $X_int, $Y_int, $dYdX_int, $Z_int, $dZdX_int ) = @{$item};
-        my $item_mid = $blast_table_mid->lookup( $Y_int, 'Y' );
+        my $item_mid =
+          $blast_table_mid->wavefront( 'Y' => $Y_int )->{'TableVars'};
         my ( $X_mid, $Y_mid, $dYdX_mid, $Z_mid, $dZdX_mid ) = @{$item_mid};
         my $X_err    = $X_int - $X_mid;
         my $Y_err = $X_err * $dYdX_mid;

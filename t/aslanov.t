@@ -28,7 +28,7 @@ BEGIN {
     plan tests => 1;
 }
 
-my $VERBOSE = 1;
+my $VERBOSE = 0;
 
 my $symmetry = 2;
 my $gamma    = 1.4;

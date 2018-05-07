@@ -82,7 +82,7 @@ foreach my $model ( @{$rdata} ) {
 
         my $Y_t      = log($ovprat_t);
         my $X_t      = log($lambda_t);
-        my $ret      = $blast_table->lookup( $X_t, 'X' );
+        my $ret      = $blast_table->wavefront( 'X' => $X_t )->{'TableVars'};
         my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
         my $ovp    = exp($Y);
         my $z      = exp($Z);

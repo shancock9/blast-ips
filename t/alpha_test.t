@@ -117,10 +117,6 @@ Reference:
         [ 0, 7, 1.21555899e-02 ],
         [ 1, 7, 2.74799190e-02 ],
 
-        # I am not doing spherical blasts for gamma 7 or higher because I
-        # haven't implemented a void capability for the blast core in the
-        # finite difference model. This would be interesting to do but is low
-        # priority.
         # [2,7 , 2.79252680e-02],
     ];
 

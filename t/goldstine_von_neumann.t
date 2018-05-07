@@ -118,7 +118,6 @@ if ( !defined($blast_table) ) {
 
 # Loop over the Goldstine-Von_Neumann points to calculate the maximum absolute
 # relative error in overpressure
-my $iQ = 'X';
 my $err_max;
 my $lambda_max = 0;
 foreach my $point ( @{$rgoldstine} ) {
@@ -127,7 +126,7 @@ foreach my $point ( @{$rgoldstine} ) {
 
     # Lookup the overpressure at the given scaled range
     my $Q = log($lambda_t);
-    my $ret = $blast_table->lookup( $Q, $iQ );
+    my $ret = $blast_table->wavefront( 'X' => $Q )->{'TableVars'};
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $ovprat = exp($Y);
     my $lambda = exp($X);

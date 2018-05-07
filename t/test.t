@@ -99,7 +99,8 @@ foreach my $rcase (@test_cases) {
     # Lookup the overpressure at the given scaled range
     my $iQ  = 'X';
     my $Q   = log($lambda_t);
-    my $ret = $blast_table->lookup( $Q, $iQ );
+    #my $ret = $blast_table->lookup( $Q, $iQ );
+    my $ret = $blast_table->wavefront( $iQ => $Q )->{'TableVars'};
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $ovprat    = exp($Y);
     my $lambda    = exp($X);
@@ -116,7 +117,8 @@ foreach my $rcase (@test_cases) {
     # Lookup the scaled range at the given overpressure ratio
     $iQ  = 'Y';
     $Q   = log($ovprat_t);
-    $ret = $blast_table->lookup( $Q, $iQ );
+    #$ret = $blast_table->lookup( $Q, $iQ );
+    $ret = $blast_table->wavefront( $iQ => $Q )->{'TableVars'};
     ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     $ovprat = exp($Y);
     $lambda = exp($X);

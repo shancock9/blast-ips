@@ -66,7 +66,7 @@ foreach my $key ( keys %{$rinfo} ) {
     foreach my $entry ( @{$rtab} ) {
         my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$entry};
         my ( $X_i, $Y_i, $dYdX_i, $Z_i, $dZdX_i ) =
-          @{ $blast_table->lookup($X) };
+          @{ $blast_table->wavefront( 'X' => $X )->{'TableVars'} };
         my $alpha_1 = $blast_table->get_alpha();
         my $alpha_2 = Blast::IPS::alpha_interpolate( $symmetry, $gamma );
         my $dalpha  = $alpha_2 - $alpha_1;

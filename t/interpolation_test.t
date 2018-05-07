@@ -62,7 +62,6 @@ if ( !defined($blast_table) ) {
 }
 
 # Loop to calculate the maximum absolute relative error in overpressure
-my $iQ      = 'X';
 my $VERBOSE = 0;
 foreach my $interp ( 0 .. 1 ) {
     my $err_max;
@@ -76,7 +75,9 @@ foreach my $interp ( 0 .. 1 ) {
 
         # Lookup the overpressure at the given scaled range
         my $Q = log($lambda_t);
-        my $ret = $blast_table->lookup( $Q, $iQ, $interp );
+        my $ret =
+          $blast_table->wavefront( 'X' => $Q, 'interpolation_flag' => $interp )
+          ->{'TableVars'};
         my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
         my $ovprat = exp($Y);
         my $lambda = exp($X);

@@ -908,8 +908,8 @@ sub wavefront {
             $interp );
     }
 
-    # RowLoc  shows which table rows were interpolated
-    # RowVals shows the interpolated row values
+    # TableLoc  shows which table rows were interpolated
+    # TableVars shows the interpolated row values
 
     my $return_hash = {
         'X'        => $result->[0],
@@ -917,8 +917,8 @@ sub wavefront {
         'dYdX'     => $result->[2],
         'Z'        => $result->[3],
         'dZdX'     => $result->[4],
-	'RowLoc'   => [$il, $iu, $ntab],
-        'RowVals'  => $result,
+	'TableLoc'   => [$il, $iu, $ntab],
+        'TableVars'  => $result,
     };
     return $return_hash;
 }
@@ -1033,7 +1033,8 @@ sub table_gen {
     if ( $num > 1 ) { $dX = ( $X_e - $X_b ) / ( $num - 1 ) }
     my $X = $X_b;
     for ( my $n = 1 ; $n <= $num ; $n++ ) {
-        push @{$rtable_gen}, $self->lookup($X);
+        ##push @{$rtable_gen}, $self->lookup($X);
+        push @{$rtable_gen}, $self->wavefront('X'=>$X)->{'TableVars'};
         $X += $dX;
     }
     return ($rtable_gen);

@@ -57,7 +57,7 @@ foreach my $symmetry (@symmetry_list) {
               ( 2 * $gamma - ( $gamma - 1 ) * $q ) / ( ( $gamma + 1 ) * $q ) -
               1;
             my $YY = log($ovprat);
-            my $ret = $blast_table->lookup( $YY, 'Y' );
+            my $ret = $blast_table->wavefront( 'Y' => $YY )->{'TableVars'};
             my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
             my $ovp    = exp($Y);
             my $z      = exp($Z);

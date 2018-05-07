@@ -48,7 +48,7 @@ foreach my $item ( @{$rtable_new} ) {
     my ( $X_t,   $Y_t,   $dYdX_t )   = @{$item};
 
     # Interpolate the builtin table to the new table point
-    my $ret = $blast_table->lookup( $X_t, 'X' );
+    my $ret = $blast_table->wavefront( 'X' => $X_t )->{'TableVars'};
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $err = abs( $Y - $Y_t );
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
@@ -76,7 +76,7 @@ foreach my $item ( @{$rtable} ) {
     my ( $X_t,   $Y_t,   $dYdX_t )   = @{$item};
 
     # Interpolate the new table a builtin table point
-    my $ret = $blast_table_new->lookup( $X_t, 'X' );
+    my $ret = $blast_table_new->wavefront( 'X'=>$X_t )->{'TableVars'};
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$ret};
     my $err = abs( $Y - $Y_t );
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
