@@ -7,16 +7,16 @@ use Blast::IPS;
 
 my $audit_string = "";
 
-# Setup a default blast table
-my $gamma       = 1.4;
-my $symmetry    = 'S';
-my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
-
 my %symmetry_name = (
     0 => 'Plane',
     1 => 'Cylindrical',
     2 => 'Spherical',
 );
+
+# Setup a default blast table
+my $gamma       = 1.4;
+my $symmetry    = 'S';
+my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
 my $sspd_amb = 1;
 my $p_amb    = 1;                                  # ambient pressure
@@ -26,6 +26,7 @@ my $medium   = {
     _sspd_amb => $sspd_amb,
     _rho_amb  => $rho_amb,
     _p_amb    => $p_amb,
+    _symmetry => $symmetry,
 };
 
 # main loop
@@ -39,40 +40,35 @@ Point Source Explosion in Ideal Gas
   Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
 
 Enter one of the following:
-  N             - New Symmetry and/or Gamma
-  P		- Point evaluations using current Table ..
+  N             - New Table - Change Symmetry and/or Gamma
+  P1		- Point evaluations with 1 dimensionless variable...
+  P2		- Point evaluations with 2 dimensional variables...
   T		- Table operations ..
-  q		- quit
+  q or Q        - quit
 EOM
     my $ans = queryu(":");
     if ( $ans eq 'N' ) {
-        $blast_table = select_blast_table($blast_table);
+        ($blast_table, $medium) = select_blast_table($blast_table, $medium);
 
-        $sspd_amb    = 1;
-        $p_amb       = 1;                                  # ambient pressure
-        $rho_amb     = $gamma * $p_amb / $sspd_amb**2;
-        $medium      = {
-            _gamma    => $gamma,
-            _sspd_amb => $sspd_amb,
-            _rho_amb  => $rho_amb,
-            _p_amb    => $p_amb,
-        };
     }
-    elsif ( $ans eq 'P' ) {
+    elsif ( $ans eq 'P1' ) {
         my $vname = 'X';
         $vname = select_variable($vname);
-        point_evaluations($blast_table, $medium, $vname, $gamma, $symmetry);
+        point_evaluations_1($blast_table, $medium, $vname);
+    }
+    elsif ( $ans eq 'P2' ) {
+        point_evaluations_2($blast_table, $medium);
     }
     elsif ( $ans eq 'T' ) {
         table_operations($blast_table, $medium);
     }
-    elsif ( $ans eq 'q' ) {
-        exit;
+    elsif ( $ans eq 'Q' ) {
+        last;
     }
 }
 
 sub select_blast_table {
-    my ($blast_table) = @_;
+    my ($blast_table, $medium) = @_;
     my $symmetry = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
     if ( !$symmetry ) { $symmetry = 'S' }
     my $gamma = get_num( "Enter gamma", 1.4 );
@@ -83,7 +79,18 @@ sub select_blast_table {
         print "Error: $err\n";
         return;
     }
-    return $blast_table;
+
+        $sspd_amb    = 1;
+        $p_amb       = 1;                                  # ambient pressure
+        $rho_amb     = $gamma * $p_amb / $sspd_amb**2;
+        $medium      = {
+            _gamma    => $gamma,
+            _symmetry => $symmetry,
+            _sspd_amb => $sspd_amb,
+            _rho_amb  => $rho_amb,
+            _p_amb    => $p_amb,
+        };
+    return ($blast_table, $medium);
 }
 
 sub select_variable {
@@ -107,19 +114,23 @@ sub select_variable {
         'q'    => [ 13, '= (c0/S)^2, where S is the shock speed'],
     );
 
-    my $menu_text = "Select a variable to evaluate:\n";
-    foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
-	$menu_text .= "    $key : $menu{$key}->[1]\n";
-    }
-    $menu_text .= <<EOM;
+    #my $menu_text = "Select a variable to evaluate:\n";
+my $menu_text = <<EOM;
+Point evaluation with one dimensionless variable
 
-where
+Let
  r = range; t = time of arrival; p = shock pressure; 
  d = scaled distance (E/p0)^(1/N) 
  E is energy and N = 1,2, or 3 is symmetry
  p0 = initial atmospheric pressure and c0 = sound speed 
  D = shock speed
+
+Select one of these variables to evaluate:
 EOM
+    foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
+	$menu_text .= "    $key : $menu{$key}->[1]\n";
+    }
+
 
     while (1) {
 	print $menu_text;
@@ -128,17 +139,79 @@ EOM
 	   return $ans;
 	}
 	else {
-	   query("error, try again");
+	   hitcr("error, try again");
         }
     }
     return $vname;
 }
 
-sub point_evaluations {
-    my ($blast_table, $vname, $medium, $gamma, $symmetry) = @_;
+sub point_evaluations_2 {
+    my ($blast_table, $medium) = @_;
+    print <<EOM;
+ ----- Dimensional Solution Menu -------
+  G  Geometry  
+  AL ALtimeter reading, m............    0.0 
+  AP Atmospheric Pressure, Pa........    14.69999981 
+  AT Atmospheric Temperature, K......    59.0 
+  R  Range, m........................    0.0 
+  E  Energy, Joules..................    0.0 
+   
+  RE or C Calculate blast parameters, given: R, E
+  RI calculate Energy, given: Range, Impulse
+  RP  calculate Energy, given: Range, measured Overpressure
+  RT calculate Energy, given: Range, measured TOA
+  EP calculate Range, given Energy and OVP
+  EI calculate Range, given Energy and IMP
+  ET calculate Range, given Energy and TOA
+  
+  Z Zoom  - view latest results, 1 screen per channel
+  L List  - view latest results, 1 line per channel
+  F files (read/write)...
+  X=eXit  CL=Clear  LG=List Gages LD=List Data
+
+EOM
+    hitcr("Sorry, coding incomplete");
+=pod
+ ----- NBLAST MAIN MENU -------
+  M Method  =2, KINGERY TNT SPHERE ABOVE GROUND                 
+ BUBBA1: non-isothermal, rr=   1.2254382957595387     
+ BUBBA2: returning, rr=   1.2254382957595387     
+  AL ALtimeter reading, ft...........    0.0 
+  AP Atmospheric Pressure, psi.......    14.69999981 
+  AT Atmospheric Temperature, deg F..    59.0 
+  H Height of burst, ft..............    0.0 
+  R ground range.....................    0.0 
+  W explosive TNT equiv. weight, lbs.    0.0 
+   
+  RW or C Calculate blast parameters, given: R, W
+  RWT, RWP, RWI, RWE .. calculate blast from fitted weights
+  RII calculate Weight, given: Range, Incident Impulse
+  RI calculate Weight, given: Range, measured Impulse
+  RPI calculate Weight, given: Range, Incident Overpressure
+  RP  calculate Weight, given: Range, measured Overpressure
+  RE  calculate Weight, given: Range, measured OVP*IMP
+  RT calculate Weight, given: Range, measured TOA
+  REI calculate Weight, given: Range, Incident OVP*IMP
+  WP calculate Range, given Weight and OVP
+  WI calculate Range, given Weight and IMP
+  WT calculate Range, given Weight and TOA
+  WE calculate Range, given Weight and OVP*IMP
+  
+  Z Zoom  - view latest results, 1 screen per channel
+  L List  - view latest results, 1 line per channel
+  F files (read/write)...
+  X=eXit  CL=Clear  LG=List Gages LD=List Data
+
+=cut
+}
+
+sub point_evaluations_1 {
+    my ($blast_table, $medium, $vname) = @_;
+    my $gamma    = $medium->{_gamma};
+    my $symmetry = $medium->{_symmetry};
     while (1) {
-        my $val = get_num("Enter a value for $vname, or 'q' to quit:");
-        last if ( $val eq 'q' );
+        my $val = get_num("Enter a value for $vname, or <cr> to quit:");
+	last if $val eq "";
  
 	my ($iQ, $Q);
 	if ($vname =~ /^([XYZW]|dYdX|dZdX|dWdX)/) {$Q = $val; $iQ=$vname}
@@ -148,52 +221,60 @@ sub point_evaluations {
             # Convert q=(c0/D)**2 to Y=ln(ovp ratio)
             $iQ = 'Y';
             my $q = $val;
-            if ( $q > 0 ) {
+            if ( $q > 0 && $q < 1) {
                 my $ovprat =
                   ( 2 * $gamma - ( $gamma - 1 ) * $q ) /
                   ( ( $gamma + 1 ) * $q ) - 1;
 
+		if ($ovprat<=0) {
+		   hitcr("cant take log of '$ovprat'"); next;
+		}
                 $Q = log($ovprat);
             }
             else {
-                $Q = 20;
+		hitcr("must have 0< q < 1"); next;
             }
         }
-        elsif ( $vname eq 's' ) {
+        elsif ( $vname eq 'm' ) {
 
-            # Convert s=(D/c0) to Y=ln(ovp ratio)
+            # Convert m=(S/c0) to Y=ln(ovp ratio)
             $iQ = 'Y';
-            my $s = $val;
-            if ( $s > 0 ) {
-	        my $q = 1/$s**2;
+            my $m = $val;
+            if ( $m > 1 ) {
+	        my $q = 1/$m**2;
                 my $ovprat =
                   ( 2 * $gamma - ( $gamma - 1 ) * $q ) /
                   ( ( $gamma + 1 ) * $q ) - 1;
 
+		if ($ovprat<=0) {
+		   hitcr("cant take log of '$ovprat'"); next;
+		}
+
                 $Q = log($ovprat);
             }
             else {
-                $Q = 20;
+		hitcr("m must be > 1"); next;
             }
         }
 	else {
-		die "coding incomplete for $vname";
+		die "coding incomplete for variable '$vname'";
         }
         my $ret = $blast_table->wavefront( $iQ => $Q );
-        my $X      = $ret->{X};
-        my $Y      = $ret->{Y};
-        my $Z      = $ret->{Z};
-        my $x      = exp($X);
-        my $y      = exp($Y);
-        my $z      = exp($Z);
-        my $w    = $x - $z;
-        my $W    = log($w);
+        my $X   = $ret->{X};
+        my $Y   = $ret->{Y};
+        my $Z   = $ret->{Z};
+        my $x   = exp($X);
+        my $y   = exp($Y);
+        my $z   = exp($Z);
+        my $w   = $x - $z;
+        my $W   = $w > 0 ? log($w) : -999;
 
 	print <<EOM;
-X=$X   x=$x (=scaled range, r/d)
-Y=$Y   y=$y (=overpressure ratio)
-Z=$Z   z=$z 
-W=$W   w=$w (=scaled toa, c0 t / d)
+
+X=ln(x)=$X;   x=$x = scaled range, r/d
+Y=ln(y)=$Y;   y=$y = overpressure ratio
+Z=ln(z)=$Z;   z=$z = (r-c0 t)/d
+W=ln(w)=$W;   w=$w = scaled toa, c0 t / d
 EOM
 
     }
@@ -212,17 +293,11 @@ Make a Table of values.
   PLOT		- print uniformly spaced points in ln(range) for plotting
   CSV 		- Write out the current table as a .csv file
   INFO		- Display Info of the current table
-  q		- eXit
+  q or Q        - done
 EOM
 
         my $ans = queryu(":");
         if ( $ans eq 'PLOT' ) {
-
-        #            my $npts = get_num( "Total number of points",   400 );
-        #            my $x1   = get_num( "Starting value of ln(r):", -5 );
-        #            my $x2   = get_num( "Ending value of ln(r):",   15 );
-        #            $npts = 100 unless ($npts);
-        #            my $rsolution = $blast_table->table_gen( $npts, $x1, $x2 );
 
             my $rsolution = get_table_points($blast_table);
 
@@ -245,7 +320,7 @@ Table has $nrows rows and $ncols cols
 $Xb <= ln(r) <= $Xe
 A=$A_far, B=$B_far
 EOM
-            query("Hit <cr>");
+            hitcr("");
         }
         elsif ( $ans eq 'CSV' ) {
 	    my $Id_max=4;
@@ -270,7 +345,7 @@ EOM
                 print_table( $rtable_trim, $basename . ".tex" );
             }
         }
-        elsif ( $ans eq 'q' ) {
+        elsif ( $ans eq 'Q' ) {
             last;
         }
     }
@@ -476,6 +551,12 @@ sub query {
     chomp $ans;
     return $ans;
 }
+
+sub hitcr {
+    my ($msg) = @_;
+    query( $msg . ". hit <cr>" );
+}
+
 
 sub queryu {
     return uc query(@_);
