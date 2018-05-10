@@ -56,10 +56,12 @@ use Carp;
 use Blast::IPS::ShockTablesIndex;
 use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
+use Blast::IPS::PzeroFit;
 
 my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
+my $rpzero_fit   = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rgamma_table;
 
 INIT {
@@ -753,6 +755,92 @@ sub _setup_toa_table {
     return $rtable;
 }
 
+sub pos_phase {
+    my ( $self, $rs, $zs ) = @_;
+
+    # Given:
+    # $rs - a shock radius
+    # $zs - the z at that radius
+    # $symmetry - 0, 1, or 2
+    # $rpz_fit - the zero pressure fit parameters
+
+    # return:
+    # $Tpos - the positive phase duration (in time)
+    # $Lpos - the positive phase length (in space)
+
+    # Note: Returns 0's if no positive phase
+    # $Tpos = 0 if no positive phase duration
+    # $Lpos = 0 if no positive phase length
+
+    my $sspd_amb = 1;
+    my $ts       = ( $rs - $zs ) / $sspd_amb;
+    my $Tpos     = 0;
+    my $Lpos     = 0;
+    my $symmetry=$self->{_symmetry};
+    my $gamma=$self->{_gamma};
+    my $rpz_fit = $rpzero_fit->{$symmetry}->{$gamma};
+    if ( defined($rpz_fit) && @{$rpz_fit} ) {
+
+        my ( $tPc0, $t0, $r0, $tmin_fit, $rmin_fit, $zinf, $AA, $BB ) =
+          @{$rpz_fit};
+
+        my $AH = $symmetry / 2;
+
+        # First find the positive phase duration
+        my $z = $zs;
+        if ( $rs >= $rmin_fit ) {
+
+            # in analytical region
+            my $r     = $rs;
+            my $rpow  = $r**$AH;
+            my $denom = $rpow - $BB + $AA;
+            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
+        }
+        else {
+
+            # before analytical region; use straight line to origin
+            my $zc       = 0 - $tPc0;
+            my $zmin_fit = $rmin_fit - $tmin_fit;
+            $z = $zc + ( $zmin_fit - $zc ) * $rs / $rmin_fit;
+            if ( $z > $zs ) { $z = $zs }
+        }
+        $Tpos = ( $zs - $z ) / $sspd_amb;
+
+        if ( $ts >= $tmin_fit ) {
+
+            # in analytical section...
+            # We must iterate to find the positive length
+            # We start with the previous z
+            my $r     = $rs - ( $zs - $z );
+            my $rpow  = $r**$AH;
+            my $denom = $rpow - $BB + $AA;
+            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
+
+            # re-iterate
+            $r     = $rs - ( $zs - $z );
+            $rpow  = $r**$AH;
+            $denom = $rpow - $BB + $AA;
+            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
+            $Lpos = $zs - $z;
+        }
+        elsif ( $ts >= $tPc0 ) {
+
+            # before analytical section...connect line to origin
+            my $zc       = 0 - $tPc0;
+            my $zmin_fit = $rmin_fit - $tmin_fit;
+            $z = $zc +
+              ( $zmin_fit - $zc ) * ( $ts - $tPc0 ) / ( $tmin_fit - $tPc0 );
+            if ( $z > $zs ) { $z = $zs }
+            $Lpos = $zs - $z;
+        }
+        else {
+
+            # before tPc0: no positive length
+        }
+    }
+    return ( $Tpos, $Lpos );
+}
+
 sub get_ASYM       { my $self = shift; return $self->{_symmetry}; }
 sub get_symmetry   { my $self = shift; return $self->{_symmetry} }
 sub get_gamma      { my $self = shift; return $self->{_gamma} }
@@ -908,6 +996,12 @@ sub wavefront {
             $interp );
     }
 
+    my $X=$result->[0];
+    my $Z=$result->[3];
+    my $rs=exp($X);
+    my $zs=exp($Z);
+    my ($Tpos, $Lpos)= $self->pos_phase( $rs, $zs ); 
+
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
 
@@ -917,6 +1011,8 @@ sub wavefront {
         'dYdX'     => $result->[2],
         'Z'        => $result->[3],
         'dZdX'     => $result->[4],
+        'Tpos'     => $Tpos,
+        'Lpos'     => $Lpos,
 	'TableLoc'   => [$il, $iu, $ntab],
         'TableVars'  => $result,
     };

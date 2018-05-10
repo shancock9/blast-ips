@@ -263,6 +263,8 @@ sub point_evaluations_1 {
         my $X   = $ret->{X};
         my $Y   = $ret->{Y};
         my $Z   = $ret->{Z};
+        my $Tpos   = $ret->{Tpos};
+        my $Lpos   = $ret->{Lpos};
         my $x   = exp($X);
         my $y   = exp($Y);
         my $z   = exp($Z);
@@ -275,6 +277,7 @@ X=ln(x)=$X;   x=$x = scaled range, r/d
 Y=ln(y)=$Y;   y=$y = overpressure ratio
 Z=ln(z)=$Z;   z=$z = (r-c0 t)/d
 W=ln(w)=$W;   w=$w = scaled toa, c0 t / d
+Tpos   =$Tpos;    Lpos=$Lpos
 EOM
 
     }
