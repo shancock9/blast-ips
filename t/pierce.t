@@ -13,9 +13,6 @@ fitting it to the values obtained by Brode at a scaled range of 3.
 Reference:
 Pierce, Allan D. Acoustics: An Introduction to Its Physical Principles and Applications. New York: Acoustical Society of America, 1995. 
 
-TODO:
-add comparison with Tpos
-
 =cut
 
 
@@ -24,7 +21,7 @@ BEGIN {
     plan tests => 1;
 }
 
-my $VERBOSE = 1;
+my $VERBOSE = 0;
 
 my $symmetry = 2;
 my $gamma    = 1.4;
@@ -52,24 +49,34 @@ my $TOL = 0.1;
 my $rtable = $blast_table->table_gen( 51, $Xmin, $Xmax );
 
 my $err_max;
+my $err2_max;
 if ($VERBOSE) {
-        print "lambda\tX\tY\tY_k\terr\tTpos\n";
+        #print "lambda\tX\tY\tY_k\terr\tTpos\n";
+        print "lambda\tX\tY\tY_k\terr\tTpos\tTpos_k\terr2\n";
 }
 foreach my $item ( @{$rtable} ) {
-    my ( $X,   $Y,   $dYdX )   = @{$item};
-    my ( $X_k, $Y_k, $dYdX_k, $Tpos ) = pierce($X);
+    my ( $X,   $Y,   $dYdX, $Z )   = @{$item};
+    my ( $X_k, $Y_k, $dYdX_k, $Tpos_k ) = pierce($X);
     my $err = abs( $Y - $Y_k );
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
 
+    my $rs=exp($X);
+    my $zs=exp($Z);
+    my ($Tpos, $Lpos)= $blast_table->get_positive_phase( $rs, $zs ); 
+    my $err2 = abs($Tpos-$Tpos_k)/$Tpos;
+    if ( !defined($err2_max) || $err2 > $err2_max ) { $err2_max = $err2 }
+    #print STDERR "$rs, $zs, $Tpos, $Tpos_k, $err2\n";
+
     if ($VERBOSE) {
 	my $lambda=exp($X);
-        print "$lambda\t$X\t$Y\t$Y_k\t$err\t$Tpos\n";
+        print "$lambda\t$X\t$Y\t$Y_k\t$err\t$Tpos\t$Tpos_k\t$err2\n";
     }
 }
 my $err_max_pr = sprintf "%0.3g", $err_max;
+my $err2_max_pr = sprintf "%0.3g", $err2_max;
 
-if ( !ok( $err_max <= $TOL ) ) {
-    my $text = "# Max error is $err_max_pr\n";
+if ( !ok( $err_max <= $TOL && $err2_max <= $TOL) ) {
+    my $text = "# Max ovp error is $err_max_pr; max Tpos err is $err2_max_pr\n";
     print "$text";
 }
 

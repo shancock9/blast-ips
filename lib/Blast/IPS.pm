@@ -755,7 +755,7 @@ sub _setup_toa_table {
     return $rtable;
 }
 
-sub pos_phase {
+sub get_positive_phase {
     my ( $self, $rs, $zs ) = @_;
 
     # Given:
@@ -1000,7 +1000,7 @@ sub wavefront {
     my $Z=$result->[3];
     my $rs=exp($X);
     my $zs=exp($Z);
-    my ($Tpos, $Lpos)= $self->pos_phase( $rs, $zs ); 
+    my ($Tpos, $Lpos)= $self->get_positive_phase( $rs, $zs ); 
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
