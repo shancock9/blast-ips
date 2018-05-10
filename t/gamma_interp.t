@@ -57,7 +57,9 @@ foreach my $symmetry ( 0, 1, 2 ) {
         }
         my $table_name = $result->{table_name};
         if ($table_name) {
-            my $igam = $result->{igam};
+            #my $igam = $result->{igam};
+            my $loc_gamma_table = $result->{loc_gamma_table};
+	    my ($jl, $ju, $ntab, $igam)=@{$loc_gamma_table};
             my $ngam = @{ $rgamma_table->[$symmetry] };
 
             push @full_comparison, "sym=$symmetry, gamma=$gamma\n";

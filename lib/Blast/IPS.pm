@@ -434,6 +434,8 @@ sub _gamma_lookup {
 
     # for all cases, also returns
     #   loc_gamma_table => has location in the table of gamma values
+    # $return_hash->{'loc_gamma_table'} = 
+    # [lower index, upper index, $ntab, actual index (if exact match)];
 
     # uses $rgamma_table, the global table of gamma values for the builtin
     # tables
@@ -461,19 +463,20 @@ sub _gamma_lookup {
 
     # save the location of this gamma in the gamma table so that we
     # can do further intepolations later
-    $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab];
 
     # Check if out of bounds (CASE 1)
     if ( $j2 < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         $return_hash->{'table_name'} = $key_min;
-        ##$return_hash->{'i_gamma_table'}       = 0;
+        #$return_hash->{'i_gamma_table'}       = 0;
+        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j3];
         return $return_hash;
     }
     if ( $j3 >= $ntab ) {
         return if ( $gamma - $eps > $gamma_max );
         $return_hash->{'table_name'} = $key_max;
-        ##$return_hash->{'i_gamma_table'}       = $ntab - 1;
+        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j2];
+        #$return_hash->{'i_gamma_table'}       = $ntab - 1;
         return $return_hash;
     }
 
@@ -482,12 +485,14 @@ sub _gamma_lookup {
     my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
     if ( abs( $gamma - $gamma2 ) < $eps ) {
         $return_hash->{'table_name'} = $key2;
-        ##$return_hash->{'i_gamma_table'}       = $j2;
+        #$return_hash->{'i_gamma_table'}       = $j2;
+        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j2];
         return $return_hash;
     }
     if ( abs( $gamma - $gamma3 ) < $eps ) {
         $return_hash->{'table_name'} = $key3;
         ##$return_hash->{'i_gamma_table'}       = $j3;
+        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j3];
         return $return_hash;
     }
 
@@ -508,6 +513,7 @@ sub _gamma_lookup {
     #my ( $gamma_hi, $key_hi ) = @{ $rtab->[$j3] };
     $return_hash->{'rigam_4'} = $rigam_4;
     $return_hash->{'rigam_6'} = $rigam_6;
+    $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, ];
 
 #    $return_hash = {
 #	rigam_4 => $rigam_4,
