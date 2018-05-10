@@ -259,25 +259,47 @@ sub point_evaluations_1 {
 	else {
 		die "coding incomplete for variable '$vname'";
         }
-        my $ret = $blast_table->wavefront( $iQ => $Q );
-        my $X   = $ret->{X};
-        my $Y   = $ret->{Y};
-        my $Z   = $ret->{Z};
-        my $Tpos   = $ret->{Tpos};
-        my $Lpos   = $ret->{Lpos};
-        my $x   = exp($X);
-        my $y   = exp($Y);
-        my $z   = exp($Z);
-        my $w   = $x - $z;
-        my $W   = $w > 0 ? log($w) : -999;
+        my $ret  = $blast_table->wavefront( $iQ => $Q );
+        my $X    = $ret->{X};
+        my $Y    = $ret->{Y};
+        my $Z    = $ret->{Z};
+        my $dYdX    = $ret->{dYdX};
+        my $dZdX    = $ret->{dZdX};
+        my $Tpos = $ret->{Tpos};
+        my $Lpos = $ret->{Lpos};
+        my $x    = exp($X);
+        my $y    = exp($Y);
+        my $z    = exp($Z);
+        my $w    = $x - $z;
+        my $W    = $w > 0 ? log($w) : -999;
+        my $term = $y * ( $gamma + 1 ) / ( 2 * $gamma );
+        my $m    = sqrt( 1 + $term );
+        my $q    = 1 / $m**2;
+        my $up   = $y / ( $gamma * $m );
+#        $Tpos    = sprintf("%0.6f", $Tpos);
+#        $Lpos    = sprintf("%0.6f", $Lpos);
+#        $m    = sprintf("%0.6f", $m);
+#        $q    = sprintf("%0.6g", $q);
+#        $up    = sprintf("%0.6g", $up);
+	foreach ($x, $y, $z, $w, $X, $Y, $Z, $W, $dYdX, $dZdX) {
+           $_=sprintf("%0.8g", $_);
+	}
+	foreach ($Tpos, $Lpos, $m, $q, $up) {
+           $_=sprintf("%0.6g", $_);
+	}
 
 	print <<EOM;
 
-X=ln(x)=$X;   x=$x = scaled range, r/d
-Y=ln(y)=$Y;   y=$y = overpressure ratio
-Z=ln(z)=$Z;   z=$z = (r-c0 t)/d
-W=ln(w)=$W;   w=$w = scaled toa, c0 t / d
-Tpos   =$Tpos;    Lpos=$Lpos = positive phase duration and length
+x  = $x = scaled range r/d;     X = $X = ln(x);   
+y  = $y = (P-P0)/P0;            Y = $Y = ln(y);   
+z  = $z = (r-c0 t)/d;           Z = $Z = ln(z);   
+w  = $w = scaled toa, c0 t / d; W = $W = ln(w);   
+dYdX = $dYdX
+T+ = $Tpos = positive phase duration    
+L+ = $Lpos = positive phase length
+m  = $m = S/c0=shock Mach number
+q  = $q = 1/m^2
+up = $up = (shock particle velocity/c0)
 EOM
 
     }

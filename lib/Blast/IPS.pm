@@ -435,7 +435,7 @@ sub _gamma_lookup {
     # for all cases, also returns
     #   loc_gamma_table => has location in the table of gamma values
     # $return_hash->{'loc_gamma_table'} = 
-    # [lower index, upper index, $ntab, actual index (if exact match)];
+    # [index (if exact match), lower index, upper index, $ntab ];
 
     # uses $rgamma_table, the global table of gamma values for the builtin
     # tables
@@ -468,15 +468,13 @@ sub _gamma_lookup {
     if ( $j2 < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         $return_hash->{'table_name'} = $key_min;
-        #$return_hash->{'i_gamma_table'}       = 0;
-        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j3];
+        $return_hash->{'loc_gamma_table'} = [0, $j2, $j3, $ntab];
         return $return_hash;
     }
     if ( $j3 >= $ntab ) {
         return if ( $gamma - $eps > $gamma_max );
         $return_hash->{'table_name'} = $key_max;
-        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j2];
-        #$return_hash->{'i_gamma_table'}       = $ntab - 1;
+        $return_hash->{'loc_gamma_table'} = [$ntab-1, $j2, $j3, $ntab];
         return $return_hash;
     }
 
@@ -485,14 +483,12 @@ sub _gamma_lookup {
     my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
     if ( abs( $gamma - $gamma2 ) < $eps ) {
         $return_hash->{'table_name'} = $key2;
-        #$return_hash->{'i_gamma_table'}       = $j2;
-        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j2];
+        $return_hash->{'loc_gamma_table'} = [$j2, $j2, $j3, $ntab];
         return $return_hash;
     }
     if ( abs( $gamma - $gamma3 ) < $eps ) {
         $return_hash->{'table_name'} = $key3;
-        ##$return_hash->{'i_gamma_table'}       = $j3;
-        $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, $j3];
+        $return_hash->{'loc_gamma_table'} = [$j3, $j2, $j3, $ntab];
         return $return_hash;
     }
 
@@ -509,17 +505,9 @@ sub _gamma_lookup {
 
     my $rigam_4= set_interpolation_points( $j2, $ntab, 4 );
     my $rigam_6= set_interpolation_points( $j2, $ntab, $six );
-    #my ( $gamma_lo, $key_low ) = @{ $rtab->[$j2] };
-    #my ( $gamma_hi, $key_hi ) = @{ $rtab->[$j3] };
     $return_hash->{'rigam_4'} = $rigam_4;
     $return_hash->{'rigam_6'} = $rigam_6;
-    $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab, ];
-
-#    $return_hash = {
-#	rigam_4 => $rigam_4,
-#	rigam_6 => $rigam_6,
-#        i_gamma_table    => $j3,
-#    };
+    $return_hash->{'loc_gamma_table'} = [undef, $j2, $j3, $ntab, ];
     return ($return_hash);
 }
 
@@ -801,7 +789,7 @@ sub get_positive_phase {
 	# table then we can interpolate P0 from nearby fits.
         my $loc_gamma_table = $self->{_loc_gamma_table};
         if ( defined($loc_gamma_table) ) {
-            my ( $jl, $ju, $num ) = @{$loc_gamma_table};
+            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
             if ( $jl >= 0 && $ju < $num ) {
                 my $rtab      = $rgamma_table->[$symmetry];
                 my $gamma_l   = $rtab->[$jl]->[0];
