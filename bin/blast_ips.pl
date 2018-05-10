@@ -211,7 +211,7 @@ sub point_evaluations_1 {
     my $symmetry = $medium->{_symmetry};
     while (1) {
         my $val = get_num("Enter a value for $vname, or <cr> to quit:");
-	last if $val eq "";
+	last if $val eq "" || $val !~ /^\s*[\d\.]/;
  
 	my ($iQ, $Q);
 	if ($vname =~ /^([XYZW]|dYdX|dZdX|dWdX)/) {$Q = $val; $iQ=$vname}
@@ -277,7 +277,7 @@ X=ln(x)=$X;   x=$x = scaled range, r/d
 Y=ln(y)=$Y;   y=$y = overpressure ratio
 Z=ln(z)=$Z;   z=$z = (r-c0 t)/d
 W=ln(w)=$W;   w=$w = scaled toa, c0 t / d
-Tpos   =$Tpos;    Lpos=$Lpos
+Tpos   =$Tpos;    Lpos=$Lpos = positive phase duration and length
 EOM
 
     }

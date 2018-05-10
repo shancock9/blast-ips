@@ -1,15 +1,20 @@
 package Blast::IPS;
 
-# This program can evaluate the shock overpressure for point source explosion
-# in an ideal homogeneous atmosphere.  This problem does not have an analytic
-# solution, so we interpolate tables of values.
+# This program can evaluate the shock overpressure for a one dimensional point,
+# line or sheet source explosion in an ideal homogeneous atmosphere.  This
+# problem does not have an analytic solution, so we interpolate tables of
+# values.
 
 # The builtin tables cover the three one-dimensional symmetries (plane,
 # cylindrical, spherical) and numerous values of the ideal gas gamma (between
 # 1.1 and 6.5.  They were prepared with calculations using the finite
 # difference method and the method of characteristics.  The estimated relative
-# accuracy of interpolated shock overpressures depends on the table but is
-# below 1.e-5 in all cases.
+# accuracy of interpolated shock overpressures depends on the table and
+# whether interpolation is made in gamma, but it is on the order of 1.e-6
+# in most cases and well below 1.e-5 in all cases.
+
+# All calculations are done in dimensionless units. The calling program must
+# handle conversion to and from physical units.  
 
 # TODO list:
 
@@ -173,6 +178,7 @@ sub _setup {
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
+    my $loc_gamma_table; 
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
@@ -254,6 +260,7 @@ EOM
         my $result = _gamma_lookup( $symmetry, $gamma );
         my $old_table_name = $table_name;
         $table_name = $result->{table_name};
+        $loc_gamma_table = $result->{loc_gamma_table};
 
         # Get builtin table if there is one
         if ( defined($table_name) ) {
@@ -290,13 +297,14 @@ EOM
         $num_table = @{$rtable};
     }
 
-    $self->{_rtable}     = $rtable;
-    $self->{_table_name} = $table_name;
-    $self->{_gamma}      = $gamma;
-    $self->{_symmetry}   = $symmetry;
-    $self->{_jl}         = -1;
-    $self->{_ju}         = $num_table;    #@{$rtable};
-    $self->{_error}      = $error;
+    $self->{_rtable}          = $rtable;
+    $self->{_table_name}      = $table_name;
+    $self->{_loc_gamma_table} = $loc_gamma_table;
+    $self->{_gamma}           = $gamma;
+    $self->{_symmetry}        = $symmetry;
+    $self->{_jl}              = -1;
+    $self->{_ju}              = $num_table;    #@{$rtable};
+    $self->{_error}           = $error;
 
     if ($error) { carp "$error\n" }
     else {
@@ -414,7 +422,6 @@ sub _gamma_lookup {
     # CASE 2. If the gamma is within a small tolerance of one of these gammas
     # then returns reference to a hash with
     #     table_name => $table_name
-    #     igam       => index of this table in the table of gamma values
 
     # CASE 3. If the gamma differs from the table entries but is within
     # bounds of the table, returns index of bounding tables
@@ -424,6 +431,9 @@ sub _gamma_lookup {
     # where
     # rigam_4 is a list of indexes for 4 point interpolation
     # rigam_6 is a list of indexes for 6 point interpolation
+
+    # for all cases, also returns
+    #   loc_gamma_table => has location in the table of gamma values
 
     # uses $rgamma_table, the global table of gamma values for the builtin
     # tables
@@ -449,17 +459,21 @@ sub _gamma_lookup {
     my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
 
+    # save the location of this gamma in the gamma table so that we
+    # can do further intepolations later
+    $return_hash->{'loc_gamma_table'} = [$j2, $j3, $ntab];
+
     # Check if out of bounds (CASE 1)
     if ( $j2 < 0 ) {
         return if ( $gamma + $eps < $gamma_min );
         $return_hash->{'table_name'} = $key_min;
-        $return_hash->{'igam'}       = 0;
+        ##$return_hash->{'i_gamma_table'}       = 0;
         return $return_hash;
     }
     if ( $j3 >= $ntab ) {
         return if ( $gamma - $eps > $gamma_max );
         $return_hash->{'table_name'} = $key_max;
-        $return_hash->{'igam'}       = $ntab - 1;
+        ##$return_hash->{'i_gamma_table'}       = $ntab - 1;
         return $return_hash;
     }
 
@@ -468,12 +482,12 @@ sub _gamma_lookup {
     my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
     if ( abs( $gamma - $gamma2 ) < $eps ) {
         $return_hash->{'table_name'} = $key2;
-        $return_hash->{'igam'}       = $j2;
+        ##$return_hash->{'i_gamma_table'}       = $j2;
         return $return_hash;
     }
     if ( abs( $gamma - $gamma3 ) < $eps ) {
         $return_hash->{'table_name'} = $key3;
-        $return_hash->{'igam'}       = $j3;
+        ##$return_hash->{'i_gamma_table'}       = $j3;
         return $return_hash;
     }
 
@@ -490,11 +504,16 @@ sub _gamma_lookup {
 
     my $rigam_4= set_interpolation_points( $j2, $ntab, 4 );
     my $rigam_6= set_interpolation_points( $j2, $ntab, $six );
+    #my ( $gamma_lo, $key_low ) = @{ $rtab->[$j2] };
+    #my ( $gamma_hi, $key_hi ) = @{ $rtab->[$j3] };
+    $return_hash->{'rigam_4'} = $rigam_4;
+    $return_hash->{'rigam_6'} = $rigam_6;
 
-    $return_hash = {
-	rigam_4 => $rigam_4,
-	rigam_6 => $rigam_6,
-    };
+#    $return_hash = {
+#	rigam_4 => $rigam_4,
+#	rigam_6 => $rigam_6,
+#        i_gamma_table    => $j3,
+#    };
     return ($return_hash);
 }
 
@@ -758,6 +777,52 @@ sub _setup_toa_table {
 sub get_positive_phase {
     my ( $self, $rs, $zs ) = @_;
 
+    # Given a shock radius and z value, return the positive phase duration and
+    # length
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $rpz_fit  = $rpzero_fit->{$symmetry}->{$gamma};
+    my ( $Tpos, $Lpos ) = ( 0, 0 );
+
+    if ( defined($rpz_fit) ) {
+
+        # Handle builtin table
+        ( $Tpos, $Lpos ) = _positive_phase( $rs, $zs, $symmetry, $rpz_fit );
+    }
+    else {
+
+	# No P0 fit is defined for this gamma; if this table is an interpolated
+	# table then we can interpolate P0 from nearby fits.
+        my $loc_gamma_table = $self->{_loc_gamma_table};
+        if ( defined($loc_gamma_table) ) {
+            my ( $jl, $ju, $num ) = @{$loc_gamma_table};
+            if ( $jl >= 0 && $ju < $num ) {
+                my $rtab      = $rgamma_table->[$symmetry];
+                my $gamma_l   = $rtab->[$jl]->[0];
+                my $gamma_u   = $rtab->[$ju]->[0];
+                my $rpz_fit_l = $rpzero_fit->{$symmetry}->{$gamma_l};
+                my $rpz_fit_u = $rpzero_fit->{$symmetry}->{$gamma_u};
+                if ( defined($rpz_fit_l) && defined($rpz_fit_u) ) {
+                    my ( $Tpos_l, $Lpos_l ) =
+                      _positive_phase( $rs, $zs, $symmetry, $rpz_fit_l );
+                    my ( $Tpos_u, $Lpos_u ) =
+                      _positive_phase( $rs, $zs, $symmetry, $rpz_fit_u );
+                    $Tpos =
+                      _linear_interpolation( $gamma, $gamma_l, $Tpos_l,
+                        $gamma_u, $Tpos_u );
+                    $Lpos =
+                      _linear_interpolation( $gamma, $gamma_l, $Lpos_l,
+                        $gamma_u, $Lpos_u );
+                }
+            }
+        }
+    }
+    return wantarray ? ( $Tpos, $Lpos ) : $Tpos;
+}
+
+sub _positive_phase {
+    my ( $rs, $zs, $symmetry, $rpz_fit ) = @_;
+
     # Given:
     # $rs - a shock radius
     # $zs - the z at that radius
@@ -771,16 +836,9 @@ sub get_positive_phase {
     # Note: Returns 0's if no positive phase
     # $Tpos = 0 if no positive phase duration
     # $Lpos = 0 if no positive phase length
-
-    my $sspd_amb = 1;
-    my $ts       = ( $rs - $zs ) / $sspd_amb;
-    my $Tpos     = 0;
-    my $Lpos     = 0;
-    my $symmetry=$self->{_symmetry};
-    my $gamma=$self->{_gamma};
-    my $rpz_fit = $rpzero_fit->{$symmetry}->{$gamma};
+    my $Tpos = 0;
+    my $Lpos = 0;
     if ( defined($rpz_fit) && @{$rpz_fit} ) {
-
         my ( $tPc0, $t0, $r0, $tmin_fit, $rmin_fit, $zinf, $AA, $BB ) =
           @{$rpz_fit};
 
@@ -804,8 +862,9 @@ sub get_positive_phase {
             $z = $zc + ( $zmin_fit - $zc ) * $rs / $rmin_fit;
             if ( $z > $zs ) { $z = $zs }
         }
-        $Tpos = ( $zs - $z ) / $sspd_amb;
+        $Tpos = ( $zs - $z ); 
 
+        my $ts = $rs - $zs; 
         if ( $ts >= $tmin_fit ) {
 
             # in analytical section...
@@ -828,7 +887,8 @@ sub get_positive_phase {
             # before analytical section...connect line to origin
             my $zc       = 0 - $tPc0;
             my $zmin_fit = $rmin_fit - $tmin_fit;
-            $z = $zc +
+            $z =
+              $zc +
               ( $zmin_fit - $zc ) * ( $ts - $tPc0 ) / ( $tmin_fit - $tPc0 );
             if ( $z > $zs ) { $z = $zs }
             $Lpos = $zs - $z;
@@ -838,7 +898,7 @@ sub get_positive_phase {
             # before tPc0: no positive length
         }
     }
-    return ( $Tpos, $Lpos );
+    return wantarray ? ( $Tpos, $Lpos ) : $Tpos;
 }
 
 sub get_ASYM       { my $self = shift; return $self->{_symmetry}; }
@@ -1596,7 +1656,7 @@ sub _linear_interpolation {
     my $dy21 = $y2 - $y1;
     my $dydx = ( $dx21 == 0 ) ? 0 : $dy21 / $dx21;
     my $yy   = $y1 + $dydx * ( $xx - $x1 );
-    return ( $yy, $dydx );
+    return wantarray ? ( $yy, $dydx ) : $yy;
 }
 
 sub _cubic_interpolation {
