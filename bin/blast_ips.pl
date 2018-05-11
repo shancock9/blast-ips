@@ -125,7 +125,7 @@ Let
  p0 = initial atmospheric pressure and c0 = sound speed 
  D = shock speed
 
-Select one of these variables to evaluate:
+Variables which may be selected to vary:
 EOM
     foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
 	$menu_text .= "    $key : $menu{$key}->[1]\n";
@@ -134,7 +134,8 @@ EOM
 
     while (1) {
 	print $menu_text;
-        my $ans = query(":");
+        my $ans = query("Select one of these; <cr>='x':");
+	$ans = 'x' unless($ans);
 	if (defined($menu{$ans}) ) {
 	   return $ans;
 	}
@@ -210,7 +211,7 @@ sub point_evaluations_1 {
     my $gamma    = $medium->{_gamma};
     my $symmetry = $medium->{_symmetry};
     while (1) {
-        my $val = get_num("Enter a value for $vname, or <cr> to quit:");
+        my $val = get_num("Enter a value for '$vname', or <cr> to quit:");
 	last if $val eq "" || $val !~ /^\s*[\d\.]/;
  
 	my ($iQ, $Q);
@@ -267,6 +268,8 @@ sub point_evaluations_1 {
         my $dZdX    = $ret->{dZdX};
         my $Tpos = $ret->{Tpos};
         my $Lpos = $ret->{Lpos};
+        my $Tneg = $ret->{Tneg};
+        my $Lneg = $ret->{Lneg};
         my $x    = exp($X);
         my $y    = exp($Y);
         my $z    = exp($Z);
@@ -276,27 +279,26 @@ sub point_evaluations_1 {
         my $m    = sqrt( 1 + $term );
         my $q    = 1 / $m**2;
         my $up   = $y / ( $gamma * $m );
-#        $Tpos    = sprintf("%0.6f", $Tpos);
-#        $Lpos    = sprintf("%0.6f", $Lpos);
-#        $m    = sprintf("%0.6f", $m);
-#        $q    = sprintf("%0.6g", $q);
-#        $up    = sprintf("%0.6g", $up);
 	foreach ($x, $y, $z, $w, $X, $Y, $Z, $W, $dYdX, $dZdX) {
            $_=sprintf("%0.8g", $_);
 	}
-	foreach ($Tpos, $Lpos, $m, $q, $up) {
+	foreach ($Tpos, $Lpos, $Tneg, $Lneg, $m, $q, $up) {
            $_=sprintf("%0.6g", $_);
 	}
 
 	print <<EOM;
 
-x  = $x = scaled range r/d;     X = $X = ln(x);   
-y  = $y = (P-P0)/P0;            Y = $Y = ln(y);   
-z  = $z = (r-c0 t)/d;           Z = $Z = ln(z);   
-w  = $w = scaled toa, c0 t / d; W = $W = ln(w);   
+Results; all variables are dimensionless:
+
+x    = $x = scaled range r/d;     ln(x) = X = $X 
+y    = $y = (P-P0)/P0;            ln(y) = Y = $Y 
+z    = $z = (r-c0 t)/d;           ln(z) = Z = $Z 
+toa  = $w = scaled toa;           ln(t) = W = $W 
 dYdX = $dYdX
-T+ = $Tpos = positive phase duration    
-L+ = $Lpos = positive phase length
+T+ = $Tpos = time duration of positive phase 
+L+ = $Lpos = length of positive phase 
+T- = $Tneg = time duration of negative phase 
+L- = $Lneg = length of negative phase 
 m  = $m = S/c0=shock Mach number
 q  = $q = 1/m^2
 up = $up = (shock particle velocity/c0)

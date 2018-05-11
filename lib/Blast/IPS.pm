@@ -770,6 +770,29 @@ sub _setup_toa_table {
     return $rtable;
 }
 
+sub get_phase_lengths {
+    # FIXME: rewrite this, combining both get_ routines
+
+    my ( $self, $rs, $zs ) = @_;
+    my $symmetry=$self->{_symmetry};
+    my $Tneg = 0;
+    my $Lneg = 0;
+    my ( $Tpos, $Lpos ) = $self->get_positive_phase( $rs, $zs );
+    if ( $symmetry == 2 ) {
+        ( $Tneg, $Lneg ) = $self->get_negative_phase( $rs, $zs );
+        $Tneg -= $Tpos if ($Tneg);
+        $Lneg -= $Lpos if ($Lneg);
+
+	# Approximation for very long range as an N wave forms:
+        # At very long range the negative phase length increases
+        # due to the second shock so that the negative phase
+        # duration does not get less than the positive phase
+        if ( $Tneg < $Tpos ) { $Tneg = $Tpos }
+        if ( $Lneg < $Lpos ) { $Lneg = $Lpos }
+    }
+    return ( $Tpos, $Lpos, $Tneg, $Lneg );
+}
+
 sub get_positive_phase {
     my ( $self, $rs, $zs ) = @_;
 
@@ -896,6 +919,80 @@ sub _positive_phase {
     }
     return wantarray ? ( $Tpos, $Lpos ) : $Tpos;
 }
+
+sub get_negative_phase {
+    my ( $self, $rs, $zs ) = @_;
+
+    # Given a shock radius and z value, return the negative phase duration and
+    # length. This is zero except for spherical symmetry
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $rpz_tail  = $rpzero_tail->{$symmetry}->{$gamma};
+    my ( $Tneg, $Lneg ) = ( 0, 0 );
+
+    if ( defined($rpz_tail) ) {
+
+        # Handle builtin table
+        ( $Tneg, $Lneg ) = _negative_phase( $rs, $zs, $symmetry, $rpz_tail );
+    }
+    else {
+
+	# No P0 fit is defined for this gamma; if this table is an interpolated
+	# table then we can interpolate P0 from nearby fits.
+        my $loc_gamma_table = $self->{_loc_gamma_table};
+        if ( defined($loc_gamma_table) ) {
+            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+            if ( !$jj && $jl >= 0 && $ju < $num ) {
+                my $rtab      = $rgamma_table->[$symmetry];
+                my $gamma_l   = $rtab->[$jl]->[0];
+                my $gamma_u   = $rtab->[$ju]->[0];
+                my $rpz_tail_l = $rpzero_tail->{$symmetry}->{$gamma_l};
+                my $rpz_tail_u = $rpzero_tail->{$symmetry}->{$gamma_u};
+                if ( defined($rpz_tail_l) && defined($rpz_tail_u) ) {
+                    my ( $Tneg_l, $Lneg_l ) =
+                      _negative_phase( $rs, $zs, $symmetry, $rpz_tail_l );
+                    my ( $Tneg_u, $Lneg_u ) =
+                      _negative_phase( $rs, $zs, $symmetry, $rpz_tail_u );
+                    $Tneg =
+                      _linear_interpolation( $gamma, $gamma_l, $Tneg_l,
+                        $gamma_u, $Tneg_u );
+                    $Lneg =
+                      _linear_interpolation( $gamma, $gamma_l, $Lneg_l,
+                        $gamma_u, $Lneg_u );
+                }
+            }
+        }
+    }
+    return wantarray ? ( $Tneg, $Lneg ) : $Tneg;
+}
+
+sub _negative_phase {
+    my ( $rs, $zs, $symmetry, $rpz_tail ) = @_;
+
+    # Given:
+    # $rs - a shock radius
+    # $zs - the z at that radius
+    # $symmetry - 0, 1, or 2
+    # $rpz_tail - the zero pressure fit parameters
+
+    # return:
+    # $Tneg - time to arrival of second zero p 
+    # $Lneg - distance to arrival of second zero p
+
+    # Returns 0's if no negative phase:
+    # $Tneg = 0 if no negative phase duration
+    # $Lneg = 0 if no negative phase length
+    my $Tneg = 0;
+    my $Lneg = 0;
+    if ( defined($rpz_tail) && @{$rpz_tail} ) {
+        my ( $t0, $r0, $ztail ) = @{$rpz_tail};
+        if ( $rs >= $r0 ) { $Tneg = ( $zs - $ztail ); }
+        my $ts = $rs - $zs;
+        if ( $ts >= $t0 ) { $Lneg = $zs - $ztail }
+    }
+    return wantarray ? ( $Tneg, $Lneg ) : $Tneg;
+}
+
 
 sub get_ASYM       { my $self = shift; return $self->{_symmetry}; }
 sub get_symmetry   { my $self = shift; return $self->{_symmetry} }
@@ -1056,7 +1153,12 @@ sub wavefront {
     my $Z=$result->[3];
     my $rs=exp($X);
     my $zs=exp($Z);
-    my ($Tpos, $Lpos)= $self->get_positive_phase( $rs, $zs ); 
+    #my ($Tpos, $Lpos)= $self->get_positive_phase( $rs, $zs ); 
+    #my ($Tneg, $Lneg)= $self->get_negative_phase( $rs, $zs ); 
+    my ($Tpos, $Lpos, $Tneg, $Lneg)=$self->get_phase_lengths($rs, $zs);
+    
+    # FIXME: Should we report distance to the zero p or distance
+    # between the two zero's???
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
@@ -1069,6 +1171,8 @@ sub wavefront {
         'dZdX'     => $result->[4],
         'Tpos'     => $Tpos,
         'Lpos'     => $Lpos,
+        'Tneg'     => $Tneg,
+        'Lneg'     => $Lneg,
 	'TableLoc'   => [$il, $iu, $ntab],
         'TableVars'  => $result,
     };
