@@ -62,11 +62,13 @@ use Blast::IPS::ShockTablesIndex;
 use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
 use Blast::IPS::PzeroFit;
+use Blast::IPS::PzeroTail;
 
 my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
 my $rpzero_fit   = $Blast::IPS::PzeroFit::rpzero_fit;
+my $rpzero_tail  = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rgamma_table;
 
 INIT {
