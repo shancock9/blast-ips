@@ -10,15 +10,18 @@ BEGIN {
     # What is the error of the peak shock pressure using the Taylor-Sedov
     # analytic model, which ignores the ambient pressure P0?
 
-    # Many people use the Taylor-Sedov analytic solution, sometimes well below
-    # an overpressure at which it is accurate. I have seen physicists using
-    # it well below shock overpressures of 1 atmosphere.
+    # Many people use the Taylor-Sedov analytic solution because it is
+    # convenient, sometimes well below an overpressure at which it is accurate. 
 
     # This script find the range at which the error reaches 10% for each table
 
     # Remarkably, the error reaches 10% when the overpressure ratio is between
-    # 21 and 26 atmospheres for ALL SYMMETRIES AND GAMMA values. The range at
-    # which this occurs varies, of course.
+    # 21 and 26 atmospheres for ALL SYMMETRIES AND GAMMA values, and it
+    # increases rapidly for lower shock overpressures. The range at which this
+    # occurs varies, of course.  This means that the similarity solution should
+    # not be used below shock overpressures of about 20 atmospheres if an error
+    # below 10% is significant.  I have seen attempts to employ it well below
+    # shock overpressures of 1 atmosphere.
 
 =pod
 
