@@ -63,12 +63,14 @@ use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
 use Blast::IPS::PzeroFit;
 use Blast::IPS::PzeroTail;
+use Blast::IPS::ImpulseLimit;
 
 my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
 my $rtables      = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
 my $rpzero_fit   = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail  = $Blast::IPS::PzeroTail::rpzero_tail;
+my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_table;
 my $rgamma_table;
 
 INIT {
@@ -793,6 +795,59 @@ sub get_phase_lengths {
     return ( $Tpos, $Lpos, $Tneg, $Lneg );
 }
 
+sub get_impulse_limit {
+    my ( $self ) = @_;
+
+    # Given a shock radius and z value, return the positive phase duration and
+    # length
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
+    my ( $Sint_pos, $Sint_neg ) = ( 0, 0 );
+
+    if ( defined($item) ) {
+
+        # Handle builtin table
+        ( $Sint_pos, $Sint_neg ) = @{$item};
+    }
+    else {
+
+        # If this table is an interpolated table then we can interpolate
+        # P0 from nearby fits.
+        my $loc_gamma_table = $self->{_loc_gamma_table};
+        if ( defined($loc_gamma_table) ) {
+            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+            if ( $jl >= 0 && $ju < $num ) {
+                my $rtab    = $rgamma_table->[$symmetry];
+                my $gamma_l = $rtab->[$jl]->[0];
+                my $gamma_u = $rtab->[$ju]->[0];
+                my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
+                my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
+                if ( defined($item_l) && defined($item_u) ) {
+                    my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
+                    my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
+                    if ( $Sint_pos_l && $Sint_pos_u ) {
+                        $Sint_pos = _linear_interpolation(
+                            $gamma,   $gamma_l, $Sint_pos_l,
+                            $gamma_u, $Sint_pos_u
+                        );
+                    }
+                    if ( $Sint_neg_l && $Sint_neg_u ) {
+                        $Sint_neg = _linear_interpolation(
+                            $gamma,   $gamma_l, $Sint_neg_l,
+                            $gamma_u, $Sint_neg_u
+                        );
+                    }
+                }
+            }
+        }
+    }
+    return
+      wantarray
+      ? ( $gamma * $Sint_pos, $gamma * $Sint_neg, $Sint_pos, $Sint_neg )
+      : $gamma * $Sint_pos;
+}
+
 sub get_positive_phase {
     my ( $self, $rs, $zs ) = @_;
 
@@ -1153,28 +1208,32 @@ sub wavefront {
     my $Z=$result->[3];
     my $rs=exp($X);
     my $zs=exp($Z);
-    #my ($Tpos, $Lpos)= $self->get_positive_phase( $rs, $zs ); 
-    #my ($Tneg, $Lneg)= $self->get_negative_phase( $rs, $zs ); 
     my ($Tpos, $Lpos, $Tneg, $Lneg)=$self->get_phase_lengths($rs, $zs);
-    
+
     # FIXME: Should we report distance to the zero p or distance
     # between the two zero's???
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
 
+    my ($Ixr_pos, $Ixr_neg, $Sxr_pos, $Sxr_neg)=$self->get_impulse_limit(); 
+
     my $return_hash = {
-        'X'        => $result->[0],
-        'Y'        => $result->[1],
-        'dYdX'     => $result->[2],
-        'Z'        => $result->[3],
-        'dZdX'     => $result->[4],
-        'Tpos'     => $Tpos,
-        'Lpos'     => $Lpos,
-        'Tneg'     => $Tneg,
-        'Lneg'     => $Lneg,
-	'TableLoc'   => [$il, $iu, $ntab],
-        'TableVars'  => $result,
+        'X'         => $result->[0],
+        'Y'         => $result->[1],
+        'dYdX'      => $result->[2],
+        'Z'         => $result->[3],
+        'dZdX'      => $result->[4],
+        'Tpos'      => $Tpos,
+        'Lpos'      => $Lpos,
+        'Tneg'      => $Tneg,
+        'Lneg'      => $Lneg,
+        'TableLoc'  => [ $il, $iu, $ntab ],
+        'TableVars' => $result,
+        'Ixr_pos'       => $Ixr_pos,
+        'Ixr_neg'       => $Ixr_neg,
+        'Sxr_pos'        => $Sxr_pos,
+        'Sxr_neg'        => $Sxr_neg,
     };
     return $return_hash;
 }
@@ -1316,6 +1375,10 @@ sub _short_range_calc {
 
     my $ovprat_from_lambda = sub {
         my ($lambda) = @_;
+
+	# FIXME: patch to avoid divide by 0
+	if ($lambda<1.e-80) {$lambda=1.e-80}
+
         my $am2;
         if ( $symmetry == 0 ) {
             $am2 = 9 * $alpha * $gamma * $lambda;

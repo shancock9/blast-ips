@@ -35,16 +35,16 @@ while (1) {
     $symmetry = $blast_table->get_symmetry();
     $gamma    = $blast_table->get_gamma();
     print <<EOM;
-Point Source Explosion in Ideal Gas 
-
-  Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
-
+==============================================
+MAIN MENU: Point Source Explosion in Ideal Gas 
+==============================================
 Enter one of the following:
-  N             - New Table - Change Symmetry and/or Gamma
-  P1		- Point evaluations with 1 dimensionless variable...
-  P2		- Point evaluations with 2 dimensional variables...
-  T		- Table operations ..
-  q or Q        - quit
+  N     - New Table - Change Symmetry and/or Gamma
+          Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
+  P1    - Point evaluations with 1 dimensionless variable...
+  P2    - Point evaluations with 2 dimensional variables...
+  T     - Table operations ..
+  Q     - Quit
 EOM
     my $ans = queryu(":");
     if ( $ans eq 'N' ) {
@@ -54,10 +54,10 @@ EOM
     elsif ( $ans eq 'P1' ) {
         my $vname = 'X';
         $vname = select_variable($vname);
-        point_evaluations_1($blast_table, $medium, $vname);
+        point_evaluations_dimensionless($blast_table, $medium, $vname);
     }
     elsif ( $ans eq 'P2' ) {
-        point_evaluations_2($blast_table, $medium);
+        point_evaluations_with_units($blast_table, $medium);
     }
     elsif ( $ans eq 'T' ) {
         table_operations($blast_table, $medium);
@@ -146,16 +146,42 @@ EOM
     return $vname;
 }
 
-sub point_evaluations_2 {
-    my ($blast_table, $medium) = @_;
-    print <<EOM;
+{
+
+    my ($E0, $p_amb, $sspd_amb, $range, $ground_plane, $symmetry, $blast_table);
+
+    BEGIN {
+        $E0           = 1;
+        $p_amb        = 1;
+        $sspd_amb     = 1;
+        $range        = 1;
+        $ground_plane = 1;
+    }
+
+    sub point_evaluations_with_units {
+        my ( $blast_table, $medium ) = @_;
+
+	# perform point evaluations with units
+	# internal units are SI but other display units may be used
+#  AL ALtimeter reading, m............    0.0 
+#  AT Atmospheric Temperature, K......    59.0 
+	my ($p_amb, $sspd_amb);
+        my $gamma    = $medium->{_gamma};
+        my $symmetry = $medium->{_symmetry};
+        while (1) {
+	    $p_amb=$medium->{_p_amb};
+	    $sspd_amb=$medium->{_sspd_amb};
+	    my $gtext = $ground_plane ? "on hard surface" : "in free air";
+            print <<EOM;
  ----- Dimensional Solution Menu -------
-  G  Geometry  
-  AL ALtimeter reading, m............    0.0 
-  AP Atmospheric Pressure, Pa........    14.69999981 
-  AT Atmospheric Temperature, K......    59.0 
-  R  Range, m........................    0.0 
-  E  Energy, Joules..................    0.0 
+     gamma...........................    $gamma
+     symmetry........................    $symmetry
+  G  Ground plane option.............    $gtext
+  AA Ambient Atmospheric conditions
+     Atmospheric Pressure, Pa........    $p_amb 
+     ambient sound speed, m/s........    $sspd_amb
+  R  Range, m........................    $range
+  E  Energy, Joules..................    $E0
    
   RE or C Calculate blast parameters, given: R, E
   RI calculate Energy, given: Range, Impulse
@@ -171,42 +197,47 @@ sub point_evaluations_2 {
   X=eXit  CL=Clear  LG=List Gages LD=List Data
 
 EOM
-    hitcr("Sorry, coding incomplete");
-=pod
- ----- NBLAST MAIN MENU -------
-  M Method  =2, KINGERY TNT SPHERE ABOVE GROUND                 
- BUBBA1: non-isothermal, rr=   1.2254382957595387     
- BUBBA2: returning, rr=   1.2254382957595387     
-  AL ALtimeter reading, ft...........    0.0 
-  AP Atmospheric Pressure, psi.......    14.69999981 
-  AT Atmospheric Temperature, deg F..    59.0 
-  H Height of burst, ft..............    0.0 
-  R ground range.....................    0.0 
-  W explosive TNT equiv. weight, lbs.    0.0 
-   
-  RW or C Calculate blast parameters, given: R, W
-  RWT, RWP, RWI, RWE .. calculate blast from fitted weights
-  RII calculate Weight, given: Range, Incident Impulse
-  RI calculate Weight, given: Range, measured Impulse
-  RPI calculate Weight, given: Range, Incident Overpressure
-  RP  calculate Weight, given: Range, measured Overpressure
-  RE  calculate Weight, given: Range, measured OVP*IMP
-  RT calculate Weight, given: Range, measured TOA
-  REI calculate Weight, given: Range, Incident OVP*IMP
-  WP calculate Range, given Weight and OVP
-  WI calculate Range, given Weight and IMP
-  WT calculate Range, given Weight and TOA
-  WE calculate Range, given Weight and OVP*IMP
-  
-  Z Zoom  - view latest results, 1 screen per channel
-  L List  - view latest results, 1 line per channel
-  F files (read/write)...
-  X=eXit  CL=Clear  LG=List Gages LD=List Data
-
-=cut
+            my $ans = queryu(":");
+	    if ($ans eq 'E') {
+		$E0=get_num("Enter energy E0:");
+	    }
+	    elsif ($ans eq 'R') {
+		$range=get_num("Enter range, m:");
+	    }
+            elsif ( $ans eq 'G' ) {
+		print <<EOM;
+Select a ground plane option:
+  0 = explosion is in free air
+  1 = explosion is on a ground plane (rigid surface)
+EOM
+                $ground_plane = query(":");
+            }
+	    elsif ($ans eq 'AA' ) {
+	    }
+	    elsif ($ans eq 'RE' || $ans eq 'C') {
+	    }
+	    elsif ($ans eq 'RI' ) {
+	    }
+	    elsif ($ans eq 'RT' ) {
+	    }
+	    elsif ($ans eq 'RP' ) {
+	    }
+	    elsif ($ans eq 'EP' ) {
+	    }
+	    elsif ($ans eq 'ET' ) {
+	    }
+	    elsif ($ans eq 'EI' ) {
+	    }
+	    elsif ($ans eq 'X') {
+		return;
+	    }
+	    else {
+	    }
+        }
+    }
 }
 
-sub point_evaluations_1 {
+sub point_evaluations_dimensionless {
     my ($blast_table, $medium, $vname) = @_;
     my $gamma    = $medium->{_gamma};
     my $symmetry = $medium->{_symmetry};
@@ -270,6 +301,8 @@ sub point_evaluations_1 {
         my $Lpos = $ret->{Lpos};
         my $Tneg = $ret->{Tneg};
         my $Lneg = $ret->{Lneg};
+        my $Ixr_pos = $ret->{Ixr_pos};
+        my $Ixr_neg = $ret->{Ixr_neg};
         my $x    = exp($X);
         my $y    = exp($Y);
         my $z    = exp($Z);
@@ -282,7 +315,7 @@ sub point_evaluations_1 {
 	foreach ($x, $y, $z, $w, $X, $Y, $Z, $W, $dYdX, $dZdX) {
            $_=sprintf("%0.8g", $_);
 	}
-	foreach ($Tpos, $Lpos, $Tneg, $Lneg, $m, $q, $up) {
+	foreach ($Tpos, $Lpos, $Tneg, $Lneg, $m, $q, $up, $Ixr_pos, $Ixr_neg) {
            $_=sprintf("%0.6g", $_);
 	}
 
@@ -302,6 +335,8 @@ L- = $Lneg = length of negative phase
 m  = $m = S/c0=shock Mach number
 q  = $q = 1/m^2
 up = $up = (shock particle velocity/c0)
+I+ = $Ixr_pos = limiting positive impulse x r
+I- = $Ixr_neg = limiting negative impulse x r
 EOM
 
     }
