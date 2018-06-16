@@ -1,7 +1,12 @@
 bin/blast_ips.pl
-examples/blast_tables_list.pl
+examples/dump_builtin_table_bounds.pl
 lib/Blast/IPS.pm
-lib/Blast/IPS/Data.pm
+lib/Blast/IPS/AlphaTable.pm
+lib/Blast/IPS/ImpulseLimit.pm
+lib/Blast/IPS/PzeroFit.pm
+lib/Blast/IPS/PzeroTail.pm
+lib/Blast/IPS/ShockTables.pm
+lib/Blast/IPS/ShockTablesIndex.pm
 LICENSE
 Makefile.PL
 MANIFEST			This list of files
@@ -14,12 +19,16 @@ t/brode_analytic.t
 t/brode_digitized.t
 t/brode_velocity_fit.t
 t/check_tables.t
+t/gamma_interp.t
 t/goldstine_von_neumann.t
+t/interpolate_unused_tables.t
 t/interpolation_test.t
 t/korobeinikov_analytic.t
 t/korobeinikov_mir.t
+t/korobeinikov_small_q_theory.t
 t/miles_long_range.t
 t/okhotshimskii.t
+t/pierce.t
 t/sakurai_approximation.t
 t/taylor-sedov_test.t
 t/test.t
