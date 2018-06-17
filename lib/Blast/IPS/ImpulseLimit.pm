@@ -26,10 +26,10 @@ use warnings;
 use 5.006;
 
 use Carp;
-our $rimpulse_table;
+our $rimpulse_limit;
 
 # returns a hash reference to the fits of the form:
-#     $rimpulse_table->{symmetry}->{gamma} = [ Simp+, Simp- ]
+#     $rimpulse_limit->{symmetry}->{gamma} = [ Simp+, Simp- ]
 # where Sint+ = positive phase integral of Sigma times dr
 # where Sint- = negative phase integral of Sigma times dr
 
@@ -134,7 +134,7 @@ BEGIN {
     ];
     foreach my $item ( @{$rtable} ) {
         my ( $symmetry, $gamma, @vars ) = @{$item}[ 0 .. 9 ];
-        $rimpulse_table->{$symmetry}->{$gamma} = [@vars];
+        $rimpulse_limit->{$symmetry}->{$gamma} = [@vars];
     }
 }
 1;

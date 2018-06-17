@@ -58,19 +58,21 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
-use Blast::IPS::ShockTablesIndex;
-use Blast::IPS::ShockTables;
 use Blast::IPS::AlphaTable;
+use Blast::IPS::ImpulseLimit;
+use Blast::IPS::ImpulseTables;
 use Blast::IPS::PzeroFit;
 use Blast::IPS::PzeroTail;
-use Blast::IPS::ImpulseLimit;
+use Blast::IPS::ShockTables;
+use Blast::IPS::ShockTablesIndex;
 
-my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
-my $rtables      = $Blast::IPS::ShockTables::rtables;
-my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
-my $rpzero_fit   = $Blast::IPS::PzeroFit::rpzero_fit;
-my $rpzero_tail  = $Blast::IPS::PzeroTail::rpzero_tail;
-my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_table;
+my $rtables_info    = $Blast::IPS::ShockTablesIndex::rtables_info;
+my $rtables         = $Blast::IPS::ShockTables::rtables;
+my $ralpha_table    = $Blast::IPS::AlphaTable::ralpha_table;
+my $rpzero_fit      = $Blast::IPS::PzeroFit::rpzero_fit;
+my $rpzero_tail     = $Blast::IPS::PzeroTail::rpzero_tail;
+my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_limit;
+my $rimpulse_tables = $Blast::IPS::ImpulseTables::rimpulse_tables;
 my $rgamma_table;
 
 INIT {
@@ -320,11 +322,19 @@ EOM
 sub _end_model_setup {
     my ($self) = @_;
 
-    # Set parameters for evaluation beyond the ends of the table
-    # Set asymptotic wave parameters, given a table and gamma
+    # Add additional quantities of interest to $self
     my $rtable   = $self->{_rtable};
     my $gamma    = $self->{_gamma};
     my $symmetry = $self->{_symmetry};
+
+    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
+    # Multiply by gamma to get limiting time integrals of overpressure
+    my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
+    $self->{_Sint_pos}        = $Sint_pos;
+    $self->{_Sint_neg}        = $Sint_neg;
+
+    # Set parameters for evaluation beyond the ends of the table
+    # Set asymptotic wave parameters, given a table and gamma
 
     # Near region: we find the value of alpha at the first table point
     # based on R^(symmetry+1)*u**2=constant
@@ -358,7 +368,6 @@ sub _end_model_setup {
     $self->{_Z_zero} = $Z_zero;
     return;
 }
-
 
 sub _make_table_name {
 
@@ -824,6 +833,8 @@ sub get_impulse_limit {
                 my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
                 my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
                 if ( defined($item_l) && defined($item_u) ) {
+
+		    # FIXME: use a better interpolation using alpha
                     my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
                     my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
                     if ( $Sint_pos_l && $Sint_pos_u ) {
@@ -842,10 +853,7 @@ sub get_impulse_limit {
             }
         }
     }
-    return
-      wantarray
-      ? ( $gamma * $Sint_pos, $gamma * $Sint_neg, $Sint_pos, $Sint_neg )
-      : $gamma * $Sint_pos;
+    return ($Sint_pos, $Sint_neg);
 }
 
 sub get_positive_phase {
@@ -1121,6 +1129,9 @@ sub wavefront {
         carp "$error";
         return;
     }
+    my $gamma = $self->{_gamma};
+    my $Sint_pos = $self->{_Sint_pos};
+    my $Sint_neg = $self->{_Sint_neg};
 
     my $rtab = $self->{_rtable};
     my $ntab = @{$rtab};
@@ -1216,8 +1227,6 @@ sub wavefront {
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
 
-    my ($Ixr_pos, $Ixr_neg, $Sxr_pos, $Sxr_neg)=$self->get_impulse_limit(); 
-
     my $return_hash = {
         'X'         => $result->[0],
         'Y'         => $result->[1],
@@ -1230,10 +1239,10 @@ sub wavefront {
         'Lneg'      => $Lneg,
         'TableLoc'  => [ $il, $iu, $ntab ],
         'TableVars' => $result,
-        'Ixr_pos'       => $Ixr_pos,
-        'Ixr_neg'       => $Ixr_neg,
-        'Sxr_pos'        => $Sxr_pos,
-        'Sxr_neg'        => $Sxr_neg,
+        'Ixr_pos'   => $Sint_pos * $gamma,
+        'Ixr_neg'   => $Sint_neg * $gamma,
+        'Sint_pos'  => $Sint_pos,
+        'Sint_neg'  => $Sint_neg,
     };
     return $return_hash;
 }
