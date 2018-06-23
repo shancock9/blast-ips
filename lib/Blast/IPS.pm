@@ -59,7 +59,8 @@ our $VERSION = 0.1.1;
 use Carp;
 
 use Blast::IPS::AlphaTable;
-use Blast::IPS::ImpulseLimit;
+use Blast::IPS::BlastInfo qw(get_blast_info); 
+#use Blast::IPS::ImpulseLimit;
 use Blast::IPS::ImpulseTables;
 use Blast::IPS::PzeroFit;
 use Blast::IPS::PzeroTail;
@@ -71,7 +72,7 @@ my $rtables         = $Blast::IPS::ShockTables::rtables;
 my $ralpha_table    = $Blast::IPS::AlphaTable::ralpha_table;
 my $rpzero_fit      = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail     = $Blast::IPS::PzeroTail::rpzero_tail;
-my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_limit;
+#my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_limit;
 my $rimpulse_tables = $Blast::IPS::ImpulseTables::rimpulse_tables;
 my $rgamma_table;
 
@@ -327,12 +328,6 @@ sub _end_model_setup {
     my $gamma    = $self->{_gamma};
     my $symmetry = $self->{_symmetry};
 
-    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
-    # Multiply by gamma to get limiting time integrals of overpressure
-    my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
-    $self->{_Sint_pos}        = $Sint_pos;
-    $self->{_Sint_neg}        = $Sint_neg;
-
     # Set parameters for evaluation beyond the ends of the table
     # Set asymptotic wave parameters, given a table and gamma
 
@@ -366,6 +361,12 @@ sub _end_model_setup {
     $self->{_A_far}  = $A_far;
     $self->{_B_far}  = $B_far;
     $self->{_Z_zero} = $Z_zero;
+
+    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
+    # Multiply by gamma to get limiting time integrals of overpressure
+    my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
+    $self->{_Sint_pos}        = $Sint_pos;
+    $self->{_Sint_neg}        = $Sint_neg;
     return;
 }
 
@@ -811,14 +812,24 @@ sub get_impulse_limit {
     # length
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
-    my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
+    #my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
+    #my $rhash=Blast::IPS::BlastInfo::get_blast_info($symmetry,$gamma);
+    my $rhash=get_blast_info($symmetry,$gamma);
+
     my ( $Sint_pos, $Sint_neg ) = ( 0, 0 );
 
-    if ( defined($item) ) {
+    if (defined($rhash)) {
 
         # Handle builtin table
-        ( $Sint_pos, $Sint_neg ) = @{$item};
+        $Sint_pos=$rhash->{Sintegral_pos};
+        $Sint_neg=$rhash->{Sintegral_neg};
     }
+
+#    if ( defined($item) ) {
+#
+#        # Handle builtin table
+#        ( $Sint_pos, $Sint_neg ) = @{$item};
+#    }
     else {
 
         # If this table is an interpolated table then we can interpolate
@@ -830,13 +841,23 @@ sub get_impulse_limit {
                 my $rtab    = $rgamma_table->[$symmetry];
                 my $gamma_l = $rtab->[$jl]->[0];
                 my $gamma_u = $rtab->[$ju]->[0];
-                my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
-                my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
-                if ( defined($item_l) && defined($item_u) ) {
 
-		    # FIXME: use a better interpolation using alpha
-                    my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
-                    my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
+                #my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
+                #my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
+                my $rhash_l = get_blast_info( $symmetry, $gamma_l );
+                my $rhash_u = get_blast_info( $symmetry, $gamma_u );
+
+                #if ( defined($item_l) && defined($item_u) ) {
+                if ( defined($rhash_l) && defined($rhash_u) ) {
+
+		    # FIXME: use a better interpolation using (alpha+2)
+                    #my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
+                    #my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
+                    my $Sint_pos_l=$rhash_l->{Sintegral_pos};
+                    my $Sint_neg_l=$rhash_l->{Sintegral_neg};
+                    my $Sint_pos_u=$rhash_u->{Sintegral_pos};
+                    my $Sint_neg_u=$rhash_u->{Sintegral_neg};
+
                     if ( $Sint_pos_l && $Sint_pos_u ) {
                         $Sint_pos = _linear_interpolation(
                             $gamma,   $gamma_l, $Sint_pos_l,

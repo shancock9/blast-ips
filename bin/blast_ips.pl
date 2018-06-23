@@ -49,7 +49,6 @@ EOM
     my $ans = queryu(":");
     if ( $ans eq 'N' ) {
         ($blast_table, $medium) = select_blast_table($blast_table, $medium);
-
     }
     elsif ( $ans eq 'P1' ) {
         my $vname = 'X';
@@ -72,12 +71,13 @@ sub select_blast_table {
     my $symmetry = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
     if ( !$symmetry ) { $symmetry = 'S' }
     my $gamma = get_num( "Enter gamma", 1.4 );
+    my $blast_table_old = $blast_table;
     $blast_table =
       Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my $err = $blast_table->get_error();
     if ($err) {
-        print "Error: $err\n";
-        return;
+        query("Error: $err; no changes made");
+        return ($blast_table_old, $medium);
     }
 
         $sspd_amb    = 1;
@@ -243,7 +243,7 @@ sub point_evaluations_dimensionless {
     my $symmetry = $medium->{_symmetry};
     while (1) {
         my $val = get_num("Enter a value for '$vname', or <cr> to quit:");
-	last if $val eq "" || $val !~ /^\s*[\d\.]/;
+	last if $val eq "" || $val !~ /\d/; #^\s*[\-\+\d\.]/;
  
 	my ($iQ, $Q);
 	if ($vname =~ /^([XYZW]|dYdX|dZdX|dWdX)/) {$Q = $val; $iQ=$vname}
