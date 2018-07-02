@@ -29,6 +29,12 @@ my $medium   = {
     _symmetry => $symmetry,
 };
 
+my $units = 'D';
+my %units_name = (
+  'D' => "Dimensionless",
+  'SI' => "SI",
+);
+
 # main loop
 while (1) {
     my $table_name = $blast_table->get_table_name();
@@ -41,22 +47,25 @@ MAIN MENU: Point Source Explosion in Ideal Gas
 Enter one of the following:
   N     - New Table - Change Symmetry and/or Gamma
           Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
-  P1    - Point evaluations with 1 dimensionless variable...
-  P2    - Point evaluations with 2 dimensional variables...
-  T     - Table operations ..
+  I     - show summary Information for this blast
+  P     - Point evaluations ...
+  T     - Table operations ...
+  U     - Units: $units_name{$units};
   Q     - Quit
 EOM
     my $ans = queryu(":");
     if ( $ans eq 'N' ) {
         ($blast_table, $medium) = select_blast_table($blast_table, $medium);
     }
-    elsif ( $ans eq 'P1' ) {
-        my $vname = 'X';
-        $vname = select_variable($vname);
-        point_evaluations_dimensionless($blast_table, $medium, $vname);
+    elsif ( $ans eq 'I' ) {
+        show_summary_information( $blast_table, $medium, $units );
     }
-    elsif ( $ans eq 'P2' ) {
-        point_evaluations_with_units($blast_table, $medium);
+    elsif ( $ans eq 'U' ) {
+        my $test = queryu("Enter 'D' for Dimensionless, 'SI' for SI Units");
+        $units = ( $test eq 'D' || $test eq 'SI' ) ? $test : $units;
+    }
+    elsif ( $ans eq 'P' ) {
+	point_evaluations( $blast_table, $medium, $units ); 
     }
     elsif ( $ans eq 'T' ) {
         table_operations($blast_table, $medium);
@@ -93,6 +102,59 @@ sub select_blast_table {
     return ($blast_table, $medium);
 }
 
+sub show_summary_information {
+    my ( $blast_table, $medium, $units ) = @_;
+    my $rinfo = $blast_table->get_info();
+    my $table_name = $rinfo->{table_name}; 
+    my $alpha = $rinfo->{alpha}; 
+    my $symmetry = $rinfo->{symmetry}; 
+    my $gamma = $rinfo->{gamma}; 
+    my $Sint_pos = $rinfo->{Sint_pos}; 
+    my $Sint_neg = $rinfo->{Sint_neg}; 
+    my $Ixr_pos = $gamma*$Sint_pos;
+    my $Ixr_neg = $gamma*$Sint_neg;
+    my $r_tail_shock = $rinfo->{r_tail_shock}; 
+    my $z_tail_shock = $rinfo->{z_tail_shock}; 
+my %symmetry_name = (
+    0 => 'Plane',
+    1 => 'Cylindrical',
+    2 => 'Spherical',
+);
+foreach ($alpha, $Sint_pos, $Sint_neg, $Ixr_pos, $Ixr_neg) {
+    $_ = sprintf( "%0.6g", $_ );
+}
+print <<EOM;
+
+=====================
+Blast Wave Parameters
+=====================
+symmetry  = $symmetry_name{$symmetry}
+gamma     = $gamma
+alpha     = $alpha = Sedov's parameter alpha
+r_ts      = $r_tail_shock = scaled radius at which tail shock forms
+z_ts      = $z_tail_shock = z at which tail shock forms
+I+        = $Ixr_pos = positive impulse x r at long range
+I-        = $Ixr_neg = negative impulse x r at long range
+S+        = $Sint_pos = positive integral of Sigma x dr at long range
+S-        = $Sint_neg = negative integral of Sigma x dr at long range
+EOM
+hitcr();
+    return;
+}
+
+sub point_evaluations {
+    my ( $blast_table, $medium, $units ) = @_;
+    if ( $units eq 'D' ) {
+        my $vname = 'X';
+        $vname = select_variable($vname);
+        point_evaluations_dimensionless( $blast_table, $medium, $vname );
+    }
+    else {
+        point_evaluations_with_units( $blast_table, $medium, $units );
+    }
+    return;
+}
+
 sub select_variable {
 
     my ($vname) = @_;
@@ -125,7 +187,7 @@ Let
  p0 = initial atmospheric pressure and c0 = sound speed 
  D = shock speed
 
-Variables which may be selected to vary:
+You may vary any of these variables: 
 EOM
     foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
 	$menu_text .= "    $key : $menu{$key}->[1]\n";
@@ -134,7 +196,7 @@ EOM
 
     while (1) {
 	print $menu_text;
-        my $ans = query("Select one of these; <cr>='x':");
+        my $ans = query("Select one of these variables; <cr>='x':");
 	$ans = 'x' unless($ans);
 	if (defined($menu{$ans}) ) {
 	   return $ans;
@@ -159,7 +221,7 @@ EOM
     }
 
     sub point_evaluations_with_units {
-        my ( $blast_table, $medium ) = @_;
+        my ( $blast_table, $medium, $units ) = @_;
 
 	# perform point evaluations with units
 	# internal units are SI but other display units may be used
@@ -591,8 +653,6 @@ EOM
 EOM
         }
         close OUT;
-
-        #print "BOOGALOO: closed\n";
     }
     else {
 
@@ -616,7 +676,10 @@ sub query {
 
 sub hitcr {
     my ($msg) = @_;
-    query( $msg . ". hit <cr>" );
+    if ($msg) { $msg .= ". hit <cr> to continue"}
+    else {$msg = "hit <cr> to continue"}
+    query ($msg);
+    ##query( $msg . ". hit <cr>" );
 }
 
 

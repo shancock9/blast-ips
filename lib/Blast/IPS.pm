@@ -362,11 +362,11 @@ sub _end_model_setup {
     $self->{_B_far}  = $B_far;
     $self->{_Z_zero} = $Z_zero;
 
-    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
-    # Multiply by gamma to get limiting time integrals of overpressure
-    my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
-    $self->{_Sint_pos}        = $Sint_pos;
-    $self->{_Sint_neg}        = $Sint_neg;
+    $self->_set_global_info();
+
+    ##my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
+    ##$self->{_Sint_pos}        = $Sint_pos;
+    ##$self->{_Sint_neg}        = $Sint_neg;
     return;
 }
 
@@ -587,12 +587,20 @@ sub get_info {
         $Interp_Error, $rs2,      $zs2
     ) = @{$item};
     $rinfo->{table_name} = $table_name;
+    $rinfo->{Max_Error}  = $Max_Error;
     $rinfo->{alpha}      = $self->{_alpha};
     $rinfo->{symmetry}   = $self->{_symmetry};
     $rinfo->{gamma}      = $self->{_gamma};
-    $rinfo->{Max_Error}  = $Max_Error;
-    $rinfo->{Xs2}        = $rs2 ? log($rs2) : undef;
-    $rinfo->{Zs2}        = $zs2 ? log($zs2) : undef;
+    $rinfo->{Sint_pos}   = $self->{_Sint_pos};
+    $rinfo->{Sint_neg}   = $self->{_Sint_neg};
+
+    # cannot take log of negative z values!
+    #$rinfo->{Xs2}        = $rs2 ? log($rs2) : undef;
+    #$rinfo->{Zs2}        = $zs2 ? log($zs2) : undef;
+    #$rinfo->{rs2}        = $rs2; 
+    #$rinfo->{zs2}        = $zs2; 
+    $rinfo->{r_tail_shock} = $self->{_r_tail_shock};
+    $rinfo->{z_tail_shock} = $self->{_z_tail_shock};
     return ($rinfo);
 }
 
@@ -624,6 +632,8 @@ sub get_table_index {
             gamma     => $gamma,
             Max_Error => $Max_Error,
             N         => $N,
+            r_tail_shock => $rs2,
+            z_tail_shock => $zs2,
         };
     }
     return ($rtable_index);
@@ -805,7 +815,86 @@ sub get_phase_lengths {
     return ( $Tpos, $Lpos, $Tneg, $Lneg );
 }
 
+sub _set_global_info {
+    my ( $self ) = @_;
+
+    # Given a shock radius and z value, return the positive phase duration and
+    # length
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    #my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
+    #my $rhash=Blast::IPS::BlastInfo::get_blast_info($symmetry,$gamma);
+    my $rhash=get_blast_info($symmetry,$gamma);
+
+    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
+    # Multiply by gamma to get limiting time integrals of overpressure
+    my ( $Sint_pos, $Sint_neg ) = ( 0, 0 );
+    my ( $r_tail_shock, $z_tail_shock ) = ( 0, 0 );
+
+    if ( defined($rhash) ) {
+
+        # Handle builtin table
+        $Sint_pos     = $rhash->{Sintegral_pos};
+        $Sint_neg     = $rhash->{Sintegral_neg};
+        $r_tail_shock = $rhash->{r_tail_shock};
+        $z_tail_shock = $rhash->{z_tail_shock};
+    }
+    else {
+
+        # If this table is an interpolated table then we can interpolate
+        # P0 from nearby fits.
+        my $loc_gamma_table = $self->{_loc_gamma_table};
+        if ( defined($loc_gamma_table) ) {
+            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+            if ( $jl >= 0 && $ju < $num ) {
+                my $rtab    = $rgamma_table->[$symmetry];
+                my $gamma_l = $rtab->[$jl]->[0];
+                my $gamma_u = $rtab->[$ju]->[0];
+
+                #my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
+                #my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
+                my $rhash_l = get_blast_info( $symmetry, $gamma_l );
+                my $rhash_u = get_blast_info( $symmetry, $gamma_u );
+
+                #if ( defined($item_l) && defined($item_u) ) {
+                if ( defined($rhash_l) && defined($rhash_u) ) {
+
+		    # Fixme: interpolate tail shock
+		    # FIXME: use a better interpolation using (alpha+2)
+                    #my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
+                    #my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
+                    my $Sint_pos_l=$rhash_l->{Sintegral_pos};
+                    my $Sint_neg_l=$rhash_l->{Sintegral_neg};
+                    my $Sint_pos_u=$rhash_u->{Sintegral_pos};
+                    my $Sint_neg_u=$rhash_u->{Sintegral_neg};
+
+                    if ( $Sint_pos_l && $Sint_pos_u ) {
+                        $Sint_pos = _linear_interpolation(
+                            $gamma,   $gamma_l, $Sint_pos_l,
+                            $gamma_u, $Sint_pos_u
+                        );
+                    }
+                    if ( $Sint_neg_l && $Sint_neg_u ) {
+                        $Sint_neg = _linear_interpolation(
+                            $gamma,   $gamma_l, $Sint_neg_l,
+                            $gamma_u, $Sint_neg_u
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    # Set values
+    $self->{_Sint_pos}     = $Sint_pos;
+    $self->{_Sint_neg}     = $Sint_neg;
+    $self->{_r_tail_shock} = $r_tail_shock;
+    $self->{_z_tail_shock} = $z_tail_shock;
+    return; 
+}
+
 sub get_impulse_limit {
+## TO BE DELETED
     my ( $self ) = @_;
 
     # Given a shock radius and z value, return the positive phase duration and
