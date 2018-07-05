@@ -104,41 +104,70 @@ sub select_blast_table {
 
 sub show_summary_information {
     my ( $blast_table, $medium, $units ) = @_;
-    my $rinfo = $blast_table->get_info();
-    my $table_name = $rinfo->{table_name}; 
-    my $alpha = $rinfo->{alpha}; 
-    my $symmetry = $rinfo->{symmetry}; 
-    my $gamma = $rinfo->{gamma}; 
-    my $Sint_pos = $rinfo->{Sint_pos}; 
-    my $Sint_neg = $rinfo->{Sint_neg}; 
-    my $Ixr_pos = $gamma*$Sint_pos;
-    my $Ixr_neg = $gamma*$Sint_neg;
-    my $r_tail_shock = $rinfo->{r_tail_shock}; 
-    my $z_tail_shock = $rinfo->{z_tail_shock}; 
-my %symmetry_name = (
-    0 => 'Plane',
-    1 => 'Cylindrical',
-    2 => 'Spherical',
-);
-foreach ($alpha, $Sint_pos, $Sint_neg, $Ixr_pos, $Ixr_neg) {
-    $_ = sprintf( "%0.6g", $_ );
-}
-print <<EOM;
+    my $rinfo               = $blast_table->get_info();
+    my $table_name          = $rinfo->{table_name};
+    my $alpha               = $rinfo->{alpha};
+    my $symmetry            = $rinfo->{symmetry};
+    my $gamma               = $rinfo->{gamma};
+    my $Sint_pos            = $rinfo->{Sintegral_pos};
+    my $Sint_neg            = $rinfo->{Sintegral_neg};
+    my $Ixr_pos             = $gamma * $Sint_pos;
+    my $Ixr_neg             = $gamma * $Sint_neg;
+    my $r_tail_shock        = $rinfo->{r_tail_shock};
+    my $z_tail_shock        = $rinfo->{z_tail_shock};
+    my $KE_initial_ratio    = $rinfo->{KE_initial_ratio};
+    my $t_u_plus_c_zero     = $rinfo->{t_u_plus_c_zero};
+    my $t_pcenter_zero_1    = $rinfo->{t_pcenter_zero_1};
+    my $t_pcenter_min       = $rinfo->{t_pcenter_min};
+    my $pcenter_min         = $rinfo->{pcenter_min};
+    my $t_dpdt_center_max       = $rinfo->{t_dpdt_center_max};
+    my $dpdt_center_max         = $rinfo->{dpdt_center_max};
+    my $pcenter_dpdt_center_max = $rinfo->{pcenter_dpdt_center_max};
+    my %symmetry_name       = (
+        0 => 'Plane',
+        1 => 'Cylindrical',
+        2 => 'Spherical',
+    );
+
+    foreach ( $alpha, $Sint_pos, $Sint_neg, $Ixr_pos, $Ixr_neg ) {
+        $_ = sprintf( "%0.6g", $_ );
+    }
+    print <<EOM;
 
 =====================
 Blast Wave Parameters
 =====================
 symmetry  = $symmetry_name{$symmetry}
 gamma     = $gamma
-alpha     = $alpha = Sedov's parameter alpha
-r_ts      = $r_tail_shock = scaled radius at which tail shock forms
-z_ts      = $z_tail_shock = z at which tail shock forms
-I+        = $Ixr_pos = positive impulse x r at long range
-I-        = $Ixr_neg = negative impulse x r at long range
+alpha     = $alpha = similarity solution parameter alpha
+KE/E0     = $KE_initial_ratio = ratio of initial KE to initial energy
+t u+c=0   = $t_u_plus_c_zero = time of first zero velocity C+ characteristic
+I+        = $Ixr_pos = positive impulse times r at long range
+I-        = $Ixr_neg = negative impulse times r at long range
 S+        = $Sint_pos = positive integral of Sigma x dr at long range
 S-        = $Sint_neg = negative integral of Sigma x dr at long range
+r TS      = $r_tail_shock = scaled radius at which Tail Shock forms
+z TS      = $z_tail_shock = scaled z at which Tail Shock forms 
+
+Overpressure at r=0:
+t_pc0       = $t_pcenter_zero_1 = time of first zero overpressure at r=0
+t_pc_min    = $t_pcenter_min   = time of minimum overpressure at r=0
+pc_min      = $pcenter_min   = minimum overpressure at r=0
+t_dpdt_max  = $t_dpdt_center_max = time of maximum dp/dt at r=0
+dpdt_max    = $dpdt_center_max   = maximum dp/dt at r=0
+p_dpdt_max  = $pcenter_dpdt_center_max = ovp at time of maximum dp/dt at r=0
+
 EOM
-hitcr();
+
+    # DEBUG dump to check key names
+    if (0) {
+        print "\nKey dump\n";
+        foreach my $key ( keys %{$rinfo} ) {
+            print "$key => $rinfo->{$key}\n";
+        }
+    }
+
+    hitcr();
     return;
 }
 

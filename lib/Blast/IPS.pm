@@ -364,9 +364,6 @@ sub _end_model_setup {
 
     $self->_set_global_info();
 
-    ##my ($Sint_pos, $Sint_neg) = $self->get_impulse_limit();
-    ##$self->{_Sint_pos}        = $Sint_pos;
-    ##$self->{_Sint_neg}        = $Sint_neg;
     return;
 }
 
@@ -571,36 +568,27 @@ sub get_rgamma_table {
 
 sub get_info {
     my ($self) = @_;
+
+    # Return some information about this case
     if ( !ref($self) ) {
         my $what = ref $self;
         print STDERR "$what\n";
         croak("get_info not called by a Blast::IPS object");
     }
 
-    # Return some information about this case
-    my $rinfo      = {};
-    my $table_name = $self->{_table_name};
-    my $item       = $rtables_info->{$table_name};
-    my (
-        $symmetry,     $gamma,    $Max_Error, $N,
-        $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
-        $Interp_Error, $rs2,      $zs2
-    ) = @{$item};
-    $rinfo->{table_name} = $table_name;
-    $rinfo->{Max_Error}  = $Max_Error;
-    $rinfo->{alpha}      = $self->{_alpha};
-    $rinfo->{symmetry}   = $self->{_symmetry};
-    $rinfo->{gamma}      = $self->{_gamma};
-    $rinfo->{Sint_pos}   = $self->{_Sint_pos};
-    $rinfo->{Sint_neg}   = $self->{_Sint_neg};
+    # Return all values in the _rinfo hash
+    my $rinfo  = {};
+    my $_rinfo = $self->{_rinfo};
+    if ( defined($_rinfo) ) {
+        foreach my $key ( keys %{$_rinfo} ) {
+            $rinfo->{$key} = $_rinfo->{$key};
+        }
+    }
 
-    # cannot take log of negative z values!
-    #$rinfo->{Xs2}        = $rs2 ? log($rs2) : undef;
-    #$rinfo->{Zs2}        = $zs2 ? log($zs2) : undef;
-    #$rinfo->{rs2}        = $rs2; 
-    #$rinfo->{zs2}        = $zs2; 
-    $rinfo->{r_tail_shock} = $self->{_r_tail_shock};
-    $rinfo->{z_tail_shock} = $self->{_z_tail_shock};
+    # and return a few other key values 
+    $rinfo->{alpha}    = $self->{_alpha};
+    $rinfo->{symmetry} = $self->{_symmetry};
+    $rinfo->{gamma}    = $self->{_gamma};
     return ($rinfo);
 }
 
@@ -822,27 +810,16 @@ sub _set_global_info {
     # length
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
-    #my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
-    #my $rhash=Blast::IPS::BlastInfo::get_blast_info($symmetry,$gamma);
     my $rhash=get_blast_info($symmetry,$gamma);
-
-    # Limiting wave impulse (spatial integral of Sigma over pos and neg phases)
-    # Multiply by gamma to get limiting time integrals of overpressure
-    my ( $Sint_pos, $Sint_neg ) = ( 0, 0 );
-    my ( $r_tail_shock, $z_tail_shock ) = ( 0, 0 );
-
-    if ( defined($rhash) ) {
-
-        # Handle builtin table
-        $Sint_pos     = $rhash->{Sintegral_pos};
-        $Sint_neg     = $rhash->{Sintegral_neg};
-        $r_tail_shock = $rhash->{r_tail_shock};
-        $z_tail_shock = $rhash->{z_tail_shock};
-    }
-    else {
+    if ( !defined($rhash) ) {
 
         # If this table is an interpolated table then we can interpolate
         # P0 from nearby fits.
+        # FIXME: this works now but needs a lot of refinement for better
+        # interpolation.  Use 4 point interpolation, and use best
+        # transformation for each variable. Sintegral needs (alpha+2) weighting.
+        # see '_make_intermediate_gamma_table' for multipoint interp.
+        # need $rigam_4; 
         my $loc_gamma_table = $self->{_loc_gamma_table};
         if ( defined($loc_gamma_table) ) {
             my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
@@ -850,120 +827,32 @@ sub _set_global_info {
                 my $rtab    = $rgamma_table->[$symmetry];
                 my $gamma_l = $rtab->[$jl]->[0];
                 my $gamma_u = $rtab->[$ju]->[0];
-
-                #my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
-                #my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
                 my $rhash_l = get_blast_info( $symmetry, $gamma_l );
                 my $rhash_u = get_blast_info( $symmetry, $gamma_u );
 
-                #if ( defined($item_l) && defined($item_u) ) {
                 if ( defined($rhash_l) && defined($rhash_u) ) {
 
-		    # Fixme: interpolate tail shock
-		    # FIXME: use a better interpolation using (alpha+2)
-                    #my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
-                    #my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
-                    my $Sint_pos_l=$rhash_l->{Sintegral_pos};
-                    my $Sint_neg_l=$rhash_l->{Sintegral_neg};
-                    my $Sint_pos_u=$rhash_u->{Sintegral_pos};
-                    my $Sint_neg_u=$rhash_u->{Sintegral_neg};
+                    # FIXME: use a better interpolation using (alpha+2)
+                    foreach my $key ( keys %{$rhash_l} ) {
+                        my $val_l = $rhash_l->{$key};
+                        my $val_u = $rhash_u->{$key};
 
-                    if ( $Sint_pos_l && $Sint_pos_u ) {
-                        $Sint_pos = _linear_interpolation(
-                            $gamma,   $gamma_l, $Sint_pos_l,
-                            $gamma_u, $Sint_pos_u
-                        );
-                    }
-                    if ( $Sint_neg_l && $Sint_neg_u ) {
-                        $Sint_neg = _linear_interpolation(
-                            $gamma,   $gamma_l, $Sint_neg_l,
-                            $gamma_u, $Sint_neg_u
-                        );
+              # FIXME: Need to watch out for zero values which really mean undef
+                        if ( defined($val_l) && defined($val_u) ) {
+                            my $val =
+                              _linear_interpolation( $gamma, $gamma_l, $val_l,
+                                $gamma_u, $val_u );
+                            $rhash->{$key} = $val;
+                        }
                     }
                 }
             }
         }
     }
 
-    # Set values
-    $self->{_Sint_pos}     = $Sint_pos;
-    $self->{_Sint_neg}     = $Sint_neg;
-    $self->{_r_tail_shock} = $r_tail_shock;
-    $self->{_z_tail_shock} = $z_tail_shock;
+    # Store this hash of values in self
+    $self->{_rinfo} = $rhash;
     return; 
-}
-
-sub get_impulse_limit {
-## TO BE DELETED
-    my ( $self ) = @_;
-
-    # Given a shock radius and z value, return the positive phase duration and
-    # length
-    my $symmetry = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
-    #my $item  = $rimpulse_limit->{$symmetry}->{$gamma};
-    #my $rhash=Blast::IPS::BlastInfo::get_blast_info($symmetry,$gamma);
-    my $rhash=get_blast_info($symmetry,$gamma);
-
-    my ( $Sint_pos, $Sint_neg ) = ( 0, 0 );
-
-    if (defined($rhash)) {
-
-        # Handle builtin table
-        $Sint_pos=$rhash->{Sintegral_pos};
-        $Sint_neg=$rhash->{Sintegral_neg};
-    }
-
-#    if ( defined($item) ) {
-#
-#        # Handle builtin table
-#        ( $Sint_pos, $Sint_neg ) = @{$item};
-#    }
-    else {
-
-        # If this table is an interpolated table then we can interpolate
-        # P0 from nearby fits.
-        my $loc_gamma_table = $self->{_loc_gamma_table};
-        if ( defined($loc_gamma_table) ) {
-            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-            if ( $jl >= 0 && $ju < $num ) {
-                my $rtab    = $rgamma_table->[$symmetry];
-                my $gamma_l = $rtab->[$jl]->[0];
-                my $gamma_u = $rtab->[$ju]->[0];
-
-                #my $item_l  = $rimpulse_limit->{$symmetry}->{$gamma_l};
-                #my $item_u  = $rimpulse_limit->{$symmetry}->{$gamma_u};
-                my $rhash_l = get_blast_info( $symmetry, $gamma_l );
-                my $rhash_u = get_blast_info( $symmetry, $gamma_u );
-
-                #if ( defined($item_l) && defined($item_u) ) {
-                if ( defined($rhash_l) && defined($rhash_u) ) {
-
-		    # FIXME: use a better interpolation using (alpha+2)
-                    #my ( $Sint_pos_l, $Sint_neg_l ) = @{$item_l};
-                    #my ( $Sint_pos_u, $Sint_neg_u ) = @{$item_u};
-                    my $Sint_pos_l=$rhash_l->{Sintegral_pos};
-                    my $Sint_neg_l=$rhash_l->{Sintegral_neg};
-                    my $Sint_pos_u=$rhash_u->{Sintegral_pos};
-                    my $Sint_neg_u=$rhash_u->{Sintegral_neg};
-
-                    if ( $Sint_pos_l && $Sint_pos_u ) {
-                        $Sint_pos = _linear_interpolation(
-                            $gamma,   $gamma_l, $Sint_pos_l,
-                            $gamma_u, $Sint_pos_u
-                        );
-                    }
-                    if ( $Sint_neg_l && $Sint_neg_u ) {
-                        $Sint_neg = _linear_interpolation(
-                            $gamma,   $gamma_l, $Sint_neg_l,
-                            $gamma_u, $Sint_neg_u
-                        );
-                    }
-                }
-            }
-        }
-    }
-    return ($Sint_pos, $Sint_neg);
 }
 
 sub get_positive_phase {
@@ -1240,8 +1129,8 @@ sub wavefront {
         return;
     }
     my $gamma = $self->{_gamma};
-    my $Sint_pos = $self->{_Sint_pos};
-    my $Sint_neg = $self->{_Sint_neg};
+    my $Sint_pos = $self->{_rinfo}->{Sintegral_pos};
+    my $Sint_neg = $self->{_rinfo}->{Sintegral_neg};
 
     my $rtab = $self->{_rtable};
     my $ntab = @{$rtab};
@@ -1603,15 +1492,38 @@ sub _short_range_calc {
     # FIXME: This still uses simple theory
     my $lnT_i     = $lnt_0 + $delta * ( $X_i - $X_0 );
     my $T         = exp($lnT_i);
-    my $R         = exp($X_i);
-    my $z_i       = $R - $T;
-    my $dz_dX_i   = $R - $T * $delta;
-    my $d2z_dX2_i = $R - $T * ($delta)**2;
+    my $lambda_i         = exp($X_i);
+    my $z_i       = $lambda_i - $T;
+    my $dz_dX_i   = $lambda_i - $T * $delta;
+    my $d2z_dX2_i = $lambda_i - $T * ($delta)**2;
     my $Z_i       = $z_i;
     my $dZ_dX_i   = $dz_dX_i;
     $Z_i     = log($z_i);
     $dZ_dX_i = $dz_dX_i / $z_i;
-    return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2z_dX2_i ];
+
+    # calculate $eresidual = residual heat energy from origin to shock
+    # multiply by gamma-1 to get work on atmosphere
+    # multiply by gamma to get energy not available for blast at this range
+    my $symp   = $symmetry + 1;
+    my $gammam = $gamma - 1;
+    my $pi = 4 * atan2( 1, 1 );
+    my $acon =
+        ( $symmetry == 2 ) ? 4 * $pi
+      : ( $symmetry == 1 ) ? 2 * $pi
+      :                      1;
+    my $ovp_i  = exp($Y_i);
+    my $C      = $ovp_i * $lambda_i**$symp;
+    my $qq     = $symp * $gammam / $gamma;
+    my $gammap = $gamma + 1;
+    my $vol =
+      $acon * $gammam / $gammap * $C**( 1 / $gamma ) * $lambda_i**$qq / $qq;
+    my $vol1        = $acon * $lambda_i**$symp / $symp;
+    my $eresidual_i = ( $vol - $vol1 ) / $gammam;
+
+    return [
+        $X_i,     $Y_i,       $dY_dX_i,   $Z_i,
+        $dZ_dX_i, $d2Y_dX2_i, $d2z_dX2_i, $eresidual_i
+    ];
 }
 
 sub _long_range_calc {
@@ -1734,6 +1646,35 @@ sub _long_range_sphere {
 
     ## PATCH: Return ending dZdX
     $dZ_dX_i = $dZdX_e;
+
+    # TODO: Here are equations to calculate the increment in residual shock
+    # heating from the primary shock, from 'energy_integral_primary.pl'.
+    # Add this to shock heading at end of table to get long range value
+    # This assumes constant dYdX, so it is basically exact for plane and
+    # cylindrical geometry. For spherical geometry dYdX continues to change
+    # but those tables go so far (X=200) that we probably won't be
+    # evaluating for spherical geometry.
+    my $lambda_i = exp($X_i);
+    my $lambda_e = exp($X_e);
+    my $ovp_atm_e = exp($Y_e);
+    my $qq = 3 * $dYdX_e + $symmetry + 1;
+    my $pi = 4 * atan2( 1, 1 );
+    my $acon =
+        ( $symmetry == 2 ) ? 4 * $pi
+      : ( $symmetry == 1 ) ? 2 * $pi
+      :                      1;
+    my $coef = $acon * ($gamma+1) / 12 / $gamma**3;
+    my $dint =
+      $coef * $ovp_atm_e**3 /
+      $lambda_e**( 3 * $dYdX_e ) *
+      ( $lambda_i**$qq - $lambda_e**$qq ) /
+      $qq;
+
+    # FIXME: future PATCH for total shock heating: double this for geometries
+    # with a tail shock
+    #unless ($symmetry == 0 && $gamma>1.6) {$dint*=2}
+
+    # FIXME: Now add dint to residual energy at end of table to get final value
 
     return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
 }

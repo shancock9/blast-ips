@@ -2,7 +2,9 @@ bin/blast_ips.pl
 examples/dump_builtin_table_bounds.pl
 lib/Blast/IPS.pm
 lib/Blast/IPS/AlphaTable.pm
+lib/Blast/IPS/BlastInfo.pm
 lib/Blast/IPS/ImpulseLimit.pm
+lib/Blast/IPS/ImpulseTables.pm
 lib/Blast/IPS/PzeroFit.pm
 lib/Blast/IPS/PzeroTail.pm
 lib/Blast/IPS/ShockTables.pm
