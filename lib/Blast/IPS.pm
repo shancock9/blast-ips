@@ -185,7 +185,7 @@ sub _setup {
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
-    my $loc_gamma_table; 
+    my ($loc_gamma_table, $rigam_4, $rigam_6); 
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
@@ -276,8 +276,8 @@ EOM
 
         # Otherwise, make an interpolated table
         else {
-            my $rigam_6 = $result->{rigam_6};
-            my $rigam_4 = $result->{rigam_4};
+            $rigam_6 = $result->{rigam_6};
+            $rigam_4 = $result->{rigam_4};
             if ( defined($rigam_6) && defined($rigam_4) ) {
                 $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
                     $rigam_6, $rigam_4 );
@@ -307,10 +307,12 @@ EOM
     $self->{_rtable}          = $rtable;
     $self->{_table_name}      = $table_name;
     $self->{_loc_gamma_table} = $loc_gamma_table;
+    $self->{_rigam_4}         = $rigam_4;
+    $self->{_rigam_6}         = $rigam_6;
     $self->{_gamma}           = $gamma;
     $self->{_symmetry}        = $symmetry;
     $self->{_jl}              = -1;
-    $self->{_ju}              = $num_table;    #@{$rtable};
+    $self->{_ju}              = $num_table;         #@{$rtable};
     $self->{_error}           = $error;
 
     if ($error) { carp "$error\n" }
@@ -395,8 +397,10 @@ sub set_interpolation_points {
     return if ($ntab<=0 || $NLAG <=0);
 
     # First add points on both sides (will be lopsided if NLAG is odd)
-    my $j_lo = $jfloor - int( $NLAG / 2 );
+    #my $j_lo = $jfloor - int( $NLAG / 2 ); # ORIGINAL, lopsided
+    my $j_lo = $jfloor - int( ($NLAG-1) / 2 );  # Corrected
     my $j_hi = $j_lo + $NLAG - 1;
+    #print STDERR "jfloor=$jfloor, j_lo=$j_lo, j_hi=$j_hi\n";
  
     # Shift points if too near an edge
     if ( $j_lo < 0 ) {
@@ -413,6 +417,7 @@ sub set_interpolation_points {
     # Be sure points are in bounds
     if ( $j_lo < 0 )         { $j_lo = 0 }
     if ( $j_hi > $ntab - 1 ) { $j_hi = $ntab - 1 }
+#print STDERR "returning j_lo=$j_lo, j_hi=$j_hi\n";
     return [ $j_lo .. $j_hi ];
 }
 
@@ -811,38 +816,85 @@ sub _set_global_info {
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
     my $rhash=get_blast_info($symmetry,$gamma);
-    if ( !defined($rhash) ) {
+    my $loc_gamma_table = $self->{_loc_gamma_table};
+    my $rigam_4 = $self->{_rigam_4};
+    if ( !defined($rhash) && defined($loc_gamma_table) && defined($rigam_4) ) {
 
         # If this table is an interpolated table then we can interpolate
         # P0 from nearby fits.
         # FIXME: this works now but needs a lot of refinement for better
-        # interpolation.  Use 4 point interpolation, and use best
-        # transformation for each variable. Sintegral needs (alpha+2) weighting.
-        # see '_make_intermediate_gamma_table' for multipoint interp.
-        # need $rigam_4; 
-        my $loc_gamma_table = $self->{_loc_gamma_table};
-        if ( defined($loc_gamma_table) ) {
-            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-            if ( $jl >= 0 && $ju < $num ) {
-                my $rtab    = $rgamma_table->[$symmetry];
-                my $gamma_l = $rtab->[$jl]->[0];
-                my $gamma_u = $rtab->[$ju]->[0];
-                my $rhash_l = get_blast_info( $symmetry, $gamma_l );
-                my $rhash_u = get_blast_info( $symmetry, $gamma_u );
+        # Use best transformation for each variable. 
+        # Sintegral needs (alpha+2) weighting.
+        my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+        #if ( defined($loc_gamma_table) && defined($rigam_4) ) {
+        if ( $jl >= 0 && $ju < $num ) {
 
-                if ( defined($rhash_l) && defined($rhash_u) ) {
+            my $alpha = alpha_interpolate( $symmetry, $gamma );
+	    my $rtab;
+            foreach my $igam ( @{$rigam_4} ) {
+                my ( $gamma_i, $table_name_i ) =
+                  @{ $rgamma_table->[$symmetry]->[$igam] };
+                my $rhash_i = get_blast_info( $symmetry, $gamma_i );
+                my $alpha_i = alpha_interpolate( $symmetry, $gamma_i );
+                push @{$rtab}, [ $rhash_i, $gamma_i, $alpha_i, $igam ];
+            }
 
-                    # FIXME: use a better interpolation using (alpha+2)
-                    foreach my $key ( keys %{$rhash_l} ) {
-                        my $val_l = $rhash_l->{$key};
-                        my $val_u = $rhash_u->{$key};
+	    # loop to interpolate all values
+            my @keys=keys %{$rtab->[0]->[0]};
+            foreach my $key (@keys) {
+                my ( $rx, $ry );
+		my $nogo;
+                foreach my $item ( @{$rtab} ) {
+                    my ( $rhash_i, $gamma_i, $alpha_i, $igam ) = @{$item};
+                    my $val_i = $rhash_i->{$key};
+                    if ( !defined($val_i) || $val_i == 0 ) {
 
-              # FIXME: Need to watch out for zero values which really mean undef
-                        if ( defined($val_l) && defined($val_u) ) {
-                            my $val =
-                              _linear_interpolation( $gamma, $gamma_l, $val_l,
-                                $gamma_u, $val_u );
-                            $rhash->{$key} = $val;
+			# no interpolation if missing or zero bounding points 
+                        $nogo ||= ( $igam eq $jl || $igam eq $ju );
+			last if $nogo;
+                        next;
+                    }
+
+		    # FIXME: Sintegral should be weighted with (alpha+2)
+                    push @{$rx}, $gamma_i;
+                    push @{$ry}, $val_i;
+                }
+		
+		my $val = 0;
+                if ( !$nogo ) {
+                    $val = polint( $gamma, $rx, $ry );
+                }
+                $rhash->{$key} = $val;
+            }
+
+	    # Old Linear interpolation, for reference
+	    # execute to see comparison with polynomial interpolation
+            if (0) {
+                my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+                if ( $jl >= 0 && $ju < $num ) {
+                    my $rtab    = $rgamma_table->[$symmetry];
+                    my $gamma_l = $rtab->[$jl]->[0];
+                    my $gamma_u = $rtab->[$ju]->[0];
+                    my $rhash_l = get_blast_info( $symmetry, $gamma_l );
+                    my $rhash_u = get_blast_info( $symmetry, $gamma_u );
+
+                    if ( defined($rhash_l) && defined($rhash_u) ) {
+                        foreach my $key ( keys %{$rhash_l} ) {
+                            my $val_l = $rhash_l->{$key};
+                            my $val_u = $rhash_u->{$key};
+
+                            if ( defined($val_l) && defined($val_u) ) {
+                                my $val = _linear_interpolation(
+                                    $gamma,   $gamma_l, $val_l,
+                                    $gamma_u, $val_u
+                                );
+                                my $vsave = $rhash->{$key};
+                                $rhash->{$key} = $val;
+
+				# DEBUG: comparison of methods
+                                print STDERR
+                                  "key=$key polint=$vsave linear=$val\n";
+                            }
                         }
                     }
                 }

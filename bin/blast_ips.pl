@@ -116,6 +116,7 @@ sub show_summary_information {
     my $r_tail_shock        = $rinfo->{r_tail_shock};
     my $z_tail_shock        = $rinfo->{z_tail_shock};
     my $KE_initial_ratio    = $rinfo->{KE_initial_ratio};
+    my $pcenter_initial_ratio = $rinfo->{pcenter_initial_ratio};
     my $t_u_plus_c_zero     = $rinfo->{t_u_plus_c_zero};
     my $t_pcenter_zero_1    = $rinfo->{t_pcenter_zero_1};
     my $t_pcenter_min       = $rinfo->{t_pcenter_min};
@@ -140,7 +141,7 @@ Blast Wave Parameters
 symmetry  = $symmetry_name{$symmetry}
 gamma     = $gamma
 alpha     = $alpha = similarity solution parameter alpha
-KE/E0     = $KE_initial_ratio = ratio of initial KE to initial energy
+KE/E0     = $KE_initial_ratio = initial ratio of KE to total energy
 t u+c=0   = $t_u_plus_c_zero = time of first zero velocity C+ characteristic
 I+        = $Ixr_pos = positive impulse times r at long range
 I-        = $Ixr_neg = negative impulse times r at long range
@@ -150,6 +151,7 @@ r TS      = $r_tail_shock = scaled radius at which Tail Shock forms
 z TS      = $z_tail_shock = scaled z at which Tail Shock forms 
 
 Overpressure at r=0:
+pc/ps0      = $pcenter_initial_ratio = initial ratio of overpressure to shock overpressure 
 t_pc0       = $t_pcenter_zero_1 = time of first zero overpressure at r=0
 t_pc_min    = $t_pcenter_min   = time of minimum overpressure at r=0
 pc_min      = $pcenter_min   = minimum overpressure at r=0
@@ -157,6 +159,7 @@ t_dpdt_max  = $t_dpdt_center_max = time of maximum dp/dt at r=0
 dpdt_max    = $dpdt_center_max   = maximum dp/dt at r=0
 p_dpdt_max  = $pcenter_dpdt_center_max = ovp at time of maximum dp/dt at r=0
 
+Note: zeros indicate undefined values.
 EOM
 
     # DEBUG dump to check key names
