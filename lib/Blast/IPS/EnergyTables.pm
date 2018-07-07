@@ -1,4 +1,4 @@
-package Blast::IPS::ResidualEnergyTable;
+package Blast::IPS::EnergyTables;
 
 # MIT License
 # Copyright (c) 2018 Steven Hancock
@@ -26,7 +26,7 @@ use warnings;
 use 5.006;
 
 use Carp;
-our $residual_energy_table;
+our $renergy_tables;
 
 # Tables of residual energy due to primary shock for an
 # explosion in an ideal homogeneous atmosphere.  The tables were created
@@ -42,7 +42,7 @@ BEGIN {
     #  E = residual energy from primary shock
     #  dEdX = derivative of E with respect to X
 
-    $residual_energy_table = {
+    $renergy_tables = {
 
 # Created with: ./energy_integral_primary.pl 
 # Fri Jul  6 17:43:00 2018   Inspiron-3668
