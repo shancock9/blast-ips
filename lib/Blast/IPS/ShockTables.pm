@@ -26,7 +26,7 @@ use warnings;
 use 5.006;
 
 use Carp;
-our $rtables;
+our $rshock_tables;
 
 # Tables of values for evaluating the shock overpressure for point source
 # explosion in an ideal homogeneous atmosphere.
@@ -88,7 +88,7 @@ BEGIN {
     # Table points were selected so that cubic interpolation has a maximum
     # error of 5.e-7. Linear interpolation has a maximum error of about 1.e-3.
 
-    $rtables = {
+    $rshock_tables = {
 
         #    Overall Error Estimate:
         #    Energy error to P=0.1 P0: 2.14e-07

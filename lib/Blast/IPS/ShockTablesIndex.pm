@@ -26,7 +26,7 @@ use warnings;
 use 5.006;
 
 use Carp;
-our $rtables_info;
+our $rshock_tables_info;
 
 ##################################################################
 # Index to Shock Front Tables
@@ -50,7 +50,7 @@ BEGIN {
 
    # table_name => [symmetry, gamma, Max-Error, N, Energy-Error, R-FD-MOC, FD-Error, MOC-Error, Interp-Error, rs2, zs2],
 
-    $rtables_info = {
+    $rshock_tables_info = {
         'S1.1'   => [ 2, 1.1,   1.15e-06, 8000,  2.03e-07, 10,  3e-07,    3.55e-07, 5e-07, 1590.9,     -0.431, ],
         'S1.12'  => [ 2, 1.12,  1.86e-06, 8000,  2e-07,    10,  9.21e-07, 4.4e-07,  5e-07, 1692.7,     -0.45529, ],
         'S1.15'  => [ 2, 1.15,  1.04e-06, 8000,  2.01e-07, 10,  4.74e-07, 6.23e-08, 5e-07, 1817.5,     -0.48616, ],
