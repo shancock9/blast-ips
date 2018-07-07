@@ -66,15 +66,19 @@ use Blast::IPS::PzeroFit;
 use Blast::IPS::PzeroTail;
 use Blast::IPS::ShockTables;
 use Blast::IPS::ShockTablesIndex;
+use Blast::IPS::ResidualEnergyTable;
 
-my $rtables_info    = $Blast::IPS::ShockTablesIndex::rtables_info;
-my $rtables         = $Blast::IPS::ShockTables::rtables;
-my $ralpha_table    = $Blast::IPS::AlphaTable::ralpha_table;
-my $rpzero_fit      = $Blast::IPS::PzeroFit::rpzero_fit;
-my $rpzero_tail     = $Blast::IPS::PzeroTail::rpzero_tail;
-#my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_limit;
+my $rtables_info = $Blast::IPS::ShockTablesIndex::rtables_info;
+my $rtables      = $Blast::IPS::ShockTables::rtables;
+my $ralpha_table = $Blast::IPS::AlphaTable::ralpha_table;
+my $rpzero_fit   = $Blast::IPS::PzeroFit::rpzero_fit;
+my $rpzero_tail  = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rimpulse_tables = $Blast::IPS::ImpulseTables::rimpulse_tables;
+my $residual_energy_table =
+  $Blast::IPS::ResidualEnergyTable::residual_energy_table;
 my $rgamma_table;
+
+#my $rimpulse_limit  = $Blast::IPS::ImpulseLimit::rimpulse_limit;
 
 INIT {
 
