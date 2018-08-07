@@ -1560,8 +1560,18 @@ sub get_blast_energy {
 
             # make emergency definition of energy slope if needed and not known
             $dE2dE1_ref = 1 unless defined($dE2dE1_ref);
-            $E1 = $E1_ref - ( $w - $w_ref ) / ( $gamma * ( 1 + $dE2dE1_ref ) );
-            $E2 = ( 1 - $w ) / $gamma - $E1;
+
+            if ( defined($E1_ref) && defined($w_ref) ) {
+                $E1 =
+                  $E1_ref - ( $w - $w_ref ) / ( $gamma * ( 1 + $dE2dE1_ref ) );
+                $E2 = ( 1 - $w ) / $gamma - $E1;
+            }
+            else {
+
+		# tables not defined
+                $E1 = 0;
+                $E2 = 0;
+            }
         }
     }
 
