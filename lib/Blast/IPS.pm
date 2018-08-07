@@ -856,7 +856,7 @@ sub _setup_toa_table {
 
 sub get_tail_shock_values {
     my ( $self, $T ) = @_;
-    my $rtab = $self->{_rtail_shock_table};
+    my $rtab     = $self->{_rtail_shock_table};
     if ($rtab) {
 
         # Locate this point in the table
@@ -882,7 +882,10 @@ sub get_tail_shock_values {
 
         # otherwise interpolate within table
         else {
-            my $interp = 0;    # 0=cubic
+            my $symmetry = $self->{_symmetry};
+
+            # linear interpolation if plane symmetry, otherwise cubic
+            my $interp = ( $symmetry == 0 ) ? 1 : 0;
             return _interpolate_tail_shock_rows( $T, 0, $rtab->[$il],
                 $rtab->[$iu], $interp );
         }
@@ -1450,18 +1453,6 @@ sub wavefront {
     $E_rs = 0 unless ( defined($E_rs) );
     $E_rt = 0 unless ( defined($E_rt) );
 
-    #my $E_rs    = 0;
-    #my $E_rt    = 0;
-#    my $renergy_vars = $self->get_energy_values($X);
-#    if ($renergy_vars) {
-#        $E_rs    = $renergy_vars->[1];
-#
-#	# FIXME:
-#	my $T = log($rs-$zs);
-#        my $rtail_shock_values = $self->get_tail_shock_values($T);
-#	if ($rtail_shock_values) { $E_rt = $rtail_shock_values->[1]; }
-#    }
-
     my $E_r = $E_rs + $E_rt;
     my $W_atm   = ( $gamma - 1 ) * $E_r;
     my $E_blast = 1 - $gamma * $E_r;
@@ -1501,8 +1492,15 @@ sub get_blast_energy {
 
     my ( $self, $result ) = @_;
 
-    # Get the blast energy quantities at a given point
+    # Given:
     # $result = [X, Y, dYdX, Z, ] = shock front values at the point of interest
+
+    # Get the blast energy quantities at a given point:
+    # $E1 = main shock residual energy
+    # $E2 = tail shock residual energy
+    # $w  = blast total work
+    # $dE_ratio = ratio dE1/dE2
+
     my $gamma    = $self->{_gamma};
     my $symmetry = $self->{_symmetry};
     my ( $X, $Y, $dYdX, $Z ) = @{$result};
@@ -1512,14 +1510,6 @@ sub get_blast_energy {
     my $renergy_vars     = $self->get_energy_values($X);
     my $rtail_shock_vars = $self->get_tail_shock_values($T);
     my $renergy_ref      = $self->{_renergy_ref};
-
-    # calculate these quantities as needed:
-    # $E1 = main shock residual energy
-    # $E2 = tail shock residual energy
-    # $w  = blast total work
-    # $dE_ratio = ratio dE1/dE2
-
-    #return unless ( $renergy_ref || ( $renergy_vars && $rtail_shock_vars ) );
 
     # pull out main shock residual energy variables at this point
     my ( $X1, $E1, $dE1_dX );
