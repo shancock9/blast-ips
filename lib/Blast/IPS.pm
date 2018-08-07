@@ -66,6 +66,7 @@ use Blast::IPS::PzeroTail;
 use Blast::IPS::ShockTables;
 use Blast::IPS::ShockTablesIndex;
 use Blast::IPS::EnergyTables;
+use Blast::IPS::TailShockTables;
 
 my $rshock_tables_info = $Blast::IPS::ShockTablesIndex::rshock_tables_info;
 my $rshock_tables      = $Blast::IPS::ShockTables::rshock_tables;
@@ -74,6 +75,7 @@ my $rpzero_fit         = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail        = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
 my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
+my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
 
 INIT {
@@ -185,7 +187,8 @@ sub _setup {
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
-    my ( $renergy_table, $loc_gamma_table, $rigam_4, $rigam_6 );
+    my ( $renergy_table, $rtail_shock_table, $loc_gamma_table, $rigam_4,
+        $rigam_6 );
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
@@ -241,7 +244,8 @@ You should either specify a table name or else symmetry and gamma.
 EOM
                 return;
             }
-            $renergy_table = $renergy_tables->{$table_name};
+            $renergy_table    = $renergy_tables->{$table_name};
+            $rtail_shock_table = $rtail_shock_tables->{$table_name};
         }
         else {
             carp(<<EOM);
@@ -272,8 +276,9 @@ EOM
 
         # Get builtin table if there is one
         if ( defined($table_name) ) {
-            $rtable = get_builtin_table($table_name);
-            $renergy_table = $renergy_tables->{$table_name};
+            $rtable           = get_builtin_table($table_name);
+            $renergy_table    = $renergy_tables->{$table_name};
+            $rtail_shock_table = $rtail_shock_tables->{$table_name};
         }
 
         # Otherwise, make an interpolated table
@@ -289,6 +294,7 @@ EOM
 		 
 		# FIXME: need to interpolate an energy table too
                 # $renergy_table = ...
+                # $rtail_shock_table = $rtail_shock_tables->{$table_name};
             }
         }
     }
@@ -309,17 +315,18 @@ EOM
         $num_table = @{$rtable};
     }
 
-    $self->{_rtable}          = $rtable;
-    $self->{_renergy_table}   = $renergy_table;
-    $self->{_table_name}      = $table_name;
-    $self->{_loc_gamma_table} = $loc_gamma_table;
-    $self->{_rigam_4}         = $rigam_4;
-    $self->{_rigam_6}         = $rigam_6;
-    $self->{_gamma}           = $gamma;
-    $self->{_symmetry}        = $symmetry;
-    $self->{_jl}              = -1;
-    $self->{_ju}              = $num_table;         #@{$rtable};
-    $self->{_error}           = $error;
+    $self->{_rtable}            = $rtable;
+    $self->{_renergy_table}     = $renergy_table;
+    $self->{_rtail_shock_table} = $rtail_shock_table;
+    $self->{_table_name}        = $table_name;
+    $self->{_loc_gamma_table}   = $loc_gamma_table;
+    $self->{_rigam_4}           = $rigam_4;
+    $self->{_rigam_6}           = $rigam_6;
+    $self->{_gamma}             = $gamma;
+    $self->{_symmetry}          = $symmetry;
+    $self->{_jl}                = -1;
+    $self->{_ju}                = $num_table;           #@{$rtable};
+    $self->{_error}             = $error;
 
     if ($error) { carp "$error\n" }
     else {
@@ -371,7 +378,62 @@ sub _end_model_setup {
     $self->{_Z_zero} = $Z_zero;
 
     $self->_set_global_info();
+    $self->_set_energy_ref();
+    return;
+}
 
+sub _set_energy_ref {
+    my ($self) = @_;
+
+    # define the following reference values needed to compute blast work
+    # at any range:
+    # [ $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ]
+
+    # These will be at the last point in the primary shock energy table
+    # (which normally equals the last point in the shock table)
+
+    my $gamma             = $self->{_gamma};
+    my $symmetry          = $self->{_symmetry};
+    my $rtable            = $self->{_rtable};
+    my $renergy_table     = $self->{_renergy_table};
+    my $rtail_shock_table = $self->{_rtail_shock_table};
+
+    # The tail table format is:
+    #  [ T, E2, dE2/dT, z, dE2/dE1 ]
+    return unless (defined($rtail_shock_table) && @{$rtail_shock_table});
+    my ( $T_enda, $E2_enda, $dE2_dT_enda, $z_enda, $dE_ratio_enda ) =
+      @{ $rtail_shock_table->[-1] };
+
+    my $ret_enda = $self->wavefront( 'T' => $T_enda );
+    my $X_enda   = $ret_enda->{X};
+    my $Y_enda   = $ret_enda->{Y};
+    my $E1_enda  = $ret_enda->{E_rs};
+
+    # Get end values for the energy table. These will be the reference values:
+    # The table format is:
+    #  [ X, E, dE/dX ]
+    my ( $X_ref, $E1_ref, $dE1_dX_ref ) = @{ $renergy_table->[-1] };
+    my $ret_ref  = $self->wavefront( 'X' => $X_ref );
+    my $Y_ref    = $ret_ref->{Y};
+    my $dYdX_ref = $ret_ref->{dYdX};
+
+    # Extrapolation w from last known E2 value to last E1 value
+    my $w_enda = 1 - $gamma * ( $E1_enda + $E2_enda );
+    my $w_ref = 0; 
+    if ( $w_enda > 0 ) {
+        my $lnw_ref =
+          log($w_enda) +
+          0.5 * $symmetry * ( $X_ref - $X_enda ) +
+          $Y_ref - $Y_enda;
+        $w_ref = exp($lnw_ref);
+    }
+
+    # Now we need the ratio dE2/dE1 for extrapolation beyond the reference point
+    my $dE2dE1_ref =
+      -1 - $w_ref * ( $symmetry / 2 + $dYdX_ref ) / $dE1_dX_ref / $gamma;
+    if ( $dE2dE1_ref < 0 ) { $dE2dE1_ref = 0 }
+    my $renergy_ref = [ $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ];
+    $self->{_renergy_ref} = $renergy_ref;
     return;
 }
 
@@ -783,13 +845,50 @@ sub _setup_toa_table {
         my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$row};
         my $z    = exp($Z);
         my $dzdX = $z * $dZdX;
-        my $R    = exp($X);
-        my $W    = log( $R - $z );
-        my $dWdX = ( $R - $dzdX ) / ( $R - $z );
-        $row->[5] = $W;
-        $row->[6] = $dWdX;
+        my $x    = exp($X);
+        my $T    = log( $x - $z );
+        my $dTdX = ( $x - $dzdX ) / ( $x - $z );
+        $row->[5] = $T;
+        $row->[6] = $dTdX;
     }
     return $rtable;
+}
+
+sub get_tail_shock_values {
+    my ( $self, $T ) = @_;
+    my $rtab = $self->{_rtail_shock_table};
+    if ($rtab) {
+
+        # Locate this point in the table
+        my $ntab = @{$rtab};
+        my ( $il, $iu ) = $self->_locate_2d( $T, 0, $rtab );
+        return unless ( defined($il) );
+
+        # Handle case before start of the table
+        if ( $il < 0 ) {
+
+            # Before tail shock
+            return [ $T, 0, 0 ];
+        }
+
+        # Handle case beyond end of the table
+        elsif ( $iu >= $ntab ) {
+
+            # FIXME
+            # Beyond end of tail shock table; we have to extrapolate
+            # print "BOOGA0: T=$T beyond end of tail shock table\n";
+            return;
+        }
+
+        # otherwise interpolate within table
+        else {
+            my $interp = 0;    # 0=cubic
+            return _interpolate_tail_shock_rows( $T, 0, $rtab->[$il],
+                $rtab->[$iu], $interp );
+        }
+
+    }
+    return;
 }
 
 sub get_energy_values {
@@ -824,6 +923,23 @@ sub get_energy_values {
 
     }
     return; 
+}
+
+sub _interpolate_tail_shock_rows {
+    my ( $T_i, $icol, $row_b, $row_e, $interp ) = @_;
+
+    # Interpolate all of the variables between two energy table rows. Each row
+    # has currently has these values:
+    # 	[T,E,dEdT,w,dE_ratio]
+
+    my ( $T_b, $E_b, $dE_dT_b, $z_b, $dE_ratio_b ) = @{$row_b};
+    my ( $T_e, $E_e, $dE_dT_e, $z_e, $dE_ratio_e ) = @{$row_e};
+    my ( $E_i, $dE_dT_i, $d2E_dT2_i ) =
+      _interpolate_scalar( $T_i, $T_b, $E_b, $dE_dT_b, $T_e, $E_e, $dE_dT_e,
+        $interp );
+
+    # FIXME: should also interpolate z
+    return [ $T_i, $E_i, $dE_dT_i ];
 }
 
 sub _interpolate_energy_rows {
@@ -1214,7 +1330,8 @@ sub wavefront {
     #       'dYdX' if Q = dY/dX = d(ln p)/d(ln r)
     #       'Z'    if Q = ln(R-cT), where T=scaled time of arrival
     #       'dZdX' if Q = dZ/dX
-    #       'W'    if Q = ln(T), where T=scaled time of arrival
+    # OLD:  'W'    if Q = ln(T), where T=scaled time of arrival
+    # NEW:  'T'    if Q = ln(T), where T=scaled time of arrival
     #       'dWdX' if Q = dW/dX
 
     # The hash may also contain (mainly for debugging):
@@ -1269,8 +1386,8 @@ sub wavefront {
         dYdX               => 2,
         Z                  => 3,
         dZdX               => 4,
-        W                  => 5,
-        dWdX               => 6,
+        T                  => 5,
+        dTdX               => 6,
         interpolation_flag => 0,
     );
 
@@ -1329,15 +1446,25 @@ sub wavefront {
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
 
-    my $E_rs    = 0;
-    my $W_atm   = 0;
-    my $E_blast = 0;
-    my $renergy_vars = $self->get_energy_values($X);
-    if ($renergy_vars) {
-        $E_rs    = $renergy_vars->[1];
-        $W_atm   = ( $gamma - 1 ) * $E_rs;
-        $E_blast = 1 - $gamma * $E_rs;
-    }
+    my ( $E_rs, $E_rt, $w, $dE2dE1 ) = $self->get_blast_energy($result);
+    $E_rs = 0 unless ( defined($E_rs) );
+    $E_rt = 0 unless ( defined($E_rt) );
+
+    #my $E_rs    = 0;
+    #my $E_rt    = 0;
+#    my $renergy_vars = $self->get_energy_values($X);
+#    if ($renergy_vars) {
+#        $E_rs    = $renergy_vars->[1];
+#
+#	# FIXME:
+#	my $T = log($rs-$zs);
+#        my $rtail_shock_values = $self->get_tail_shock_values($T);
+#	if ($rtail_shock_values) { $E_rt = $rtail_shock_values->[1]; }
+#    }
+
+    my $E_r = $E_rs + $E_rt;
+    my $W_atm   = ( $gamma - 1 ) * $E_r;
+    my $E_blast = 1 - $gamma * $E_r;
 
     # FIXME: Should we report distance to the zero p or distance
     # between the two zero's???
@@ -1362,10 +1489,106 @@ sub wavefront {
         'Sint_pos'  => $Sint_pos,
         'Sint_neg'  => $Sint_neg,
         'E_rs'      => $E_rs,
+        'E_rt'      => $E_rt,
+        'E_r'       => $E_r,
         'W_atm'     => $W_atm,
         'E_blast'   => $E_blast,
     };
     return $return_hash;
+}
+
+sub get_blast_energy {
+
+    my ( $self, $result ) = @_;
+
+    # Get the blast energy quantities at a given point
+    # $result = [X, Y, dYdX, Z, ] = shock front values at the point of interest
+    my $gamma    = $self->{_gamma};
+    my $symmetry = $self->{_symmetry};
+    my ( $X, $Y, $dYdX, $Z ) = @{$result};
+    my $rs               = exp($X);
+    my $zs               = exp($Z);
+    my $T                = log( $rs - $zs );
+    my $renergy_vars     = $self->get_energy_values($X);
+    my $rtail_shock_vars = $self->get_tail_shock_values($T);
+    my $renergy_ref      = $self->{_renergy_ref};
+
+    # calculate these quantities as needed:
+    # $E1 = main shock residual energy
+    # $E2 = tail shock residual energy
+    # $w  = blast total work
+    # $dE_ratio = ratio dE1/dE2
+
+    #return unless ( $renergy_ref || ( $renergy_vars && $rtail_shock_vars ) );
+
+    # pull out main shock residual energy variables at this point
+    my ( $X1, $E1, $dE1_dX );
+    ( $X1, $E1, $dE1_dX ) = @{$renergy_vars} if ($renergy_vars);
+
+    # pull out tail shock residual energy
+    # NOTE: actually dE2_dX is dE2_dT but it is not important here
+    my ( $X2, $E2, $dE2_dX );
+    ( $X2, $E2, $dE2_dX ) = @{$rtail_shock_vars} if ($rtail_shock_vars);
+
+    # Reference values required for extrapolation
+    my ( $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref );
+    if ( defined($renergy_ref) ) {
+        ( $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ) = @{$renergy_ref};
+    }
+
+    # STEP1: compute the blast work $w plus $E1 and $E2 as needed
+    my $w;
+    if ( defined($E1) && defined($E2) ) {
+        $w = 1 - ( $E1 + $E2 ) * $gamma;
+        if ( $w <= 0 ) {
+            $w = 0;
+            print STDERR
+"negative or zero w at sym=$symmetry gamma=$gamma X=$X: E1=$E1 E2=$E2 w = $w\n";
+        }
+    }
+    else {
+
+        # at least one of $E1 and $E2 is not known, so we must extrapolate
+        # from the reference point
+        if ( !defined($w_ref) || $w_ref <= 0 ) {
+            $w = 0;
+            #print STDERR "Bad w_ref at sym=$symmetry gamma=$gamma X=$X: w_ref = $w_ref\n";
+        }
+        else {
+            $w =
+              exp(
+                log($w_ref) + 0.5 * $symmetry * ( $X - $X_ref ) + $Y - $Y_ref );
+        }
+
+        if ( defined($E1) ) {
+            $E2 = ( 1 - $w ) / $gamma - $E1;
+        }
+        elsif ( defined($E2) ) {
+            $E1 = ( 1 - $w ) / $gamma - $E2;
+        }
+        else {
+
+            # make emergency definition of energy slope if needed and not known
+            $dE2dE1_ref = 1 unless defined($dE2dE1_ref);
+            $E1 = $E1_ref - ( $w - $w_ref ) / ( $gamma * ( 1 + $dE2dE1_ref ) );
+            $E2 = ( 1 - $w ) / $gamma - $E1;
+        }
+    }
+
+    # STEP2: define the slope ratio at this point
+    # if at least one of the two energy slopes is defined
+    my $dE2dE1;
+    if ( !defined($dE2_dX) && defined($dE1_dX) ) {
+        $dE2_dX = -$dE1_dX - $w * ( $symmetry / 2 + $dYdX ) / $gamma;
+    }
+    if ( !defined($dE1_dX) && defined($dE2_dX) ) {
+        $dE1_dX = -$dE2_dX - $w * ( $symmetry / 2 + $dYdX ) / $gamma;
+    }
+    if ( defined($dE1_dX) && defined($dE2_dX) ) {
+        $dE2dE1 = $dE2_dX / $dE1_dX;
+        if ( $dE2dE1 < 0 ) { $dE2dE1 = 0 }
+    }
+    return ( $E1, $E2, $w, $dE2dE1 );
 }
 
 sub lookup {
@@ -1381,8 +1604,9 @@ sub lookup {
     #     $id_Q defines what Q contains:
     #       0 or 'X' => ln(R)    [this is the default if $id_Q not specified]
     #       1 or 'Y' => ln(overpressure)
-    #       3 or 'Z' => R-cT, where T=time of arrival
-    #       5 or 'W' => ln(T)
+    #       3 or 'Z' => ln(z=x-ct), where t=time of arrival
+    #  OLD  5 or 'W' => ln(T)
+    #  NEW  5 or 'T' => ln(T)
 
     #      $interp = optional interpolation flag
     #	     = 0 => cubic [This is the default and recommended method]
@@ -1416,7 +1640,8 @@ sub lookup {
         if    ( $id_Q eq 'X' ) { $icol = 0 }
         elsif ( $id_Q eq 'Y' ) { $icol = 1 }
         elsif ( $id_Q eq 'Z' ) { $icol = 3 }
-        elsif ( $id_Q eq 'W' ) { $icol = 5 }
+        elsif ( $id_Q eq 'W' ) { $icol = 5 }  # OLD
+        elsif ( $id_Q eq 'T' ) { $icol = 5 }  # NEW
         else                   { croak "unexpected id_Q=$id_Q\n"; }
     }
 
@@ -1880,7 +2105,9 @@ sub _locate_2d {
     # If x is out of bounds, returns either jl<0 or ju>=N
 
     $rtab           = $self->{_rtable} unless defined($rtab);
+    return unless $rtab;
     my $num            = @{$rtab};
+    return unless $num;
     my $dx_is_positive = $rtab->[-1]->[$icol] > $rtab->[0]->[$icol];
 
     # Set search bounds to previous location ...

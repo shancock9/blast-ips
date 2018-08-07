@@ -15,12 +15,13 @@ my %symmetry_name = (
 
 # Setup a default blast table
 my $gamma       = 1.4;
-my $symmetry    = 'S';
+my $symmetry    = 2;
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
 my $sspd_amb = 1;
 my $p_amb    = 1;                                # ambient pressure
 my $rho_amb  = $gamma * $p_amb / $sspd_amb**2;
+$symmetry = $blast_table->get_symmetry();
 my $medium   = {
     _gamma    => $gamma,
     _sspd_amb => $sspd_amb,
@@ -92,6 +93,7 @@ sub select_blast_table {
     $sspd_amb = 1;
     $p_amb    = 1;                                # ambient pressure
     $rho_amb  = $gamma * $p_amb / $sspd_amb**2;
+    $symmetry = $blast_table->get_symmetry();
     $medium   = {
         _gamma    => $gamma,
         _symmetry => $symmetry,
@@ -133,6 +135,8 @@ sub show_summary_information {
     foreach ( $alpha, $Sint_pos, $Sint_neg, $Ixr_pos, $Ixr_neg ) {
         $_ = sprintf( "%0.6g", $_ );
     }
+    my $pstr =
+      ( $symmetry == 2 ) ? "times r" : ( $symmetry == 1 ) ? "times r^1/2" : "";
     print <<EOM;
 
 =====================
@@ -143,8 +147,8 @@ gamma     = $gamma
 alpha     = $alpha = similarity solution parameter alpha
 KE/E0     = $KE_initial_ratio = initial ratio of KE to total energy
 t u+c=0   = $t_u_plus_c_zero = time of first zero velocity C+ characteristic
-I+        = $Ixr_pos = positive impulse times r at long range
-I-        = $Ixr_neg = negative impulse times r at long range
+I+        = $Ixr_pos = positive impulse $pstr at long range
+I-        = $Ixr_neg = negative impulse $pstr at long range
 S+        = $Sint_pos = positive integral of Sigma x dr at long range
 S-        = $Sint_neg = negative integral of Sigma x dr at long range
 r TS      = $r_tail_shock = scaled radius at which Tail Shock forms
@@ -195,11 +199,11 @@ sub select_variable {
     my %menu = (
         'x'    => [ 1,  'scaled range, = r/d' ],
         'y'    => [ 2,  'overpressure ratio, =(p-p0)/p0' ],
-        'w'    => [ 3,  'scaled time of arrival, = c0 t / d' ],
+        't'    => [ 3,  'scaled time of arrival, = c0 time / d' ],
         'z'    => [ 4,  'x - w' ],
         'X'    => [ 5,  'ln(x)' ],
         'Y'    => [ 6,  'ln(y)' ],
-        'W'    => [ 7,  'ln(w)' ],
+        'T'    => [ 7,  'ln(t)' ],
         'Z'    => [ 8,  'ln(z)' ],
         'dYdX' => [ 9,  'dY/dX' ],
         'dZdX' => [ 10, 'dZ/dX' ],
@@ -340,8 +344,8 @@ sub point_evaluations_dimensionless {
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
-        if ( $vname =~ /^([XYZW]|dYdX|dZdX|dWdX)/ ) { $Q = $val; $iQ = $vname }
-        elsif ( $vname =~ /^[xyzw]$/ ) { $Q = log($val); $iQ = uc($vname) }
+        if ( $vname =~ /^([XYZT]|dYdX|dZdX|dTdX)/ ) { $Q = $val; $iQ = $vname }
+        elsif ( $vname =~ /^[xyzt]$/ ) { $Q = log($val); $iQ = uc($vname) }
         elsif ( $vname eq 'q' ) {
 
             # Convert q=(c0/D)**2 to Y=ln(ovp ratio)
@@ -402,50 +406,64 @@ sub point_evaluations_dimensionless {
         my $Ixr_pos = $ret->{Ixr_pos};
         my $Ixr_neg = $ret->{Ixr_neg};
         my $E_rs    = $ret->{E_rs};
+        my $E_rt    = $ret->{E_rt};
+        my $E_r     = $ret->{E_r };
         my $W_atm   = $ret->{W_atm};
         my $E_blast = $ret->{E_blast};
         my $x       = exp($X);
         my $y       = exp($Y);
         my $z       = exp($Z);
-        my $w       = $x - $z;
-        my $W       = $w > 0 ? log($w) : -999;
+        my $t       = $x - $z;
+        my $T       = $t > 0 ? log($t) : -999;
         my $term    = $y * ( $gamma + 1 ) / ( 2 * $gamma );
         my $m       = sqrt( 1 + $term );
         my $q       = 1 / $m**2;
         my $up      = $y / ( $gamma * $m );
 
-        foreach ( $x, $y, $z, $w, $X, $Y, $Z, $W, $dYdX, $dZdX ) {
+        foreach ( $x, $y, $z, $t, $X, $Y, $Z, $T, $dYdX, $dZdX ) {
             $_ = sprintf( "%0.8g", $_ );
         }
         foreach (
-            $Tpos, $Lpos,    $Tneg,    $Lneg, $m,     $q,
-            $up,   $Ixr_pos, $Ixr_neg, $E_rs, $W_atm, $E_blast
+            $Tpos, $Lpos, $Tneg,    $Lneg,    $m,
+            $q,    $up,   $Ixr_pos, $Ixr_neg, $E_rs,
+            $E_rt, $E_r,  $W_atm,   $E_blast
           )
         {
             $_ = sprintf( "%0.6g", $_ );
         }
 
+	# preparing for future version with units
+	my $t_unit = "(scaled)";
+	my $d_unit = "(scaled)";
+   	my $e_unit = "(scaled)";
+   	my $u_unit = "(scaled)";
+
+        my $pstr =
+          ( $symmetry == 2 ) ? "x r" : ( $symmetry == 1 ) ? "x r^1/2" : "";
         print <<EOM;
 
-Results; all variables are dimensionless:
+Results at a point; symmetry=$symmetry, gamma=$gamma:
 
 x    = $x = scaled range r/d;     ln(x) = X = $X 
 y    = $y = (P-P0)/P0;            ln(y) = Y = $Y 
 z    = $z = (r-c0 t)/d;           ln(z) = Z = $Z 
-toa  = $w = scaled toa;           ln(t) = W = $W 
+toa  = $t = scaled toa;           ln(t) = T = $T 
 dYdX = $dYdX
-T+ = $Tpos = time duration of positive phase 
-L+ = $Lpos = length of positive phase 
-T- = $Tneg = time duration of negative phase 
-L- = $Lneg = length of negative phase 
+T+ = $Tpos = time duration of positive phase $t_unit
+L+ = $Lpos = length of positive phase $d_unit
+T- = $Tneg = time duration of negative phase $t_unit
+L- = $Lneg = length of negative phase $d_unit
 m  = $m = S/c0=shock Mach number
 q  = $q = 1/m^2
-up = $up = (shock particle velocity/c0)
-I+ = $Ixr_pos = limiting positive impulse x r
-I- = $Ixr_neg = limiting negative impulse x r
-E_rs    = $E_rs    = residual energy to this range from main shock
-W_atm   = $W_atm   = work of thermal expansion against the atmosphere
-E_blast = $E_blast = energy available to the blast at this range 
+up = $up = shock particle velocity $u_unit
+I+ = $Ixr_pos = limiting positive impulse $pstr
+I- = $Ixr_neg = limiting negative impulse $pstr
+E_rs    = $E_rs = residual energy to this range from main shock $e_unit
+E_r     = $E_r  = total residual energy (main shock+tail shock) to this range $e_unit
+W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
+E_blast = $E_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
+
+Note: zeros indicate undefined values.
 EOM
 
     }
