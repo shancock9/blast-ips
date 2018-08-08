@@ -121,6 +121,57 @@ INIT {
 
         $rgamma_table->[$sym] = \@unique;
     }
+
+    sub _merge_energy_tables {
+
+       # Merge the energy tables into the shock tables. They have been stored
+       # separately for flexibility, but they have the same X values in column 1
+       # unless a recent change has been made.
+        my ( $table_name );
+        my @errors;
+        my $table_error = sub {
+            my ($msg) = @_;
+            print STDERR "Error merging table $table_name: $msg\n";
+            push @errors, $table_name;
+        };
+        foreach $table_name ( sort keys %{$rshock_tables} ) {
+            my $renergy_table = $renergy_tables->{$table_name};
+            my $rshock_table        = $rshock_tables->{$table_name};
+            my $num0          = @{$rshock_table};
+            my $num1          = @{$renergy_table};
+            my $rnew_table;
+
+            if ( $num0 != $num1 ) {
+                $table_error->("number of rows differ: $num0 != $num1");
+                next;
+            }
+            for ( my $i = 0 ; $i < $num0 ; $i++ ) {
+                my $X0 = $rshock_table->[$i]->[0];
+                my $X1 = $renergy_table->[$i]->[0];
+                if ( $X0 != $X1 ) {
+                    $table_error->("X values differ for row $i: $X0 != $X1");
+                    next;
+                }
+
+                # Combine variables in shock table and energy table,
+                # leaving two spots for T and dTdX
+                push @{$rnew_table},
+                  [ @{ $rshock_table->[$i] }, 0, 0, @{ $renergy_table->[$i] } ];
+            }
+
+            # Success, install the new table
+            $rshock_tables->{$table_name} = $rnew_table;
+        }
+        if (@errors) {
+            print STDERR
+              "Tables differ. Run blast_energy_integral_primary.pl\n";
+	    local $"=')(';
+	    print STDERR "(@errors)\n";
+            croak "Table Errors; run terminated\n";
+        }
+        return;
+    }
+    _merge_energy_tables();
 }
 
 sub new {
@@ -1391,8 +1442,16 @@ sub wavefront {
         dZdX               => 4,
         T                  => 5,
         dTdX               => 6,
+        E1                 => 7,    # primary shock residual energy
+        dE1dX              => 8,
         interpolation_flag => 0,
     );
+
+# FUTURE KEYS:
+#        E                 => 9,   # total shock residual energy
+#        dEdX              => 10,
+#        K		   => 11,  # positive phase KE
+#        dK/dX             => 12,
 
     # Validate input keys
     _check_keys( $rinput_hash, \%valid_input_keys,
