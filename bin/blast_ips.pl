@@ -196,19 +196,22 @@ sub select_variable {
     my ($vname) = @_;
 
     # key => [ order, text ]
+    my $i=0;
     my %menu = (
-        'x'    => [ 1,  'scaled range, = r/d' ],
-        'y'    => [ 2,  'overpressure ratio, =(p-p0)/p0' ],
-        't'    => [ 3,  'scaled time of arrival, = c0 time / d' ],
-        'z'    => [ 4,  'x - w' ],
-        'X'    => [ 5,  'ln(x)' ],
-        'Y'    => [ 6,  'ln(y)' ],
-        'T'    => [ 7,  'ln(t)' ],
-        'Z'    => [ 8,  'ln(z)' ],
-        'dYdX' => [ 9,  'dY/dX' ],
-        'dZdX' => [ 10, 'dZ/dX' ],
-        'dWdX' => [ 11, 'dW/dX' ],
-        'm'    => [ 12, '= (S/c0), where S is the shock speed' ],
+        'x'    => [ ++$i,  'scaled range, = r/d' ],
+        'y'    => [ ++$i,  'overpressure ratio, =(p-p0)/p0' ],
+        't'    => [ ++$i,  'scaled time of arrival, = c0 time / d' ],
+        'z'    => [ ++$i,  'x - w' ],
+        'X'    => [ ++$i,  'ln(x)' ],
+        'Y'    => [ ++$i,  'ln(y)' ],
+        'T'    => [ ++$i,  'ln(t)' ],
+        'Z'    => [ ++$i,  'ln(z)' ],
+        'E1'   => [ ++$i,  'E_residual_primary' ],
+        'dYdX' => [ ++$i,  'dY/dX' ],
+        'dZdX' => [ ++$i, 'dZ/dX' ],
+        'dWdX' => [ ++$i, 'dW/dX' ],
+        'dE1dX'=> [ ++$i,  'dE1/dX' ],
+        'm'    => [ ++$i, '= (S/c0), where S is the shock speed' ],
         'q'    => [ 13, '= (c0/S)^2, where S is the shock speed' ],
     );
 
@@ -344,7 +347,10 @@ sub point_evaluations_dimensionless {
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
-        if ( $vname =~ /^([XYZT]|dYdX|dZdX|dTdX)/ ) { $Q = $val; $iQ = $vname }
+        if ( $vname =~ /^([XYZT]|E1|dYdX|dZdX|dTdX|dE1dX)/ ) {
+            $Q  = $val;
+            $iQ = $vname;
+        }
         elsif ( $vname =~ /^[xyzt]$/ ) { $Q = log($val); $iQ = uc($vname) }
         elsif ( $vname eq 'q' ) {
 
@@ -394,6 +400,7 @@ sub point_evaluations_dimensionless {
             die "coding incomplete for variable '$vname'";
         }
         my $ret     = $blast_table->wavefront( $iQ => $Q );
+        print STDERR " my ret     = blast_table->wavefront( $iQ => $Q );i\n";
         my $X       = $ret->{X};
         my $Y       = $ret->{Y};
         my $Z       = $ret->{Z};
@@ -410,6 +417,7 @@ sub point_evaluations_dimensionless {
         my $E_r     = $ret->{E_r };
         my $W_atm   = $ret->{W_atm};
         my $E_blast = $ret->{E_blast};
+        my $E1      = $ret->{E1};  # same as E_rs
         my $x       = exp($X);
         my $y       = exp($Y);
         my $z       = exp($Z);
@@ -426,7 +434,7 @@ sub point_evaluations_dimensionless {
         foreach (
             $Tpos, $Lpos, $Tneg,    $Lneg,    $m,
             $q,    $up,   $Ixr_pos, $Ixr_neg, $E_rs,
-            $E_rt, $E_r,  $W_atm,   $E_blast
+            $E_rt, $E_r,  $E1, $W_atm,   $E_blast
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -459,6 +467,7 @@ up = $up = shock particle velocity $u_unit
 I+ = $Ixr_pos = limiting positive impulse $pstr
 I- = $Ixr_neg = limiting negative impulse $pstr
 E_rs    = $E_rs = residual energy to this range from main shock $e_unit
+E1      = $E1 = residual energy to this range from main shock $e_unit
 E_r     = $E_r  = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
 E_blast = $E_blast = (E0-Er-W) = energy available to the blast at this range $e_unit

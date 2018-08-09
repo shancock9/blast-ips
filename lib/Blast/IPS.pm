@@ -30,6 +30,8 @@ package Blast::IPS;
 
 # - Need clear 'out of bounds' signal
 
+# - make 'EFIX' updates when tables have E and dEdX
+
 # MIT License
 # Copyright (c) 2018 Steven Hancock
 #
@@ -155,8 +157,10 @@ INIT {
 
                 # Combine variables in shock table and energy table,
                 # leaving two spots for T and dTdX
+		my @vars=@{$renergy_table->[$i]};
+		shift @vars;  # remove leading X
                 push @{$rnew_table},
-                  [ @{ $rshock_table->[$i] }, 0, 0, @{ $renergy_table->[$i] } ];
+                  [ @{ $rshock_table->[$i] }, 0, 0, @vars ];
             }
 
             # Success, install the new table
@@ -1444,12 +1448,12 @@ sub wavefront {
         dTdX               => 6,
         E1                 => 7,    # primary shock residual energy
         dE1dX              => 8,
+        E                  => 9,    # total shock residual energy
+        dEdX               => 10,
         interpolation_flag => 0,
     );
 
-# FUTURE KEYS:
-#        E                 => 9,   # total shock residual energy
-#        dEdX              => 10,
+# POSSIBLE FUTURE KEYS:
 #        K		   => 11,  # positive phase KE
 #        dK/dX             => 12,
 
@@ -1504,6 +1508,8 @@ sub wavefront {
 
     my $X  = $result->[0];
     my $Z  = $result->[3];
+    my $T  = $result->[5];
+    my $E1  = $result->[7];
     my $rs = exp($X);
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
@@ -1528,6 +1534,12 @@ sub wavefront {
         'dYdX'      => $result->[2],
         'Z'         => $result->[3],
         'dZdX'      => $result->[4],
+        'T'         => $result->[5],
+        'dTdX'      => $result->[6],
+        'E1'        => $result->[7],
+        'dE1dX'     => $result->[8],
+        'E'         => $result->[9],
+        'dEdX'      => $result->[10],
         'Tpos'      => $Tpos,
         'Lpos'      => $Lpos,
         'Tneg'      => $Tneg,
@@ -2205,10 +2217,12 @@ sub _interpolate_rows {
 
     # Interpolate all of the variables between two table rows. Each row has
     # these values
-    # 	[X,Y,Z,dYdX,dZdX,W,dWdX]
+    # 	[X,Y,Z,dYdX,dZdX,T,dTdX,E1, dE1dX, E, dEdX]
 
-    my ( $X_b, $Y_b, $dY_dX_b, $Z_b, $dZ_dX_b, $W_b, $dW_dX_b ) = @{$row_b};
-    my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e, $W_e, $dW_dX_e ) = @{$row_e};
+    my ( $X_b, $Y_b, $dY_dX_b, $Z_b, $dZ_dX_b, $T_b, $dT_dX_b, $E1_b,
+        $dE1_dX_b, $E_b, $dE_dX_b ) = @{$row_b};
+    my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e, $T_e, $dT_dX_e, $E1_e,
+        $dE1_dX_e, $E_e, $dE_dX_e ) = @{$row_e};
 
     # FIXME: for slope interpolation, we are currently doing liner interp
     # We should either iterate or do parabolic interpolation using the
@@ -2219,6 +2233,8 @@ sub _interpolate_rows {
     if ( $icol == 0 ) {
         $X_i = $Q;
     }
+
+    # FIXME: these could be collapsed into two calls
     elsif ( $icol == 1 ) {
         ( $X_i, my $dX_dY_i, my $d2X_dY2_i ) =
           _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
@@ -2238,13 +2254,31 @@ sub _interpolate_rows {
           _interpolate_scalar( $Q, $dZ_dX_b, $X_b, 0, $dZ_dX_e, $X_e, 0, 1 );
     }
     elsif ( $icol == 5 ) {
-        ( $X_i, my $dX_dW_i, my $d2X_dW2_i ) =
-          _interpolate_scalar( $Q, $W_b, $X_b, 1 / $dW_dX_b,
-            $W_e, $X_e, 1 / $dW_dX_e, $interp );
+        ( $X_i, my $dX_dT_i, my $d2X_dT2_i ) =
+          _interpolate_scalar( $Q, $T_b, $X_b, 1 / $dT_dX_b,
+            $T_e, $X_e, 1 / $dT_dX_e, $interp );
     }
     elsif ( $icol == 6 ) {
         ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dW_dX_b, $X_b, 0, $dW_dX_e, $X_e, 0, 1 );
+          _interpolate_scalar( $Q, $dT_dX_b, $X_b, 0, $dT_dX_e, $X_e, 0, 1 );
+    }
+    elsif ( $icol == 7 ) {
+        ( $X_i, my $dX_dE1_i, my $d2X_dE12_i ) =
+          _interpolate_scalar( $Q, $E1_b, $X_b, 1 / $dE1_dX_b,
+            $E1_e, $X_e, 1 / $dE1_dX_e, $interp );
+    }
+    elsif ( $icol == 8 ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dE1_dX_b, $X_b, 0, $dE1_dX_e, $X_e, 0, 1 );
+    }
+    elsif ( $icol == 9 ) {
+        ( $X_i, my $dX_dE_i, my $d2X_dE2_i ) =
+          _interpolate_scalar( $Q, $E_b, $X_b, 1 / $dE_dX_b,
+            $E_e, $X_e, 1 / $dE_dX_e, $interp );
+    }
+    elsif ( $icol == 10 ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dE_dX_b, $X_b, 0, $dE_dX_e, $X_e, 0, 1 );
     }
     else {
         carp "unknown call type icol='$icol'";    # Shouldn't happen
@@ -2257,23 +2291,47 @@ sub _interpolate_rows {
     my ( $Z_i, $dZ_dX_i, $d2Z_dX2_i ) =
       _interpolate_scalar( $X_i, $X_b, $Z_b, $dZ_dX_b, $X_e, $Z_e, $dZ_dX_e,
         $interp );
+    my ( $T_i, $dT_dX_i, $d2T_dX2_i ) =
+      _interpolate_scalar( $X_i, $X_b, $T_b, $dT_dX_b, $X_e, $T_e, $dT_dX_e,
+        $interp );
+    my ( $E1_i, $dE1_dX_i, $d2E1_dX2_i ) =
+      _interpolate_scalar( $X_i, $X_b, $E1_b, $dE1_dX_b, $X_e, $E1_e, $dE1_dX_e,
+        $interp );
 
-    # FIXME: also return W_i and dW_dX_i
-    return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
+    # FIXME EFIX PART 1; 
+    my ( $E_i, $dE_dX_i, $d2E_dX2_i ); 
+#      = _interpolate_scalar( $X_i, $X_b, $E_b, $dE_dX_b, $X_e, $E_e, $dE_dX_e,
+#        $interp );
+
+#print STDERR "BUBBA: Xi=$X_i, X_b=$X_b; X_e=$X_e, E1_b=$E1_b; E1_e=$E1_e; E1_i=$E1_i\n";
+
+    #return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
+    return [
+        $X_i,     $Y_i,  $dY_dX_i,  $Z_i, $dZ_dX_i, $T_i,
+        $dT_dX_i, $E1_i, $dE1_dX_i, $E_i, $dE_dX_i
+    ];
 }
 
 sub _interpolate_scalar {
     my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2, $interp ) = @_;
     my ( $yy, $dydx, $d2ydx2, $d3ydx3 );
-    if ( defined($interp) && $interp == 1 ) {
-        ( $yy, $dydx ) = _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
-        ( $dydx, $d2ydx2 ) =
-          _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
-        $d3ydx3 = 0;
-    }
-    else {
-        ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
-          _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 );
+
+    # User tables might not define all variables, such as E
+    if ( defined($x1) && defined($y1) && defined($x2) && defined($y2) ) {
+
+        # drop down to linear intepolation if slopes not defined
+        if ( !defined($dydx1) || !defined($dydx2) ) { $interp = 1 }
+
+        if ( defined($interp) && $interp == 1 ) {
+            ( $yy, $dydx ) = _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
+            ( $dydx, $d2ydx2 ) =
+              _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
+            $d3ydx3 = 0;
+        }
+        else {
+            ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
+              _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 );
+        }
     }
     return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
 }
@@ -2527,16 +2585,19 @@ EOM
     my $rtab_x = [];
 
     foreach my $Y (@Ylist) {
-        my ( $rX, $rdYdX, $rZ, $rdZdX );
+        my ( $rX, $rdYdX, $rZ, $rdZdX, $rE1, $rdE1dX, $rE, $rdEdX );
 
         my $missing_item;
         foreach my $rpoint ( @{$rlag_points_6} ) {
             my ( $rtable, $A ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
+            my ( $X, $YY, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $E, $dEdX )
+              = @{$item};
             push @{$rX}, $X;
             push @{$rZ}, $Z;
+            push @{$rE1}, $E1;
+            push @{$rE}, $E;
         }
 
         # All values must exist in order to interpolate
@@ -2547,18 +2608,27 @@ EOM
             my ( $rtable, $A ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX ) = @{$item};
+            my ( $X, $YY, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $E, $dEdX )
+              = @{$item};
             push @{$rdYdX}, $dYdX;
             push @{$rdZdX}, $dZdX;
+            push @{$rdE1dX}, $dE1dX;
+            push @{$rdEdX}, $dEdX;
         }
         next if ($missing_item);
 
-        my $X_x    = polint( $A_x, $rA_6, $rX );
-        my $Z_x    = polint( $A_x, $rA_6, $rZ );
-        my $dYdX_x = polint( $A_x, $rA_4, $rdYdX );
-        my $dZdX_x = polint( $A_x, $rA_4, $rdZdX );
+        my $X_x     = polint( $A_x, $rA_6, $rX );
+        my $Z_x     = polint( $A_x, $rA_6, $rZ );
+        my $E1_x    = polint( $A_x, $rA_6, $rE1 );
+        my $E_x; #  = polint( $A_x, $rA_6, $rE );  # FIXME EFIX PART 2
+        my $dYdX_x  = polint( $A_x, $rA_4, $rdYdX );
+        my $dZdX_x  = polint( $A_x, $rA_4, $rdZdX );
+        my $dE1dX_x = polint( $A_x, $rA_4, $rdE1dX );
+        my $dEdX_x; # = polint( $A_x, $rA_4, $rdEdX ); # FIXME EFIX PART 3
 
-        push @{$rtab_x}, [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x ];
+	# leave two spaces for T and dTdX
+        push @{$rtab_x},
+          [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, 0, 0, $E1_x, $dE1dX_x, $E_x, $dEdX_x ];
     }
     return $rtab_x;
 }
