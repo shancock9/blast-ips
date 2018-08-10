@@ -124,9 +124,10 @@ INIT {
 
     sub _merge_energy_tables {
 
-       # Merge the energy tables into the shock tables. They have been stored
-       # separately for flexibility, but they have the same X values in column 1
-       # unless a recent change has been made.
+       # Merge the energy tables into the shock tables. The ShockTables and EnergyTables have 
+       # the same X values in column 1 but they have been stored separately for flexibility.
+       # The disadvantage is that we have to merge them and at the same time verify that
+       # the X values are still identical.
         my ( $table_name );
         my @errors;
         my $table_error = sub {
@@ -431,62 +432,6 @@ sub _end_model_setup {
     $self->{_Z_zero} = $Z_zero;
 
     $self->_set_global_info();
-    $self->_set_energy_ref();
-    return;
-}
-
-sub _set_energy_ref {
-    my ($self) = @_;
-
-    # define the following reference values needed to compute blast work
-    # at any range:
-    # [ $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ]
-
-    # These will be at the last point in the primary shock energy table
-    # (which normally equals the last point in the shock table)
-
-    my $gamma             = $self->{_gamma};
-    my $symmetry          = $self->{_symmetry};
-    my $rtable            = $self->{_rtable};
-    my $renergy_table     = $self->{_renergy_table};
-    my $rtail_shock_table = $self->{_rtail_shock_table};
-
-    # The tail table format is:
-    #  [ T, E2, dE2/dT, z, dE2/dE1 ]
-    return unless (defined($rtail_shock_table) && @{$rtail_shock_table});
-    my ( $T_enda, $E2_enda, $dE2_dT_enda, $z_enda, $dE_ratio_enda ) =
-      @{ $rtail_shock_table->[-1] };
-
-    my $ret_enda = $self->wavefront( 'T' => $T_enda );
-    my $X_enda   = $ret_enda->{X};
-    my $Y_enda   = $ret_enda->{Y};
-    my $E1_enda  = $ret_enda->{E_rs};
-
-    # Get end values for the energy table. These will be the reference values:
-    # The table format is:
-    #  [ X, E, dE/dX ]
-    my ( $X_ref, $E1_ref, $dE1_dX_ref ) = @{ $renergy_table->[-1] };
-    my $ret_ref  = $self->wavefront( 'X' => $X_ref );
-    my $Y_ref    = $ret_ref->{Y};
-    my $dYdX_ref = $ret_ref->{dYdX};
-
-    # Extrapolation w from last known E2 value to last E1 value
-    my $w_enda = 1 - $gamma * ( $E1_enda + $E2_enda );
-    my $w_ref = 0; 
-    if ( $w_enda > 0 ) {
-        my $lnw_ref =
-          log($w_enda) +
-          0.5 * $symmetry * ( $X_ref - $X_enda ) +
-          $Y_ref - $Y_enda;
-        $w_ref = exp($lnw_ref);
-    }
-
-    # Now we need the ratio dE2/dE1 for extrapolation beyond the reference point
-    my $dE2dE1_ref =
-      -1 - $w_ref * ( $symmetry / 2 + $dYdX_ref ) / $dE1_dX_ref / $gamma;
-    if ( $dE2dE1_ref < 0 ) { $dE2dE1_ref = 0 }
-    my $renergy_ref = [ $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ];
-    $self->{_renergy_ref} = $renergy_ref;
     return;
 }
 
@@ -1519,19 +1464,20 @@ sub wavefront {
     if ($E < $E1) {$E=$E1}
 
     my $W_blast = 1 - $gamma * $E;
+    my $W_atm   = ( $gamma - 1 ) * $E;
 
     my $rs = exp($X);
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
 
     # TO BE DELETED
-    my ( $E_rs, $E_rt, $w, $dE2dE1 ) = $self->get_blast_energy($result);
-    $E_rs = 0 unless ( defined($E_rs) );
-    $E_rt = 0 unless ( defined($E_rt) );
+    #my ( $E_rs, $E_rt, $w, $dE2dE1 ) = $self->get_blast_energy($result);
+    #$E_rs = 0 unless ( defined($E_rs) );
+    #$E_rt = 0 unless ( defined($E_rt) );
 
-    my $E_r = $E_rs + $E_rt;
-    my $W_atm   = ( $gamma - 1 ) * $E_r;
-    my $E_blast = 1 - $gamma * $E_r;
+    #my $E_r = $E_rs + $E_rt;
+    #my $W_atm   = ( $gamma - 1 ) * $E_r;
+    #my $E_blast = 1 - $gamma * $E_r;
 
     # FIXME: Should we report distance to the zero p or distance
     # between the two zero's???
@@ -1552,6 +1498,7 @@ sub wavefront {
         'E'         => $E, 
         'dEdX'      => $result->[10],
         'W_blast'   => $W_blast,
+        'W_atm'     => $W_atm,
         'Tpos'      => $Tpos,
         'Lpos'      => $Lpos,
         'Tneg'      => $Tneg,
@@ -1562,119 +1509,12 @@ sub wavefront {
         'Ixr_neg'   => $Sint_neg * $gamma,
         'Sint_pos'  => $Sint_pos,
         'Sint_neg'  => $Sint_neg,
-        'E_rs'      => $E_rs,
-        'E_rt'      => $E_rt,
-        'E_r'       => $E_r,
-        'W_atm'     => $W_atm,
-        'E_blast'   => $E_blast,
+        #'E_rs'      => $E_rs,
+        #'E_rt'      => $E_rt,
+        #'E_r'       => $E_r,
+        #'E_blast'   => $E_blast,
     };
     return $return_hash;
-}
-
-sub get_blast_energy {
-
-    my ( $self, $result ) = @_;
-
-    # Given:
-    # $result = [X, Y, dYdX, Z, ] = shock front values at the point of interest
-
-    # Get the blast energy quantities at a given point:
-    # $E1 = main shock residual energy
-    # $E2 = tail shock residual energy
-    # $w  = blast total work
-    # $dE_ratio = ratio dE1/dE2
-
-    my $gamma    = $self->{_gamma};
-    my $symmetry = $self->{_symmetry};
-    my ( $X, $Y, $dYdX, $Z ) = @{$result};
-
-    # FIXME: fails at extreme ranges; need taylor series
-    my $rs               = exp($X);
-    my $zs               = exp($Z);
-    my $T                = log( $rs - $zs );
-
-    my $renergy_vars     = $self->get_energy_values($X);
-    my $rtail_shock_vars = $self->get_tail_shock_values($T);
-    my $renergy_ref      = $self->{_renergy_ref};
-
-    # pull out main shock residual energy variables at this point
-    my ( $X1, $E1, $dE1_dX );
-    ( $X1, $E1, $dE1_dX ) = @{$renergy_vars} if ($renergy_vars);
-
-    # pull out tail shock residual energy
-    # NOTE: actually dE2_dX is dE2_dT but it is not important here
-    my ( $X2, $E2, $dE2_dX );
-    ( $X2, $E2, $dE2_dX ) = @{$rtail_shock_vars} if ($rtail_shock_vars);
-
-    # Reference values required for extrapolation
-    my ( $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref );
-    if ( defined($renergy_ref) ) {
-        ( $X_ref, $Y_ref, $E1_ref, $w_ref, $dE2dE1_ref ) = @{$renergy_ref};
-    }
-
-    # STEP1: compute the blast work $w plus $E1 and $E2 as needed
-    my $w;
-    if ( defined($E1) && defined($E2) ) {
-        $w = 1 - ( $E1 + $E2 ) * $gamma;
-        if ( $w <= 0 ) {
-            $w = 0;
-            print STDERR
-"negative or zero w at sym=$symmetry gamma=$gamma X=$X: E1=$E1 E2=$E2 w = $w\n";
-        }
-    }
-    else {
-
-        # at least one of $E1 and $E2 is not known, so we must extrapolate
-        # from the reference point
-        if ( !defined($w_ref) || $w_ref <= 0 ) {
-            $w = 0;
-            #print STDERR "Bad w_ref at sym=$symmetry gamma=$gamma X=$X: w_ref = $w_ref\n";
-        }
-        else {
-            $w =
-              exp(
-                log($w_ref) + 0.5 * $symmetry * ( $X - $X_ref ) + $Y - $Y_ref );
-        }
-
-        if ( defined($E1) ) {
-            $E2 = ( 1 - $w ) / $gamma - $E1;
-        }
-        elsif ( defined($E2) ) {
-            $E1 = ( 1 - $w ) / $gamma - $E2;
-        }
-        else {
-
-            # make emergency definition of energy slope if needed and not known
-            $dE2dE1_ref = 1 unless defined($dE2dE1_ref);
-
-            if ( defined($E1_ref) && defined($w_ref) ) {
-                $E1 =
-                  $E1_ref - ( $w - $w_ref ) / ( $gamma * ( 1 + $dE2dE1_ref ) );
-                $E2 = ( 1 - $w ) / $gamma - $E1;
-            }
-            else {
-
-		# tables not defined
-                $E1 = 0;
-                $E2 = 0;
-            }
-        }
-    }
-
-    # STEP2: define the slope ratio at this point
-    # if at least one of the two energy slopes is defined
-    my $dE2dE1;
-    if ( !defined($dE2_dX) && defined($dE1_dX) ) {
-        $dE2_dX = -$dE1_dX - $w * ( $symmetry / 2 + $dYdX ) / $gamma;
-    }
-    if ( !defined($dE1_dX) && defined($dE2_dX) ) {
-        $dE1_dX = -$dE2_dX - $w * ( $symmetry / 2 + $dYdX ) / $gamma;
-    }
-    if ( defined($dE1_dX) && defined($dE2_dX) ) {
-        $dE2dE1 = $dE2_dX / $dE1_dX;
-        if ( $dE2dE1 < 0 ) { $dE2dE1 = 0 }
-    }
-    return ( $E1, $E2, $w, $dE2dE1 );
 }
 
 sub lookup {

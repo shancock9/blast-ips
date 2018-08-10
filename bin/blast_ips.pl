@@ -207,6 +207,7 @@ sub select_variable {
         'T'    => [ ++$i,  'ln(t)' ],
         'Z'    => [ ++$i,  'ln(z)' ],
         'E1'   => [ ++$i,  'E_residual_primary' ],
+        'E'    => [ ++$i,  'E_residual' ],
         'dYdX' => [ ++$i,  'dY/dX' ],
         'dZdX' => [ ++$i, 'dZ/dX' ],
         'dWdX' => [ ++$i, 'dW/dX' ],
@@ -412,15 +413,13 @@ sub point_evaluations_dimensionless {
         my $Lneg    = $ret->{Lneg};
         my $Ixr_pos = $ret->{Ixr_pos};
         my $Ixr_neg = $ret->{Ixr_neg};
-        my $E_rs    = $ret->{E_rs};
-        my $E_rt    = $ret->{E_rt};
-        my $E_r     = $ret->{E_r };
+        my $E1      = $ret->{E1};  
+        my $E       = $ret->{E};  
         my $W_atm   = $ret->{W_atm};
-        my $E_blast = $ret->{E_blast};
-
-        my $E1      = $ret->{E1};  # same as E_rs
-        my $E       = $ret->{E};  # same as E_r
         my $W_blast = $ret->{W_blast};
+        my $dEdX    = $ret->{dEdX};  
+        my $dE1dX   = $ret->{dE1dX};  
+        my $dEdE1   = $dE1dX && $dEdX ? $dEdX/$dE1dX : 1;
 
         my $x       = exp($X);
         my $y       = exp($Y);
@@ -436,10 +435,9 @@ sub point_evaluations_dimensionless {
             $_ = sprintf( "%0.8g", $_ );
         }
         foreach (
-            $Tpos, $Lpos, $Tneg,    $Lneg,    $m,
-            $q,    $up,   $Ixr_pos, $Ixr_neg, $E_rs,
-            $E_rt, $E_r,  $E1, $W_atm,   $E_blast,
-	    $E, $W_blast,
+            $Tpos,  $Lpos, $Tneg,    $Lneg,    $m,
+            $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
+            $W_atm, $E,    $W_blast, $dEdE1,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -471,13 +469,11 @@ q  = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
 I+ = $Ixr_pos = limiting positive impulse $pstr
 I- = $Ixr_neg = limiting negative impulse $pstr
-E_rs    = $E_rs = residual energy to this range from main shock $e_unit
-E1      = $E1 = residual energy to this range from main shock $e_unit
-E_r     = $E_r  = total residual energy (main shock+tail shock) to this range $e_unit
-E       = $E    = total residual energy (main shock+tail shock) to this range $e_unit
+E1      = $E1 = residual energy (main shock only) to this range $e_unit
+E       = $E  = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
-E_blast = $E_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
 W_blast = $W_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
+dE/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
 
 Note: zeros indicate undefined values.
 EOM
