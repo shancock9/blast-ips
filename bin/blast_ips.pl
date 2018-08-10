@@ -417,7 +417,11 @@ sub point_evaluations_dimensionless {
         my $E_r     = $ret->{E_r };
         my $W_atm   = $ret->{W_atm};
         my $E_blast = $ret->{E_blast};
+
         my $E1      = $ret->{E1};  # same as E_rs
+        my $E       = $ret->{E};  # same as E_r
+        my $W_blast = $ret->{W_blast};
+
         my $x       = exp($X);
         my $y       = exp($Y);
         my $z       = exp($Z);
@@ -434,7 +438,8 @@ sub point_evaluations_dimensionless {
         foreach (
             $Tpos, $Lpos, $Tneg,    $Lneg,    $m,
             $q,    $up,   $Ixr_pos, $Ixr_neg, $E_rs,
-            $E_rt, $E_r,  $E1, $W_atm,   $E_blast
+            $E_rt, $E_r,  $E1, $W_atm,   $E_blast,
+	    $E, $W_blast,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -469,8 +474,10 @@ I- = $Ixr_neg = limiting negative impulse $pstr
 E_rs    = $E_rs = residual energy to this range from main shock $e_unit
 E1      = $E1 = residual energy to this range from main shock $e_unit
 E_r     = $E_r  = total residual energy (main shock+tail shock) to this range $e_unit
+E       = $E    = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
 E_blast = $E_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
+W_blast = $W_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
 
 Note: zeros indicate undefined values.
 EOM
