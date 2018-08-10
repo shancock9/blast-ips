@@ -421,6 +421,9 @@ sub point_evaluations_dimensionless {
         my $dE1dX   = $ret->{dE1dX};  
         my $dEdE1   = $dE1dX && $dEdX ? $dEdX/$dE1dX : 1;
 
+	my $E0 = 1; ## For future use
+	my $E2 = $E - $E1;
+
         my $x       = exp($X);
         my $y       = exp($Y);
         my $z       = exp($Z);
@@ -437,7 +440,7 @@ sub point_evaluations_dimensionless {
         foreach (
             $Tpos,  $Lpos, $Tneg,    $Lneg,    $m,
             $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
-            $W_atm, $E,    $W_blast, $dEdE1,
+            $W_atm, $E,    $E2, $W_blast, $dEdE1,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -469,10 +472,12 @@ q  = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
 I+ = $Ixr_pos = limiting positive impulse $pstr
 I- = $Ixr_neg = limiting negative impulse $pstr
-E1      = $E1 = residual energy (main shock only) to this range $e_unit
-E       = $E  = total residual energy (main shock+tail shock) to this range $e_unit
+E0 = $E0 = initial total energy
+E1      = $E1 = residual energy of main shock to this range $e_unit
+E2      = $E2 = residual energy of tail shock to this range $e_unit
+Er      = $E  = E1+E2 = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
-W_blast = $W_blast = (E0-Er-W) = energy available to the blast at this range $e_unit
+W_blast = $W_blast = (E0-Er-W_atm) = work of the blast at this range $e_unit
 dE/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
 
 Note: zeros indicate undefined values.
