@@ -1509,7 +1509,10 @@ sub wavefront {
     my $T  = $result->[5];
     my $E1 = $result->[7];
     my $E  = $result->[9];
-    if ( !defined($E) ) { $E = $E1 }
+
+    # User might add a table without E
+    if ( !defined($E1) ) { $E1 = 0 }
+    if ( !defined($E) ) { $E = 0 }
 
     # Fix possible minor problem in which slight differences in interpolation can cause
     # E to be slightly below E1 at the threshold of a tail shock.
@@ -2009,6 +2012,8 @@ sub _add_long_range_energy {
     my $dE1dX_i = $dE1dX_e;
     my $dEdX_i  = $dEdX_e;
 
+    return unless defined($E_i);
+
     # Work at end state
     my $w_e  = 1 - $gamma * $E_e;
 
@@ -2195,9 +2200,6 @@ sub _long_range_sphere {
     # FIXME: Now add dint to residual energy at end of table to get final value
 
     #return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
-    my $v0=$result_i->[0];
-    my $v9=$result_i->[9];
-    print "BUBBA at X=$v0, returning Er=$v9\n";
     return $result_i;
 }
 
