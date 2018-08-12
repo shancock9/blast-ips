@@ -78,7 +78,15 @@ my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
 ##my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
 
+my ($I_X, $I_Y, $I_dYdX, $I_Z, $I_dZdX, $I_T, $I_dTdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX);
+
 INIT {
+
+    # Shock Table variable layout
+    (
+        $I_X,    $I_Y,  $I_dYdX,  $I_Z, $I_dZdX, $I_T,
+        $I_dTdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX
+    ) = ( 0 .. 20 );
 
     # Make an index table for searching gamma...
 
@@ -608,7 +616,7 @@ sub _check_keys {
         @unknown_keys = sort @unknown_keys;
         croak(<<EOM);
 ------------------------------------------------------------------------
-Program error detected checking hash keys
+Blast::IPS program error detected checking hash keys
 Message is: '$msg'
 Valid keys are: (@expected_keys)
 Keys not seen : (@missing_keys)
@@ -835,8 +843,8 @@ sub _update_toa_row {
     my $x    = exp($X);
     my $T    = log( $x - $z );
     my $dTdX = ( $x - $dzdX ) / ( $x - $z );
-    $row->[5] = $T;
-    $row->[6] = $dTdX;
+    $row->[$I_T]    = $T;
+    $row->[$I_dTdX] = $dTdX;
     return;
 }
 
@@ -1284,14 +1292,16 @@ sub wavefront {
         dTdX               => 6,
         E1                 => 7,    # primary shock residual energy
         dE1dX              => 8,
-        E                  => 9,    # total shock residual energy
-        dEdX               => 10,
+        Er                 => 9,    # total shock residual energy
+        dErdX              => 10,
         interpolation_flag => 0,
     );
 
 # POSSIBLE FUTURE KEYS:
-#        K		   => 11,  # positive phase KE
-#        dK/dX             => 12,
+#        W_p             => 12, # positive phase work
+#        dW_p/dX         => 13,
+#        K_p             => 14,  # positive phase KE
+#        dK_p/dX         => 15,
 
     # Validate input keys
     _check_keys( $rinput_hash, \%valid_input_keys,
@@ -1342,26 +1352,25 @@ sub wavefront {
           _interpolate_rows( $Q, $icol, $rtab->[$il], $rtab->[$iu], $interp );
     }
 
-    my $X  = $result->[0];
-    my $Z  = $result->[3];
-    my $T  = $result->[5];
-    my $E1 = $result->[7];
-    my $E  = $result->[9];
+    my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $Er, $dErdX ) =
+      @{$result};
 
-    # User might add a table without E
-    if ( !defined($E1) ) { $E1 = 0 }
-    if ( !defined($E) )  { $E  = 0 }
+    # PATCH: Avoid trouble in case user adds a table without E variables
+    if ( !defined($E1) ) { $E1 = 0; $dE1dX = 0 }
+    if ( !defined($Er) ) { $Er = 0; $dErdX  = 0 }
 
     # Fix possible minor problem in which slight differences in interpolation can cause
-    # E to be slightly below E1 at the threshold of a tail shock.
-    if ( $E < $E1 ) { $E = $E1 }
+    # Er to be slightly below E1 at the threshold of a tail shock.
+    if ( $Er < $E1 ) { $Er = $E1 }
 
-    my $W_blast = 1 - $gamma * $E;
-    my $W_atm   = ( $gamma - 1 ) * $E;
+    my $W_blast = 1 - $gamma * $Er;
+    my $W_atm   = ( $gamma - 1 ) * $Er;
 
     my $rs = exp($X);
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
+
+    # FIXME: evaluate sigma and Sigma = sigma*r**(symmetry/2)
 
     # FIXME: Should we report distance to the zero p or distance
     # between the two zero's???
@@ -1370,17 +1379,17 @@ sub wavefront {
     # TableVars shows the interpolated row values
 
     my $return_hash = {
-        'X'         => $result->[0],
-        'Y'         => $result->[1],
-        'dYdX'      => $result->[2],
-        'Z'         => $result->[3],
-        'dZdX'      => $result->[4],
-        'T'         => $result->[5],
-        'dTdX'      => $result->[6],
-        'E1'        => $result->[7],
-        'dE1dX'     => $result->[8],
-        'E'         => $E, 
-        'dEdX'      => $result->[10],
+        'X'         => $X,                    
+        'Y'         => $Y,                    
+        'dYdX'      => $dYdX,                 
+        'Z'         => $Z,                    
+        'dZdX'      => $dZdX,                 
+        'T'         => $T,                    
+        'dTdX'      => $dTdX,                 
+        'E1'        => $E1,                   
+        'dE1dX'     => $dE1dX,                
+        'Er'        => $Er,
+        'dErdX'     => $dErdX,                 
         'W_blast'   => $W_blast,
         'W_atm'     => $W_atm,
         'Tpos'      => $Tpos,
@@ -1674,14 +1683,14 @@ sub _short_range_calc {
       $acon * $gammam / $gammap * $C**( 1 / $gamma ) * $lambda_i**$qq / $qq;
     my $vol1        = $acon * $lambda_i**$symp / $symp;
     my $E1_i = ( $vol - $vol1 ) / $gammam;
-    my $dE1dX_i=0; # FIXME
-    my $E_i = $E1_i;
-    my $dEdX_i = $dE1dX_i;
+    my $dE1dX_i=0; # FIXME; use exact derivative
+    my $Er_i = $E1_i;
+    my $dErdX_i = $dE1dX_i;
 
     # The result
     my $result_i = [
         $X_i,     $Y_i,       $dY_dX_i,   $Z_i,
-        $dZ_dX_i, $T_i, $dTdX_i, $E1_i, $dE1dX_i, $E_i, $dEdX_i
+        $dZ_dX_i, $T_i, $dTdX_i, $E1_i, $dE1dX_i, $Er_i, $dErdX_i
     ];
 
     return $result_i;
@@ -1707,7 +1716,7 @@ sub _long_range_calc {
 }
 
 sub _add_long_range_energy {
-    my ($self, $result_i)=@_;
+    my ( $self, $result_i ) = @_;
     my $rtab     = $self->{_rtable};
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
@@ -1715,49 +1724,48 @@ sub _add_long_range_energy {
     # Add the energy variables to the extrapolated result
 
     # current extrapolated state values
-    my ( $X_i, $Y_i, $dYdX_i) = @{$result_i};
+    my ( $X_i, $Y_i, $dYdX_i ) = @{$result_i};
 
     # last table point is reference state
     my (
-        $X_e,    $Y_e,  $dYdX_e,  $Z_e,  $dZdX_e, $T_e,
-        $dTdX_e, $E1_e, $dE1dX_e, $E_e, $dEdX_e
+        $X_e,    $Y_e,  $dYdX_e,  $Z_e, $dZdX_e, $T_e,
+        $dTdX_e, $E1_e, $dE1dX_e, $Er_e, $dErdX_e
     ) = @{ $rtab->[-1] };
 
     # Tentative initialize to table end in case work is zero
     my $E1_i    = $E1_e;
-    my $E_i     = $E_e;
+    my $Er_i     = $Er_e;
     my $dE1dX_i = $dE1dX_e;
-    my $dEdX_i  = $dEdX_e;
+    my $dErdX_i  = $dErdX_e;
 
-    return unless defined($E_i);
+    return unless defined($Er_i);
 
     # Work at end state
-    my $w_e  = 1 - $gamma * $E_e;
+    my $w_e = 1 - $gamma * $Er_e;
 
     if ( $w_e > 0 ) {
 
-	# Work and its slope at extrapolated point
+        # Work and its slope at extrapolated point
         my $w_i =
           exp( log($w_e) + 0.5 * $symmetry * ( $X_i - $X_e ) + $Y_i - $Y_e );
-        my $dwdX_i = $w_i * (0.5 * $symmetry + $dYdX_i );
+        my $dwdX_i = $w_i * ( 0.5 * $symmetry + $dYdX_i );
 
-	# total residual energy and its slope
-        $E_i = ( 1 - $w_i ) / $gamma;
-        $dEdX_i = -$dwdX_i / $gamma;
+        # total residual energy and its slope
+        $Er_i    = ( 1 - $w_i ) / $gamma;
+        $dErdX_i = -$dwdX_i / $gamma;
 
- 	# primary shock energy and its slope 
+        # primary shock energy and its slope
         if ( $dE1dX_e > 0 ) {
-            my $kk = $dEdX_e / $dE1dX_e;
-            $E1_i = $E1_e + ( $E_i - $E_e ) / $kk;
-            $dE1dX_i = $dEdX_i / $kk;
+            my $kk = $dErdX_e / $dE1dX_e;
+            $E1_i = $E1_e + ( $Er_i - $Er_e ) / $kk;
+            $dE1dX_i = $dErdX_i / $kk;
         }
     }
 
-    # FIXME: make the table index a variable
-    $result_i->[7]  = $E1_i;
-    $result_i->[8]  = $dE1dX_i;
-    $result_i->[9]  = $E_i;
-    $result_i->[10] = $dEdX_i;
+    $result_i->[$I_E1]    = $E1_i;
+    $result_i->[$I_dE1dX] = $dE1dX_i;
+    $result_i->[$I_Er]     = $Er_i;
+    $result_i->[$I_dErdX]  = $dErdX_i;
     return;
 }
 
@@ -1877,42 +1885,41 @@ sub _long_range_sphere {
     $dZ_dX_i = $dZdX_e;
  
     # This is the partial result so far
-    my $result_i = [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i]; #, $T_i, $dTdX_i ];
+    my $result_i = [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i]; 
 
     # now add the long range energy variables
     $self->_add_long_range_energy( $result_i);
 
-    ##############################################################################
-    # FIXME: Review this currently unused coding:
-    # TODO: Here are equations to calculate the increment in residual shock
-    # heating from the primary shock, from 'energy_integral_primary.pl'.
-    # Add this to shock heading at end of table to get long range value
-    # This assumes constant dYdX, so it is basically exact for plane and
-    # cylindrical geometry. For spherical geometry dYdX continues to change
-    # but those tables go so far (X=200) that we probably won't be
-    # evaluating for spherical geometry.
-    my $lambda_i  = exp($X_i);
-    my $lambda_e  = exp($X_e);
-    my $ovp_atm_e = exp($Y_e);
-    my $qq        = 3 * $dYdX_e + $symmetry + 1;
-    my $pi        = 4 * atan2( 1, 1 );
-    my $acon =
-        ( $symmetry == 2 ) ? 4 * $pi
-      : ( $symmetry == 1 ) ? 2 * $pi
-      :                      1;
-    my $coef = $acon * ( $gamma + 1 ) / 12 / $gamma**3;
-    my $dint =
-      $coef * $ovp_atm_e**3 /
-      $lambda_e**( 3 * $dYdX_e ) *
-      ( $lambda_i**$qq - $lambda_e**$qq ) /
-      $qq;
-
-    # FIXME: future PATCH for total shock heating: double this for geometries
-    # with a tail shock
-    #unless ($symmetry == 0 && $gamma>1.6) {$dint*=2}
-
-    # FIXME: Now add dint to residual energy at end of table to get final value
-    ##############################################################################
+##    ##############################################################################
+##    # OLD: Here are equations to calculate the increment in residual shock
+##    # heating from the primary shock, from 'energy_integral_primary.pl'.
+##    # Add this to shock heading at end of table to get long range value
+##    # This assumes constant dYdX, so it is basically exact for plane and
+##    # cylindrical geometry. For spherical geometry dYdX continues to change
+##    # but those tables go so far (X=200) that we probably won't be
+##    # evaluating for spherical geometry.
+##    my $lambda_i  = exp($X_i);
+##    my $lambda_e  = exp($X_e);
+##    my $ovp_atm_e = exp($Y_e);
+##    my $qq        = 3 * $dYdX_e + $symmetry + 1;
+##    my $pi        = 4 * atan2( 1, 1 );
+##    my $acon =
+##        ( $symmetry == 2 ) ? 4 * $pi
+##      : ( $symmetry == 1 ) ? 2 * $pi
+##      :                      1;
+##    my $coef = $acon * ( $gamma + 1 ) / 12 / $gamma**3;
+##    my $dint =
+##      $coef * $ovp_atm_e**3 /
+##      $lambda_e**( 3 * $dYdX_e ) *
+##      ( $lambda_i**$qq - $lambda_e**$qq ) /
+##      $qq;
+##
+##?    # OLD: future PATCH for total shock heating: double this for geometries
+##?    # with a tail shock
+##?    #unless ($symmetry == 0 && $gamma>1.6) {$dint*=2}
+##?
+##?    # OLD: Now add dint to residual energy at end of table to get final value
+##?    ##############################################################################
 
     return $result_i;
 }
@@ -2061,11 +2068,13 @@ sub _interpolate_rows {
     }
 
     # FIXME: these could be collapsed into two calls
+    # if icol is odd do a cubic interpolation of icol with slope icol+1
     elsif ( $icol == 1 ) {
         ( $X_i, my $dX_dY_i, my $d2X_dY2_i ) =
           _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
             $Y_e, $X_e, 1 / $dY_dX_e, $interp );
     }
+    # if icol is even do a slope interpolation 
     elsif ( $icol == 2 ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dY_dX_b, $X_b, 0, $dY_dX_e, $X_e, 0, 1 );
@@ -2123,15 +2132,9 @@ sub _interpolate_rows {
     my ( $E1_i, $dE1_dX_i, $d2E1_dX2_i ) =
       _interpolate_scalar( $X_i, $X_b, $E1_b, $dE1_dX_b, $X_e, $E1_e, $dE1_dX_e,
         $interp );
-
-# EFIX PART 1
     my ( $E_i, $dE_dX_i, $d2E_dX2_i ) 
       = _interpolate_scalar( $X_i, $X_b, $E_b, $dE_dX_b, $X_e, $E_e, $dE_dX_e,
         $interp );
-
-#print STDERR "BUBBA: Xi=$X_i, X_b=$X_b; X_e=$X_e, E1_b=$E1_b; E1_e=$E1_e; E1_i=$E1_i\n";
-
-    #return [ $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i ];
     return [
         $X_i,     $Y_i,  $dY_dX_i,  $Z_i, $dZ_dX_i, $T_i,
         $dT_dX_i, $E1_i, $dE1_dX_i, $E_i, $dE_dX_i
@@ -2446,11 +2449,11 @@ EOM
         my $X_x     = polint( $A_x, $rA_6, $rX );
         my $Z_x     = polint( $A_x, $rA_6, $rZ );
         my $E1_x    = polint( $A_x, $rA_6, $rE1 );
-        my $E_x     = polint( $A_x, $rA_6, $rE );  # FIXME EFIX PART 2
+        my $E_x     = polint( $A_x, $rA_6, $rE );  
         my $dYdX_x  = polint( $A_x, $rA_4, $rdYdX );
         my $dZdX_x  = polint( $A_x, $rA_4, $rdZdX );
         my $dE1dX_x = polint( $A_x, $rA_4, $rdE1dX );
-        my $dEdX_x  = polint( $A_x, $rA_4, $rdEdX ); # FIXME EFIX PART 3
+        my $dEdX_x  = polint( $A_x, $rA_4, $rdEdX ); 
 
 	# leave two spaces for T and dTdX
         push @{$rtab_x},

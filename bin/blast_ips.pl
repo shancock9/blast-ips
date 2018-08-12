@@ -213,10 +213,9 @@ sub select_variable {
         'dWdX' => [ ++$i, 'dW/dX' ],
         'dE1dX'=> [ ++$i,  'dE1/dX' ],
         'm'    => [ ++$i, '= (S/c0), where S is the shock speed' ],
-        'q'    => [ 13, '= (c0/S)^2, where S is the shock speed' ],
+        'q'    => [ ++$i, '= (c0/S)^2, where S is the shock speed' ],
     );
 
-    #my $menu_text = "Select a variable to evaluate:\n";
     my $menu_text = <<EOM;
 Point evaluation with one dimensionless variable
 
@@ -348,7 +347,7 @@ sub point_evaluations_dimensionless {
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
-        if ( $vname =~ /^([XYZT]|E1|dYdX|dZdX|dTdX|dE1dX)/ ) {
+        if ( $vname =~ /^([XYZT]|E1|Er|dYdX|dZdX|dTdX|dE1dX|dErdX)/ ) {
             $Q  = $val;
             $iQ = $vname;
         }
@@ -401,7 +400,6 @@ sub point_evaluations_dimensionless {
             die "coding incomplete for variable '$vname'";
         }
         my $ret     = $blast_table->wavefront( $iQ => $Q );
-        print STDERR " my ret     = blast_table->wavefront( $iQ => $Q );i\n";
         my $X       = $ret->{X};
         my $Y       = $ret->{Y};
         my $Z       = $ret->{Z};
@@ -414,15 +412,15 @@ sub point_evaluations_dimensionless {
         my $Ixr_pos = $ret->{Ixr_pos};
         my $Ixr_neg = $ret->{Ixr_neg};
         my $E1      = $ret->{E1};  
-        my $E       = $ret->{E};  
+        my $Er      = $ret->{Er};  
         my $W_atm   = $ret->{W_atm};
         my $W_blast = $ret->{W_blast};
-        my $dEdX    = $ret->{dEdX};  
+        my $dErdX   = $ret->{dErdX};  
         my $dE1dX   = $ret->{dE1dX};  
-        my $dEdE1   = $dE1dX && $dEdX ? $dEdX/$dE1dX : 1;
+        my $dEdE1   = $dE1dX && $dErdX ? $dErdX/$dE1dX : 1;
 
 	my $E0 = 1; ## For future use
-	my $E2 = $E - $E1;
+	my $E2 = $Er - $E1;
 
         my $x       = exp($X);
         my $y       = exp($Y);
@@ -440,7 +438,7 @@ sub point_evaluations_dimensionless {
         foreach (
             $Tpos,  $Lpos, $Tneg,    $Lneg,    $m,
             $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
-            $W_atm, $E,    $E2, $W_blast, $dEdE1,
+            $W_atm, $Er,    $E2, $W_blast, $dEdE1,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -472,13 +470,13 @@ q  = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
 I+ = $Ixr_pos = limiting positive impulse $pstr
 I- = $Ixr_neg = limiting negative impulse $pstr
-E0 = $E0 = initial total energy
+E0      = $E0 = initial total energy $e_unit
 E1      = $E1 = residual energy of main shock to this range $e_unit
 E2      = $E2 = residual energy of tail shock to this range $e_unit
-Er      = $E  = E1+E2 = total residual energy (main shock+tail shock) to this range $e_unit
+Er      = $Er  = E1+E2 = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
 W_blast = $W_blast = (E0-Er-W_atm) = work of the blast at this range $e_unit
-dE/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
+dEr/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
 
 Note: zeros indicate undefined values.
 EOM
