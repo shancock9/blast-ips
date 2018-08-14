@@ -249,7 +249,7 @@ sub _setup {
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
-    my ( $loc_gamma_table, $rigam_4, $rigam_6);
+    my ( $rimpulse_table, $loc_gamma_table, $rigam_4, $rigam_6);
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
@@ -284,6 +284,7 @@ EOM
     elsif ( defined($table_name) ) {
 
         $rtable = get_builtin_table($table_name);
+        $rimpulse_table = get_builtin_impulse_table($table_name);
         my $item = $rshock_tables_info->{$table_name};
         if ( defined($item) ) {
             my $old_symmetry = $symmetry;
@@ -336,6 +337,7 @@ EOM
         # Get builtin table if there is one
         if ( defined($table_name) ) {
             $rtable           = get_builtin_table($table_name);
+            $rimpulse_table = get_builtin_impulse_table($table_name);
         }
 
         # Otherwise, make an interpolated table
@@ -345,6 +347,7 @@ EOM
             if ( defined($rigam_6) && defined($rigam_4) ) {
                 $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
                     $rigam_6, $rigam_4 );
+	        # FIXME: make impulse table too
                 if ( !$table_name ) {
                     $table_name = _make_table_name( $symmetry, $gamma );
                 }
@@ -364,12 +367,12 @@ EOM
 
     my $num_table;
     if ( !$error ) {
-        ##$rtable    = 
         _update_toa_table($rtable);
         $num_table = @{$rtable};
     }
 
     $self->{_rtable}            = $rtable;
+    $self->{_rimpulse_table}    = $rimpulse_table;
     $self->{_table_name}        = $table_name;
     $self->{_loc_gamma_table}   = $loc_gamma_table;
     $self->{_rigam_4}           = $rigam_4;
@@ -378,6 +381,8 @@ EOM
     $self->{_symmetry}          = $symmetry;
     $self->{_jl}                = -1;
     $self->{_ju}                = $num_table;
+    $self->{_jl2}               = -1;
+    $self->{_ju2}               = undef;
     $self->{_error}             = $error;
 
     if ($error) { carp "$error\n" }
@@ -632,6 +637,11 @@ sub get_builtin_table {
     return ( $rshock_tables->{$table_name} );
 }
 
+sub get_builtin_impulse_table {
+    my ($table_name) = @_;
+    return ( $rimpulse_tables->{$table_name} );
+}
+
 sub get_rgamma_table {
     return $rgamma_table;
 }
@@ -857,6 +867,134 @@ sub _update_toa_table {
 	_update_toa_row($row);
     }
     return; 
+}
+
+
+sub get_impulse {
+    my ( $self, $result ) = @_;
+    my $rimpulse_table = $self->{_rimpulse_table};
+    my $jl             = $self->{_jl2};
+    my $ju             = $self->{_ju2};
+    return unless ($rimpulse_table);
+    my $rreturn_hash;
+    my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$result};
+
+    # Locate this point in the table
+    my $ntab  = @{$rimpulse_table};
+    my $rhash = {
+        _jl     => $jl,
+        _ju     => $ju,
+        _rtable => $rimpulse_table,
+    };
+    ( $jl, $ju ) = _locate_2d( $rhash, $X, 0 );
+    $self->{_jl2} = $jl;
+    $self->{_ju2} = $ju;
+    return unless ( defined($jl) );
+
+    # Handle case before start of the table
+    if ( $jl < 0 ) {
+
+        # FIXME
+        # short range
+    }
+
+    # Handle case beyond end of the table
+    elsif ( $ju >= $ntab ) {
+
+        # FIXME
+        # long range
+    }
+
+    # otherwise interpolate within table
+    else {
+        my $rrow = _interpolate_table_rows( $X, $rimpulse_table, $jl);
+        if ($rrow) {
+            my (
+                $X_i,    $rpint_pos, $rpint_neg, $z_pos,
+                $z_neg,  $Qint_pos,  $rovp_min,  $z_ovp_min,
+                $ke_pos, $work_pos,  $Disp_pos
+            ) = @{$rrow};
+            $rreturn_hash->{rpint_pos} = $rpint_pos;
+            $rreturn_hash->{rpint_neg} = $rpint_neg;
+            $rreturn_hash->{rovp_min}  = $rovp_min;
+            $rreturn_hash->{z_ovp_min} = $z_ovp_min;
+            $rreturn_hash->{z_pos}     = $z_pos; 
+            $rreturn_hash->{z_neg}     = $z_neg;
+            $rreturn_hash->{KE_pos}    = $ke_pos;
+            $rreturn_hash->{W_pos}     = $work_pos;
+            $rreturn_hash->{Disp_pos}  = $Disp_pos;
+            $rreturn_hash->{Qint_pos}  = $Qint_pos;
+        }
+    }
+    return $rreturn_hash;
+}
+
+sub _interpolate_table_rows {
+
+    my ( $xx, $rtable, $jl, $icx, $NLAG ) = @_;
+
+    # interpolate all row values of a table to an arbitrary x value
+
+    # $xx = the value of the X variable
+    # $rtable   = table
+    # $jl = lower bound row index
+    # $icx = column number of X variable [default is 0]
+    # $NLAG = #Lagrange points [default 4]
+
+    $icx  = 0 unless defined($icx);
+    $NLAG = 4 unless defined($NLAG);
+
+    # number of lagrange points cannot exceed number of table points
+    my $npts = @{$rtable};
+    if ( $NLAG > $npts ) { $NLAG = $npts }
+    my $NH = int( $NLAG / 2 );
+
+    my $jpoly_l = -1;
+
+    my $rrow;
+
+    if ( $jl < 0 || $jl + 1 >= $npts ) {
+
+        # CALL ERROR: should not happen with proper call
+        return;
+
+    }
+
+    # We want to have about equal numbers around this point
+    $jpoly_l = $jl - $NH + 1;
+
+    # But keep the points within the old table
+    my $jpoly_u = $jpoly_l + $NLAG - 1;
+    my $dj = $jpoly_u - ( $npts - 1 );
+    if ( $dj > 0 ) {
+        $jpoly_l -= $dj;
+    }
+    $jpoly_l = 0 if ( $jpoly_l < 0 );
+
+    my $nvars = @{ $rtable->[0] };
+
+    my $rlag_x = [];
+    my $jj     = $jpoly_l;
+    for ( my $n = 0 ; $n < $NLAG ; $n++ ) {
+        last if ( $jj > $npts - 1 );    ## For safety
+        push @{$rlag_x}, $rtable->[$jj]->[$icx];
+        $jj++;
+    }
+
+    # now loop to define all values
+    # Note that we are also interpolating the x variable as a control
+    for ( my $icy = 0 ; $icy < $nvars ; $icy++ ) {
+        my $rlag_y = [];
+        my $jj     = $jpoly_l;
+        for ( my $n = 0 ; $n < $NLAG ; $n++ ) {
+            last if ( $jj > $npts - 1 );    ## For safety
+            push @{$rlag_y}, $rtable->[$jj]->[$icy];
+            $jj++;
+        }
+        my $yy = polint( $xx, $rlag_x, $rlag_y );
+        $rrow->[$icy] = $yy;
+    }
+    return $rrow;
 }
 
 sub get_phase_lengths {
@@ -1297,12 +1435,6 @@ sub wavefront {
         interpolation_flag => 0,
     );
 
-# POSSIBLE FUTURE KEYS:
-#        W_p             => 12, # positive phase work
-#        dW_p/dX         => 13,
-#        K_p             => 14,  # positive phase KE
-#        dK_p/dX         => 15,
-
     # Validate input keys
     _check_keys( $rinput_hash, \%valid_input_keys,
         "Checking for valid input keys" );
@@ -1366,6 +1498,21 @@ sub wavefront {
     my $W_blast = 1 - $gamma * $Er;
     my $W_atm   = ( $gamma - 1 ) * $Er;
 
+    # Get impulse and related values
+    my $rimpulse_hash = $self->get_impulse($result);
+    my $rpint_pos;
+    my $ke_pos;
+    my $work_pos;
+    if ($rimpulse_hash) {
+        $rpint_pos = $rimpulse_hash->{rpint_pos};
+        $ke_pos    = $rimpulse_hash->{KE_pos};
+        $work_pos  = $rimpulse_hash->{W_pos};
+        #print "BUBBA: rpint=$rpint\n";
+    }
+    else {
+	print "BUBBA: NO RESULT\n";
+    }
+
     my $rs = exp($X);
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
@@ -1392,6 +1539,8 @@ sub wavefront {
         'dErdX'     => $dErdX,                 
         'W_blast'   => $W_blast,
         'W_atm'     => $W_atm,
+ 	'KE_pos'    => $ke_pos,
+ 	'W_pos'     => $work_pos,
         'Tpos'      => $Tpos,
         'Lpos'      => $Lpos,
         'Tneg'      => $Tneg,

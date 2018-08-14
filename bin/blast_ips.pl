@@ -418,6 +418,8 @@ sub point_evaluations_dimensionless {
         my $dErdX   = $ret->{dErdX};  
         my $dE1dX   = $ret->{dE1dX};  
         my $dEdE1   = $dE1dX && $dErdX ? $dErdX/$dE1dX : 1;
+        my $ke_pos  = $ret->{KE_pos};  
+        my $work_pos= $ret->{W_pos};  
 
 	my $E0 = 1; ## For future use
 	my $E2 = $Er - $E1;
@@ -439,6 +441,7 @@ sub point_evaluations_dimensionless {
             $Tpos,  $Lpos, $Tneg,    $Lneg,    $m,
             $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
             $W_atm, $Er,    $E2, $W_blast, $dEdE1,
+	    $ke_pos, $work_pos,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -475,7 +478,9 @@ E1      = $E1 = residual energy of main shock to this range $e_unit
 E2      = $E2 = residual energy of tail shock to this range $e_unit
 Er      = $Er  = E1+E2 = total residual energy (main shock+tail shock) to this range $e_unit
 W_atm   = $W_atm = (gamma-1)*Er = work of thermal expansion against the atmosphere $e_unit
-W_blast = $W_blast = (E0-Er-W_atm) = work of the blast at this range $e_unit
+W_blast = $W_blast = (E0-Er-W_atm) = work of the blast $e_unit
+W_pos   = $work_pos = work of positive phase of the blast $e_unit
+ke_pos  = $ke_pos = kinetic energy in the positive phase $e_unit
 dEr/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
 
 Note: zeros indicate undefined values.
