@@ -342,6 +342,9 @@ sub point_evaluations_dimensionless {
     my ( $blast_table, $medium, $vname ) = @_;
     my $gamma    = $medium->{_gamma};
     my $symmetry = $medium->{_symmetry};
+    my $p_amb    = 1;                      # FIXME;
+    my $pi       = 4 * atan2( 1, 1 );
+    my $NN       = $symmetry + 1;
     while (1) {
         my $val = get_num("Enter a value for '$vname', or <cr> to quit:");
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
@@ -405,9 +408,11 @@ sub point_evaluations_dimensionless {
         my $Z       = $ret->{Z};
         my $dYdX    = $ret->{dYdX};
         my $dZdX    = $ret->{dZdX};
-        my $Tpos    = $ret->{Tpos};
+        #my $Tpos    = $ret->{Tpos};
+        #my $Tpos2   = $ret->{Tpos2};
         my $Lpos    = $ret->{Lpos};
-        my $Tneg    = $ret->{Tneg};
+        #my $Tneg    = $ret->{Tneg};
+        #my $Tneg2   = $ret->{Tneg2};
         my $Lneg    = $ret->{Lneg};
         my $Ixr_pos = $ret->{Ixr_pos};
         my $Ixr_neg = $ret->{Ixr_neg};
@@ -420,9 +425,21 @@ sub point_evaluations_dimensionless {
         my $dEdE1   = $dE1dX && $dErdX ? $dErdX/$dE1dX : 1;
         my $ke_pos  = $ret->{KE_pos};  
         my $work_pos= $ret->{W_pos};  
+        my $qint_pos= $ret->{qint_pos};  
+        my $z_pos= $ret->{z_pos};  
+        my $z_neg= $ret->{z_neg};  
+        my $z_ovp_min= $ret->{z_ovp_min};  
+        my $rovp_min= $ret->{rovp_min};  
+        my $disp_pos= $ret->{disp_pos};  
+
+	# To be deleted:
+        my $Ixr_pos_lim = $ret->{Ixr_pos_lim};
+        my $Ixr_neg_lim = $ret->{Ixr_neg_lim};
 
 	my $E0 = 1; ## For future use
 	my $E2 = $Er - $E1;
+
+        my $Tpmin = $z_ovp_min - $z_neg;
 
         my $x       = exp($X);
         my $y       = exp($Y);
@@ -434,14 +451,30 @@ sub point_evaluations_dimensionless {
         my $q       = 1 / $m**2;
         my $up      = $y / ( $gamma * $m );
 
+
+	########################################
+	# FIXME: not exact; must iterate or fix for roundoff
+	my $dV_atm = $W_atm/$p_amb;
+	my $rbar = $x;
+        my $disp_end =
+            ( $symmetry == 2 ) ? $dV_atm / ( 4 * $pi * $rbar**2) 
+          : ( $symmetry == 1 ) ? $dV_atm / (2*$pi *$rbar)
+          :                      $dV_atm;
+	########################################
+
+	my $dt_pos = $z-$z_pos;
+	my $dt_min = $z-$z_ovp_min;
+	my $dt_neg = $z-$z_neg;
+
         foreach ( $x, $y, $z, $t, $X, $Y, $Z, $T, $dYdX, $dZdX ) {
             $_ = sprintf( "%0.8g", $_ );
         }
         foreach (
-            $Tpos,  $Lpos, $Tneg,    $Lneg,    $m,
+            $Lpos, $Lneg,    $m,
             $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
             $W_atm, $Er,    $E2, $W_blast, $dEdE1,
 	    $ke_pos, $work_pos,
+	    $dt_pos, $dt_min, $dt_neg, $rovp_min, $disp_pos, $disp_end
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -459,20 +492,25 @@ sub point_evaluations_dimensionless {
 
 Results at a point; symmetry=$symmetry, gamma=$gamma:
 
-x    = $x = scaled range r/d;     ln(x) = X = $X 
-y    = $y = (P-P0)/P0;            ln(y) = Y = $Y 
-z    = $z = (r-c0 t)/d;           ln(z) = Z = $Z 
-toa  = $t = scaled toa;           ln(t) = T = $T 
+x    = $x = scaled range r/d;       ln(x) = X = $X 
+y    = $y = (P-P0)/P0;              ln(y) = Y = $Y 
+z    = $z = (r-c0 t)/d;             ln(z) = Z = $Z 
+toa  = $t = scaled time of arrival  ln(t) = T = $T 
 dYdX = $dYdX
-T+ = $Tpos = time duration of positive phase $t_unit
+t+   - toa = $dt_pos = time duration to first zero overpressure $t_unit
+tmin - toa = $dt_min = time duration to minimum overpressure $t_unit
+t-   - toa = $dt_neg = time duration to second zero overpressure $t_unit (spherical only)
 L+ = $Lpos = length of positive phase $d_unit
-T- = $Tneg = time duration of negative phase $t_unit
 L- = $Lneg = length of negative phase $d_unit
 m  = $m = S/c0=shock Mach number
 q  = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
-I+ = $Ixr_pos = limiting positive impulse $pstr
-I- = $Ixr_neg = limiting negative impulse $pstr
+r^n/2 pmin = $rovp_min = minimum overpressure $pstr
+r^n/2 I+ = $Ixr_pos = positive phase impulse $pstr
+r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
+r^n/2 I- = $Ixr_neg = negative phase impulse $pstr
+r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
+qint+   = $qint_pos = positive phase dynamic impulse
 E0      = $E0 = initial total energy $e_unit
 E1      = $E1 = residual energy of main shock to this range $e_unit
 E2      = $E2 = residual energy of tail shock to this range $e_unit
@@ -482,6 +520,8 @@ W_blast = $W_blast = (E0-Er-W_atm) = work of the blast $e_unit
 W_pos   = $work_pos = work of positive phase of the blast $e_unit
 ke_pos  = $ke_pos = kinetic energy in the positive phase $e_unit
 dEr/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
+disp_pos = $disp_pos = maximum particle displacement
+disp_end = $disp_end = equilibrium particle displacement
 
 Note: zeros indicate undefined values.
 EOM

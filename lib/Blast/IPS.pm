@@ -75,7 +75,7 @@ my $rpzero_fit         = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail        = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
 my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
-##my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
+my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
 
 my ($I_X, $I_Y, $I_dYdX, $I_Z, $I_dZdX, $I_T, $I_dTdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX);
@@ -249,7 +249,7 @@ sub _setup {
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
-    my ( $rimpulse_table, $loc_gamma_table, $rigam_4, $rigam_6);
+    my ( $rimpulse_table, $rtail_shock_table, $loc_gamma_table, $rigam_4, $rigam_6);
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
@@ -283,8 +283,7 @@ EOM
     # symmetry and gamma must match if given; it is safest not to give them.
     elsif ( defined($table_name) ) {
 
-        $rtable = get_builtin_table($table_name);
-        $rimpulse_table = get_builtin_impulse_table($table_name);
+        ( $rtable, $rimpulse_table, $rtail_shock_table ) = get_builtin_tables($table_name);
         my $item = $rshock_tables_info->{$table_name};
         if ( defined($item) ) {
             my $old_symmetry = $symmetry;
@@ -336,8 +335,7 @@ EOM
 
         # Get builtin table if there is one
         if ( defined($table_name) ) {
-            $rtable           = get_builtin_table($table_name);
-            $rimpulse_table = get_builtin_impulse_table($table_name);
+            ( $rtable, $rimpulse_table, $rtail_shock_table ) = get_builtin_tables($table_name);
         }
 
         # Otherwise, make an interpolated table
@@ -347,7 +345,8 @@ EOM
             if ( defined($rigam_6) && defined($rigam_4) ) {
                 $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
                     $rigam_6, $rigam_4 );
-	        # FIXME: make impulse table too
+
+	        # FIXME: make interpolated impulse table too
                 if ( !$table_name ) {
                     $table_name = _make_table_name( $symmetry, $gamma );
                 }
@@ -371,19 +370,20 @@ EOM
         $num_table = @{$rtable};
     }
 
-    $self->{_rtable}            = $rtable;
-    $self->{_rimpulse_table}    = $rimpulse_table;
-    $self->{_table_name}        = $table_name;
-    $self->{_loc_gamma_table}   = $loc_gamma_table;
-    $self->{_rigam_4}           = $rigam_4;
-    $self->{_rigam_6}           = $rigam_6;
-    $self->{_gamma}             = $gamma;
-    $self->{_symmetry}          = $symmetry;
-    $self->{_jl}                = -1;
-    $self->{_ju}                = $num_table;
-    $self->{_jl2}               = -1;
-    $self->{_ju2}               = undef;
-    $self->{_error}             = $error;
+    $self->{_rtable}                  = $rtable;
+    $self->{_rimpulse_table}          = $rimpulse_table;
+    $self->{_rtail_shock_table_table} = $rtail_shock_table;
+    $self->{_table_name}              = $table_name;
+    $self->{_loc_gamma_table}         = $loc_gamma_table;
+    $self->{_rigam_4}                 = $rigam_4;
+    $self->{_rigam_6}                 = $rigam_6;
+    $self->{_gamma}                   = $gamma;
+    $self->{_symmetry}                = $symmetry;
+    $self->{_jl}                      = -1;
+    $self->{_ju}                      = $num_table;
+    $self->{_jl2}                     = -1;
+    $self->{_ju2}                     = undef;
+    $self->{_error}                   = $error;
 
     if ($error) { carp "$error\n" }
     else {
@@ -632,14 +632,18 @@ EOM
     return;
 }
 
+sub get_builtin_tables {
+    my ($table_name) = @_;
+    return (
+        $rshock_tables->{$table_name},
+        $rimpulse_tables->{$table_name},
+        $rtail_shock_tables->{$table_name}
+    );
+}
+
 sub get_builtin_table {
     my ($table_name) = @_;
     return ( $rshock_tables->{$table_name} );
-}
-
-sub get_builtin_impulse_table {
-    my ($table_name) = @_;
-    return ( $rimpulse_tables->{$table_name} );
 }
 
 sub get_rgamma_table {
@@ -914,6 +918,8 @@ sub get_impulse {
                 $z_neg,  $Qint_pos,  $rovp_min,  $z_ovp_min,
                 $ke_pos, $work_pos,  $Disp_pos
             ) = @{$rrow};
+	    my $disp_pos = exp($Disp_pos);
+	    my $qint_pos = exp($Qint_pos);
             $rreturn_hash->{rpint_pos} = $rpint_pos;
             $rreturn_hash->{rpint_neg} = $rpint_neg;
             $rreturn_hash->{rovp_min}  = $rovp_min;
@@ -922,8 +928,8 @@ sub get_impulse {
             $rreturn_hash->{z_neg}     = $z_neg;
             $rreturn_hash->{KE_pos}    = $ke_pos;
             $rreturn_hash->{W_pos}     = $work_pos;
-            $rreturn_hash->{Disp_pos}  = $Disp_pos;
-            $rreturn_hash->{Qint_pos}  = $Qint_pos;
+            $rreturn_hash->{disp_pos}  = $disp_pos;
+            $rreturn_hash->{qint_pos}  = $qint_pos;
         }
     }
     return $rreturn_hash;
@@ -1500,22 +1506,29 @@ sub wavefront {
 
     # Get impulse and related values
     my $rimpulse_hash = $self->get_impulse($result);
-    my $rpint_pos;
-    my $ke_pos;
-    my $work_pos;
+    my (
+        $rpint_pos, $rpint_neg, $rovp_min, $z_ovp_min, $z_pos,
+        $z_neg,     $KE_pos,    $W_pos,    $disp_pos,  $qint_pos
+    );
     if ($rimpulse_hash) {
         $rpint_pos = $rimpulse_hash->{rpint_pos};
-        $ke_pos    = $rimpulse_hash->{KE_pos};
-        $work_pos  = $rimpulse_hash->{W_pos};
-        #print "BUBBA: rpint=$rpint\n";
-    }
-    else {
-	print "BUBBA: NO RESULT\n";
+        $rpint_neg = $rimpulse_hash->{rpint_neg};
+        $rovp_min  = $rimpulse_hash->{rovp_min};
+        $z_ovp_min = $rimpulse_hash->{z_ovp_min};
+        $z_pos     = $rimpulse_hash->{z_pos};
+        $z_neg     = $rimpulse_hash->{z_neg};
+        $KE_pos    = $rimpulse_hash->{KE_pos};
+        $W_pos     = $rimpulse_hash->{W_pos};
+        $disp_pos  = $rimpulse_hash->{disp_pos};
+        $qint_pos  = $rimpulse_hash->{qint_pos};
     }
 
     my $rs = exp($X);
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
+ 
+    # more accurate values
+    $Tpos = $zs - $z_pos;
 
     # FIXME: evaluate sigma and Sigma = sigma*r**(symmetry/2)
 
@@ -1539,18 +1552,28 @@ sub wavefront {
         'dErdX'     => $dErdX,                 
         'W_blast'   => $W_blast,
         'W_atm'     => $W_atm,
- 	'KE_pos'    => $ke_pos,
- 	'W_pos'     => $work_pos,
+ 	'KE_pos'    => $KE_pos,
+ 	'W_pos'     => $W_pos,
         'Tpos'      => $Tpos,
+        ##'Tpos2'     => $Tpos2,
         'Lpos'      => $Lpos,
-        'Tneg'      => $Tneg,
+        ##'Tneg'      => $Tneg,
+        ##'Tneg2'     => $Tneg2,
         'Lneg'      => $Lneg,
         'TableLoc'  => [ $il, $iu, $ntab ],
         'TableVars' => $result,
-        'Ixr_pos'   => $Sint_pos * $gamma,
-        'Ixr_neg'   => $Sint_neg * $gamma,
+        'Ixr_pos_lim'   => $Sint_pos * $gamma,
+        'Ixr_neg_lim'   => $Sint_neg * $gamma,
         'Sint_pos'  => $Sint_pos,
         'Sint_neg'  => $Sint_neg,
+        'Ixr_pos'   => $rpint_pos,
+        'Ixr_neg'   => $rpint_neg,
+	'rovp_min' => $rovp_min,
+	'z_ovp_min' => $z_ovp_min,
+        'z_pos'    => $z_pos,
+	'z_neg'    => $z_neg,
+	'disp_pos' => $disp_pos,
+	'qint_pos' => $qint_pos,
     };
     return $return_hash;
 }
