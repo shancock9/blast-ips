@@ -178,6 +178,39 @@ EOM
     return;
 }
 
+sub displacement {
+    my ($dV, $rs, $symmetry)=@_;
+    my $pi=4*atan2(1,1);
+    my $dV_calc = sub {
+        my ($del) = @_;
+        my $r = $rs + $del;
+        my $dV;
+        my $dVddel;
+        if ( $symmetry == 0 ) {
+            $dV     = $del;
+            $dVddel = 1;
+        }
+        elsif ( $symmetry == 1 ) {
+            $dV     = $pi * ( $rs + $r ) * $del;
+            $dVddel = $pi * ( ( $rs + $r ) + $del );
+        }
+        elsif ( $symmetry == 2 ) {
+
+            # Note (a-b)(a**2+ab+b**2)=a**3-b**3
+            my $rsq       = ( $rs**2 + $rs * $r + $r**2 ) / 3;
+            my $drsq_ddel = ( $rs + 2 * $r ) / 3;
+
+            #$dV = 4 / 3 * $pi * ( $rs**2 + $rs * $r + $r**2 ) * $del;
+            $dV = 4 * $pi * $rsq * $del;
+            $dVddel = 4 * $pi * ( $drsq_ddel * $del + $rsq );
+        }
+        return $dV;
+    };
+
+    # TBD: use newtons method
+
+}
+
 sub point_evaluations {
     my ( $blast_table, $medium, $units ) = @_;
     if ( $units eq 'D' ) {
@@ -488,6 +521,8 @@ sub point_evaluations_dimensionless {
 
         my $pstr =
           ( $symmetry == 2 ) ? "x r" : ( $symmetry == 1 ) ? "x r^1/2" : "";
+#r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
+#r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
         print <<EOM;
 
 Results at a point; symmetry=$symmetry, gamma=$gamma:
@@ -506,10 +541,8 @@ m  = $m = S/c0=shock Mach number
 q  = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
 r^n/2 pmin = $rovp_min = minimum overpressure $pstr
-r^n/2 I+ = $Ixr_pos = positive phase impulse $pstr
-r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
-r^n/2 I- = $Ixr_neg = negative phase impulse $pstr
-r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
+r^n/2 I+ = $Ixr_pos = positive phase overpressure impulse $pstr
+r^n/2 I- = $Ixr_neg = negative phase overpressure impulse $pstr
 qint+   = $qint_pos = positive phase dynamic impulse
 E0      = $E0 = initial total energy $e_unit
 E1      = $E1 = residual energy of main shock to this range $e_unit

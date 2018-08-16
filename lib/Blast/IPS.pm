@@ -877,9 +877,11 @@ sub _update_toa_table {
 sub get_impulse {
     my ( $self, $result ) = @_;
     my $rimpulse_table = $self->{_rimpulse_table};
+    return unless ($rimpulse_table);
     my $jl             = $self->{_jl2};
     my $ju             = $self->{_ju2};
-    return unless ($rimpulse_table);
+    my $symmetry       = $self->{_symmetry};
+    my $gamma          = $self->{_gamma};
     my $rreturn_hash;
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$result};
 
@@ -895,43 +897,121 @@ sub get_impulse {
     $self->{_ju2} = $ju;
     return unless ( defined($jl) );
 
+    my (
+        $rpint_pos, $rpint_neg, $z_pos,  $z_neg,    $Qint_pos,
+        $rovp_min,  $z_ovp_min, $ke_pos, $work_pos, $Disp_pos,
+    );
+
     # Handle case before start of the table
     if ( $jl < 0 ) {
 
-        # FIXME
-        # short range
+        my $rrow = $rimpulse_table->[0];
+        my (
+            $X_b,      $Y_b, $rpint_pos_b, $rpint_neg_b, $z_pos_b,
+            $z_neg_b,  $Qint_pos_b,  $rovp_min_b,  $z_ovp_min_b,
+            $ke_pos_b, $work_pos_b,  $Disp_pos_b,
+        ) = @{$rrow};
+
+
+	# ke_pos becomes constant (the KE of the similarity solution)
+	$ke_pos = $ke_pos_b;
+
+	# positive work equals total work since there is no negative work
+        # my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $Er, $dErdX ) = @{$result};
+	my $Er = $result->[$I_Er];
+	$work_pos = 1-$gamma*$Er;
+
+	# ovp_min becomes constant (and equal to min central pressure)
+	my $r_b=exp($X_b);
+	my $r = exp($X);
+	my $rprat = ($r/$r_b)**($symmetry/2);
+	$rovp_min = $rovp_min_b*$rprat;
+
+	# time of ovp_min becomes a constant (time of central pressure min), so
+	# t=r-z constant or z-r=constant or
+        $z_ovp_min = $z_ovp_min + $r - $r_b;
+
+	# pint_neg becomes constant (and equal to min central pressure)
+	$rpint_neg = $rpint_neg_b*$rprat;
+
+	# z coordinates of zero overpressure lines are constant at early time
+	# (they approach the times of the central pressure)
+	$z_pos = $z_pos_b;
+	$z_neg = $z_neg_b;
+
+	# NOTE: dQint_pos/dX appears to become exactly -0.5 for spherical symmetry
+
+	# FIXME:
+	# rpint_pos = ? (pint goes slowly to infinity; rpint goes slowly to zero)
+        # use log extrapolation; dlnp/dlnr is about -0.25
+
+        # FIXME: 
+	# Disp_pos = ?
+
     }
 
     # Handle case beyond end of the table
     elsif ( $ju >= $ntab ) {
 
-        # FIXME
-        # long range
+        my $rrow = $rimpulse_table->[-1];
+        my (
+            $X_e,      $Y_e, $rpint_pos_e, $rpint_neg_e, $z_pos_e,
+            $z_neg_e,  $Qint_pos_e,  $rovp_min_e,  $z_ovp_min_e,
+            $ke_pos_e, $work_pos_e,  $Disp_pos_e,
+        ) = @{$rrow};
+
+	# FIXME: rovp_min and z_ovp_min at long range require some work
+
+	# Qint_pos varis in proportion to Sigma/r^n at long range
+        # so ln(q_pos) is proportional to ln(p*r^n/2 r^-n) = ln(p)-n/2 ln(r) = Y-(n/2)X
+	# also note that this implies dln(Q)/dX = dY/dX-n/2 [agrees with tables fairly well]
+        $Qint_pos = $Qint_pos_e + $Y - $Y_e - ( $symmetry / 2 ) * ( $X - $X_e );
+
+	# radius^(n/2) x impulse becomes constant at long range
+	$rpint_pos = $rpint_pos_e;
+	$rpint_neg = $rpint_neg_e;
+
+	# z coordinates of zero overpressure lines become constant at long range
+	$z_pos = $z_pos_e;
+	$z_neg = $z_neg_e;
+
+	# peak displacement times r^(n/2) becomes constant and equals the integral of Sigma
+	# so ln{disp * (n/2)r} = const = ln(disp)+(n/2)X = Disp_e + n/2 X_e
+	$Disp_pos = $Disp_pos_e + ($symmetry/2)*($X_e-$X);
+
+	# KE and Work are proportional to Sigma = ovp*r^(n/2), so
+	# ln(W) - ln(We) = ln(ovp)-ln(ovp_e) + (n/2)*(X-X_e)
+	# ln(W) = ln(We) + Y-Y + (n/2)*(X-X_e)
+        my $dW = $Y - $Y_e + ( $symmetry / 2 ) * ( $X - $X_e );
+        if ( $work_pos_e && $ke_pos_e ) {
+            $work_pos = exp( log($work_pos_e) + $dW );
+            $ke_pos   = exp( log($ke_pos_e) + $dW );
+        }
     }
 
     # otherwise interpolate within table
     else {
-        my $rrow = _interpolate_table_rows( $X, $rimpulse_table, $jl);
+        my $rrow = _interpolate_table_rows( $X, $rimpulse_table, $jl );
         if ($rrow) {
-            my (
-                $X_i,    $rpint_pos, $rpint_neg, $z_pos,
+            (
+                my $X_i, my $Y_i, $rpint_pos, $rpint_neg, $z_pos,
                 $z_neg,  $Qint_pos,  $rovp_min,  $z_ovp_min,
                 $ke_pos, $work_pos,  $Disp_pos
             ) = @{$rrow};
-	    my $disp_pos = exp($Disp_pos);
-	    my $qint_pos = exp($Qint_pos);
-            $rreturn_hash->{rpint_pos} = $rpint_pos;
-            $rreturn_hash->{rpint_neg} = $rpint_neg;
-            $rreturn_hash->{rovp_min}  = $rovp_min;
-            $rreturn_hash->{z_ovp_min} = $z_ovp_min;
-            $rreturn_hash->{z_pos}     = $z_pos; 
-            $rreturn_hash->{z_neg}     = $z_neg;
-            $rreturn_hash->{KE_pos}    = $ke_pos;
-            $rreturn_hash->{W_pos}     = $work_pos;
-            $rreturn_hash->{disp_pos}  = $disp_pos;
-            $rreturn_hash->{qint_pos}  = $qint_pos;
         }
     }
+    my $disp_pos = defined($Disp_pos) ? exp($Disp_pos) : undef;
+    my $qint_pos = defined($Qint_pos) ? exp($Qint_pos) : undef;
+    $rreturn_hash->{rpint_pos} = $rpint_pos;
+    $rreturn_hash->{rpint_neg} = $rpint_neg;
+    $rreturn_hash->{rovp_min}  = $rovp_min;
+    $rreturn_hash->{z_ovp_min} = $z_ovp_min;
+    $rreturn_hash->{z_pos}     = $z_pos;
+    $rreturn_hash->{z_neg}     = $z_neg;
+    $rreturn_hash->{KE_pos}    = $ke_pos;
+    $rreturn_hash->{W_pos}     = $work_pos;
+    $rreturn_hash->{disp_pos}  = $disp_pos;
+    $rreturn_hash->{qint_pos}  = $qint_pos;
     return $rreturn_hash;
 }
 
@@ -1527,8 +1607,8 @@ sub wavefront {
     my $zs = exp($Z);
     my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
  
-    # more accurate values
-    $Tpos = $zs - $z_pos;
+    # use more accurate value if possible
+    if (defined($z_pos)) {$Tpos = $zs - $z_pos;}
 
     # FIXME: evaluate sigma and Sigma = sigma*r**(symmetry/2)
 
