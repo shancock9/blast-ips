@@ -929,7 +929,7 @@ sub get_impulse {
 
 	# time of ovp_min becomes a constant (time of central pressure min), so
 	# t=r-z constant or z-r=constant or
-        $z_ovp_min = $z_ovp_min + $r - $r_b;
+        $z_ovp_min = $z_ovp_min_b + $r - $r_b;
 
 	# pint_neg becomes constant (and equal to min central pressure)
 	$rpint_neg = $rpint_neg_b*$rprat;
