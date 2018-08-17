@@ -178,39 +178,6 @@ EOM
     return;
 }
 
-sub displacement {
-    my ($dV, $rs, $symmetry)=@_;
-    my $pi=4*atan2(1,1);
-    my $dV_calc = sub {
-        my ($del) = @_;
-        my $r = $rs + $del;
-        my $dV;
-        my $dVddel;
-        if ( $symmetry == 0 ) {
-            $dV     = $del;
-            $dVddel = 1;
-        }
-        elsif ( $symmetry == 1 ) {
-            $dV     = $pi * ( $rs + $r ) * $del;
-            $dVddel = $pi * ( ( $rs + $r ) + $del );
-        }
-        elsif ( $symmetry == 2 ) {
-
-            # Note (a-b)(a**2+ab+b**2)=a**3-b**3
-            my $rsq       = ( $rs**2 + $rs * $r + $r**2 ) / 3;
-            my $drsq_ddel = ( $rs + 2 * $r ) / 3;
-
-            #$dV = 4 / 3 * $pi * ( $rs**2 + $rs * $r + $r**2 ) * $del;
-            $dV = 4 * $pi * $rsq * $del;
-            $dVddel = 4 * $pi * ( $drsq_ddel * $del + $rsq );
-        }
-        return $dV;
-    };
-
-    # TBD: use newtons method
-
-}
-
 sub point_evaluations {
     my ( $blast_table, $medium, $units ) = @_;
     if ( $units eq 'D' ) {
@@ -485,15 +452,9 @@ sub point_evaluations_dimensionless {
         my $up      = $y / ( $gamma * $m );
 
 
-	########################################
-	# FIXME: not exact; must iterate or fix for roundoff
 	my $dV_atm = $W_atm/$p_amb;
 	my $rbar = $x;
-        my $disp_end =
-            ( $symmetry == 2 ) ? $dV_atm / ( 4 * $pi * $rbar**2) 
-          : ( $symmetry == 1 ) ? $dV_atm / (2*$pi *$rbar)
-          :                      $dV_atm;
-	########################################
+	my $disp_end = displacement($dV_atm, $x, $symmetry);
 
 	my $dt_pos = $z-$z_pos;
 	my $dt_min = $z-$z_ovp_min;
@@ -875,4 +836,60 @@ sub ifyes {
         print STDERR "Please answer 'Y' or 'N'\n";
         goto ASK;
     }
+}
+
+sub displacement {
+    my ( $dV, $rs, $symmetry ) = @_;
+
+    # Given a $dV=a volume change, $rs=starting radius, and symmetry:
+    # Compute the displacement of the radius to give the volume change
+
+    # plane symmetry, volume = radius
+    if ( $symmetry == 0 ) { return $dV }
+
+    my $pi = 4 * atan2( 1, 1 );
+    return   if ( $rs < 0 );
+    return 0 if ( $dV == 0 );
+
+    # cylindrical symmetry, volume = pi * r**2
+    # so solve dV/pi = (rs+d)**2-rs**2 = (2*rs+d)*d 
+    if ( $symmetry == 1 ) {
+        my $root = $rs**2 - $dV / $pi;
+        return -$rs if ( $root <= 0 );
+        my $dis = 2 * sqrt($root) - $rs;
+        return $dis;
+    }
+
+    # spherical symmetry
+    my $V0 = 4 / 3 * $pi * $rs**3;
+    if ( $dV <= -$V0 ) { return -$rs }
+
+    my $fofx = sub {
+        my ($xx) = @_;
+        my $rr = $rs + $xx;
+
+        # Note (a-b)(a**2+ab+b**2)=a**3-b**3
+        my $rsq      = ( $rs**2 + $rs * $rr + $rr**2 ) / 3;
+        my $drsq_dxx = ( $rs + 2 * $rr ) / 3;
+        my $ff       = 4 * $pi * $rsq * $xx - $dV;
+        my $dfdx     = 4 * $pi * ( $rsq + $xx * $drsq_dxx );
+        return ( $ff, $dfdx );
+    };
+
+    # newton iterations
+    ##my $xx0 = $dV / ( 4 * $pi * $rs**2 );
+
+    # Start X at a value which works for very small rs
+    my $xx = ( 3 * $dV / ( 4 * $pi ) )**( 1 / 3 );
+    my $tol = 1.e-8;
+    for ( my $it = 0 ; $it < 10 ; $it++ ) {
+        my ( $ff, $dfdx ) = $fofx->($xx);
+        my $dx      = -$ff / $dfdx;
+        my $V       = 4 / 3 * $pi * ( $rs + $xx )**3;
+        my $dV_test = $V - $V0;
+        #print "it=$it, x=$xx, dx=$dx, f=$ff, dfdx=$dfdx dV_test=$dV_test\n";
+        $xx += $dx;
+        last if ( abs($dx) < $tol * $rs );
+    }
+    return $xx;
 }

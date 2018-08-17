@@ -912,7 +912,6 @@ sub get_impulse {
             $ke_pos_b, $work_pos_b,  $Disp_pos_b,
         ) = @{$rrow};
 
-
 	# ke_pos becomes constant (the KE of the similarity solution)
 	$ke_pos = $ke_pos_b;
 
@@ -924,8 +923,10 @@ sub get_impulse {
 	# ovp_min becomes constant (and equal to min central pressure)
 	my $r_b=exp($X_b);
 	my $r = exp($X);
-	my $rprat = ($r/$r_b)**($symmetry/2);
-	$rovp_min = $rovp_min_b*$rprat;
+        my $rpow_b = $r_b**( $symmetry / 2 );
+        my $rpow   = $r**( $symmetry / 2 );
+        my $rprat  = ( $r / $r_b )**( $symmetry / 2 );
+        $rovp_min = $rovp_min_b * $rprat;
 
 	# time of ovp_min becomes a constant (time of central pressure min), so
 	# t=r-z constant or z-r=constant or
@@ -939,15 +940,40 @@ sub get_impulse {
 	$z_pos = $z_pos_b;
 	$z_neg = $z_neg_b;
 
-	# NOTE: dQint_pos/dX appears to become exactly -0.5 for spherical symmetry
+	# use log extrapolation for these variables:
+	$Disp_pos = $Disp_pos_b;
+	$Qint_pos = $Qint_pos_b;
+	$rpint_pos = $rpint_pos_b;
 
-	# FIXME:
-	# rpint_pos = ? (pint goes slowly to infinity; rpint goes slowly to zero)
-        # use log extrapolation; dlnp/dlnr is about -0.25
+        if ( @{$rimpulse_table} > 2 ) {
+            my $rrow_a = $rimpulse_table->[1];
+            my (
+                $X_a,         $Y_a,      $rpint_pos_a, $rpint_neg_a,
+                $z_pos_a,     $z_neg_a,  $Qint_pos_a,  $rovp_min_a,
+                $z_ovp_min_a, $ke_pos_a, $work_pos_a,  $Disp_pos_a,
+            ) = @{$rrow_a};
 
-        # FIXME: 
-	# Disp_pos = ?
+	    my $F_a = log($rpint_pos_a);
+	    my $F_b = log($rpint_pos_b);
+	   
+            my $dX   = ( $X_a - $X_b );
+            my $dQdX = ( $Qint_pos_a - $Qint_pos_b ) / $dX;
+            my $dDdX = ( $Disp_pos_a - $Disp_pos_b ) / $dX;
+            my $dFdX = ( $F_a - $F_b ) / $dX;
 
+            $Qint_pos = $Qint_pos_b + $dQdX * ( $X - $X_b );
+            $Disp_pos = $Disp_pos_b + $dDdX * ( $X - $X_b );
+            my $FF = $F_b + $dFdX * ( $X - $X_b );
+	    $rpint_pos = exp($FF);
+
+	    # FIXME: check these
+	    # dQint_pos/dX appears to become exactly -0.5 for spherical symmetry
+	    # pint = rpint/r**(n/2)
+	    # ln(pint)=ln(rpint)-(n/2)X
+	    # dln(pint)/dX = dln(rpint)/dX-n/2
+            # dln(pint)/dX is about -0.25 for spherical sym so dln(rpint)/dX is about 0.25
+
+        }
     }
 
     # Handle case beyond end of the table
@@ -961,6 +987,9 @@ sub get_impulse {
         ) = @{$rrow};
 
 	# FIXME: rovp_min and z_ovp_min at long range require some work
+	# Set Tentative values for now
+	$z_ovp_min = $z_ovp_min_e;
+	$rovp_min = $rovp_min_e;
 
 	# Qint_pos varis in proportion to Sigma/r^n at long range
         # so ln(q_pos) is proportional to ln(p*r^n/2 r^-n) = ln(p)-n/2 ln(r) = Y-(n/2)X
