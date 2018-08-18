@@ -76,6 +76,12 @@ EOM
     }
 }
 
+#sub get_medium {
+#    my $patm_psi = 14.7;
+#    my $patm_pa  = 1.e5 * $patm_psi / 14.5;
+#    my $sspd     = 345;
+#}
+
 sub select_blast_table {
     my ( $blast_table, $medium ) = @_;
     my $symmetry = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
@@ -402,35 +408,42 @@ sub point_evaluations_dimensionless {
         else {
             die "coding incomplete for variable '$vname'";
         }
-        my $ret     = $blast_table->wavefront( $iQ => $Q );
-        my $X       = $ret->{X};
-        my $Y       = $ret->{Y};
-        my $Z       = $ret->{Z};
-        my $dYdX    = $ret->{dYdX};
-        my $dZdX    = $ret->{dZdX};
-        #my $Tpos    = $ret->{Tpos};
-        #my $Tpos2   = $ret->{Tpos2};
-        my $Lpos    = $ret->{Lpos};
-        #my $Tneg    = $ret->{Tneg};
-        #my $Tneg2   = $ret->{Tneg2};
-        my $Lneg    = $ret->{Lneg};
-        my $Ixr_pos = $ret->{Ixr_pos};
-        my $Ixr_neg = $ret->{Ixr_neg};
-        my $E1      = $ret->{E1};  
-        my $Er      = $ret->{Er};  
-        my $W_atm   = $ret->{W_atm};
-        my $W_blast = $ret->{W_blast};
-        my $dErdX   = $ret->{dErdX};  
-        my $dE1dX   = $ret->{dE1dX};  
-        my $dEdE1   = $dE1dX && $dErdX ? $dErdX/$dE1dX : 1;
-        my $ke_pos  = $ret->{KE_pos};  
-        my $work_pos= $ret->{W_pos};  
-        my $qint_pos= $ret->{qint_pos};  
-        my $z_pos= $ret->{z_pos};  
-        my $z_neg= $ret->{z_neg};  
-        my $z_ovp_min= $ret->{z_ovp_min};  
-        my $rovp_min= $ret->{rovp_min};  
-        my $disp_pos= $ret->{disp_pos};  
+        my $ret       = $blast_table->wavefront( $iQ => $Q );
+        my $X         = $ret->{X};
+        my $Y         = $ret->{Y};
+        my $Z         = $ret->{Z};
+        my $dYdX      = $ret->{dYdX};
+        my $dZdX      = $ret->{dZdX};
+        my $Lpos      = $ret->{Lpos};
+        my $Tpos      = $ret->{Tpos};
+        #my $Lneg      = $ret->{Lneg};
+        my $Ixr_pos   = $ret->{Ixr_pos};
+        my $Ixr_neg   = $ret->{Ixr_neg};
+        my $E1        = $ret->{E1};
+        my $Er        = $ret->{Er};
+        my $W_atm     = $ret->{W_atm};
+        my $W_blast   = $ret->{W_blast};
+        my $dErdX     = $ret->{dErdX};
+        my $dE1dX     = $ret->{dE1dX};
+        my $dEdE1     = $dE1dX && $dErdX ? $dErdX / $dE1dX : 1;
+        my $ke_pos    = $ret->{KE_pos};
+        my $work_pos  = $ret->{W_pos};
+        my $qint_pos  = $ret->{qint_pos};
+        my $z_pose_rs = $ret->{z_pose_rs};
+        my $z_nege_rs = $ret->{z_nege_rs};
+        my $z_pmin_rs = $ret->{z_pmin_rs};
+        my $rovp_min_rs  = $ret->{rovp_min_rs};
+        my $disp_pos  = $ret->{disp_pos};
+        my $TableLoc  = $ret->{TableLoc};
+        my $z_pose_ts = $ret->{z_pose_ts};
+        my $z_nege_ts = $ret->{z_nege_ts};
+        my $z_pmin_ts = $ret->{z_pmin_ts};
+
+	my ($il, $iu, $ntab)=@{$TableLoc};
+        my $table_location =
+            ( $il < 0 )     ? "Before Table Start"
+          : ( $iu > $ntab ) ? "Extrapolation Beyond Table End"
+          :                   "Table Interpolation";
 
 	# To be deleted:
         my $Ixr_pos_lim = $ret->{Ixr_pos_lim};
@@ -439,7 +452,7 @@ sub point_evaluations_dimensionless {
 	my $E0 = 1; ## For future use
 	my $E2 = $Er - $E1;
 
-        my $Tpmin = $z_ovp_min - $z_neg;
+        my $Tpmin = $z_pmin_rs - $z_nege_rs;
 
         my $x       = exp($X);
         my $y       = exp($Y);
@@ -456,19 +469,29 @@ sub point_evaluations_dimensionless {
 	my $rbar = $x;
 	my $disp_end = displacement($dV_atm, $x, $symmetry);
 
-	my $dt_pos = $z-$z_pos;
-	my $dt_min = $z-$z_ovp_min;
-	my $dt_neg = $z-$z_neg;
+        my $dt_pose_rs = $z - $z_pose_rs;
+        my $dt_pmin_rs = $z - $z_pmin_rs;
+        my $dt_nege_rs = $z - $z_nege_rs;
+
+        my $dr_pose_ts = $z - $z_pose_ts;
+        my $dr_pmin_ts = $z - $z_pmin_ts;
+        my $dr_nege_ts = $z - $z_nege_ts;
+
+        # derived variables
+        my ( $density_ratio_shock, $density_ratio_equilibrium ) =
+          density_ratios( $Y, $gamma );
+
 
         foreach ( $x, $y, $z, $t, $X, $Y, $Z, $T, $dYdX, $dZdX ) {
             $_ = sprintf( "%0.8g", $_ );
         }
+            #$Lpos,     $Lneg,     
         foreach (
-            $Lpos, $Lneg,    $m,
-            $q,     $up,   $Ixr_pos, $Ixr_neg, $E1,
-            $W_atm, $Er,    $E2, $W_blast, $dEdE1,
-	    $ke_pos, $work_pos,
-	    $dt_pos, $dt_min, $dt_neg, $rovp_min, $disp_pos, $disp_end
+            $m,        $q,       $up,      $Ixr_pos,
+            $Ixr_neg,  $E1,       $W_atm,    $Er,      $E2,      $W_blast,
+            $dEdE1,    $ke_pos,   $work_pos, $dt_pose_rs, $dt_pmin_rs, $dt_nege_rs,
+            $dr_pose_ts, $dr_pmin_ts, $dr_nege_ts,
+            $rovp_min_rs, $disp_pos, $disp_end, $Lpos, $Tpos,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -484,24 +507,29 @@ sub point_evaluations_dimensionless {
           ( $symmetry == 2 ) ? "x r" : ( $symmetry == 1 ) ? "x r^1/2" : "";
 #r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
 #r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
+#L-    = $Lneg = (OLD) length of negative phase $d_unit
         print <<EOM;
 
-Results at a point; symmetry=$symmetry, gamma=$gamma:
-
+Results at a single point; symmetry=$symmetry, gamma=$gamma; 
+Shock Table Region: $table_location
 x    = $x = scaled range r/d;       ln(x) = X = $X 
 y    = $y = (P-P0)/P0;              ln(y) = Y = $Y 
 z    = $z = (r-c0 t)/d;             ln(z) = Z = $Z 
 toa  = $t = scaled time of arrival  ln(t) = T = $T 
 dYdX = $dYdX
-t+   - toa = $dt_pos = time duration to first zero overpressure $t_unit
-tmin - toa = $dt_min = time duration to minimum overpressure $t_unit
-t-   - toa = $dt_neg = time duration to second zero overpressure $t_unit (spherical only)
-L+ = $Lpos = length of positive phase $d_unit
-L- = $Lneg = length of negative phase $d_unit
-m  = $m = S/c0=shock Mach number
-q  = $q = 1/m^2
+t+   - toa = $Tpos = (OLD) time duration to end of positive overpressure phase at shock radius, $t_unit
+t+   - toa = $dt_pose_rs = time duration to end of positive overpressure phase at shock radius, $t_unit
+tmin - toa = $dt_pmin_rs = time duration to minimum overpressure at shock radius, $t_unit
+t-   - toa = $dt_nege_rs = time duration to end of negative phase at shock radius, $t_unit (spherical only)
+L+    = $Lpos = (OLD) length of positive phase $d_unit
+L+    = $dr_pose_ts = distance from shock front to end of positive phase $d_unit
+Lmin  = $dr_pmin_ts = distance from shock front to minimum overpressure $d_unit
+L-    = $dr_nege_ts = distance from shock front to end of negative phase $d_unit
+m  = $m = S/c0=shock Mach number;  q = $q = 1/m^2
 up = $up = shock particle velocity $u_unit
-r^n/2 pmin = $rovp_min = minimum overpressure $pstr
+rho_s/rho0 = $density_ratio_shock = density ratio at shock
+rho_end/rho0 = $density_ratio_equilibrium = final density ratio
+r^n/2 pmin = $rovp_min_rs = minimum overpressure $pstr
 r^n/2 I+ = $Ixr_pos = positive phase overpressure impulse $pstr
 r^n/2 I- = $Ixr_neg = negative phase overpressure impulse $pstr
 qint+   = $qint_pos = positive phase dynamic impulse
@@ -892,4 +920,15 @@ sub displacement {
         last if ( abs($dx) < $tol * $rs );
     }
     return $xx;
+}
+
+sub density_ratios {
+    my ( $Y, $gamma ) = @_;
+    my $y = exp($Y);
+    my $rho_amb = $gamma;
+    my $top     = ( $gamma + 1 ) * ( $y + 1 ) + ( $gamma - 1 );
+    my $bot     = ( $gamma - 1 ) * ( $y + 1 ) + ( $gamma + 1 );
+    my $density_ratio_shock = $top / $bot;
+    my $density_ratio_ambient = $density_ratio_shock * ( 1 / ( 1 + $y ) )**( 1 / $gamma );
+    return ($density_ratio_shock, $density_ratio_ambient);
 }

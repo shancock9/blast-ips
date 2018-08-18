@@ -370,8 +370,11 @@ EOM
         $num_table = @{$rtable};
     }
 
+    my $rztables = _make_z_tables($rimpulse_table);
+
     $self->{_rtable}                  = $rtable;
     $self->{_rimpulse_table}          = $rimpulse_table;
+    $self->{_rztables}                = $rztables;
     $self->{_rtail_shock_table_table} = $rtail_shock_table;
     $self->{_table_name}              = $table_name;
     $self->{_loc_gamma_table}         = $loc_gamma_table;
@@ -641,10 +644,11 @@ sub get_builtin_tables {
     );
 }
 
-sub get_builtin_table {
-    my ($table_name) = @_;
-    return ( $rshock_tables->{$table_name} );
-}
+##sub get_builtin_table {
+##    my ($table_name) = @_;
+##    # OBSOLETE: use get_builtin_tables
+##    return ( $rshock_tables->{$table_name} );
+##}
 
 sub get_rgamma_table {
     return $rgamma_table;
@@ -862,6 +866,39 @@ sub _update_toa_row {
     return;
 }
 
+
+sub _make_z_tables {
+    my ($rimpulse_table) = @_;
+    return unless defined($rimpulse_table);
+
+# Create three tables of z values from the impulse table:
+# [T_pose, z_pose] = time history of points on the end of the positive phase
+# [T_pmin, z_pmin] = time history of points on the minimum overpressure characteristic
+# [T_nege, z_nege] = time history of points on the end of the negitive phase
+
+# These will allow us to define key points on wave profiles
+
+    my ( $rzpose_table, $rzpmin_table, $rznege_table );
+    foreach my $rrow ( @{$rimpulse_table} ) {
+        my (
+            $X,         $Y,         $Z,        $rpint_pos, $rpint_neg,
+            $z_pose_rs, $z_nege_rs, $Qint_pos, $rovp_min,  $z_pmin_rs,
+            $ke_pos,    $work_pos,  $Disp_pos
+        ) = @{$rrow};
+        my $rs        = exp($X);
+        my $t_pose_rs = $rs - $z_pose_rs;
+        my $t_nege_rs = $rs - $z_nege_rs;
+        my $t_pmin_rs = $rs - $z_pmin_rs;
+        my $T_pose_rs = log($t_pose_rs);
+        my $T_pmin_rs = log($t_pmin_rs);
+        my $T_nege_rs = log($t_nege_rs);
+        push @{$rzpose_table}, [ $T_pose_rs, $z_pose_rs ];
+        push @{$rzpmin_table}, [ $T_pmin_rs, $z_pmin_rs ];
+        push @{$rznege_table}, [ $T_nege_rs, $z_nege_rs ];
+    }
+    return [ $rzpose_table, $rzpmin_table, $rznege_table ];
+}
+
 sub _update_toa_table {
     my ($rtable) = @_;
 
@@ -873,6 +910,45 @@ sub _update_toa_table {
     return; 
 }
 
+sub get_z {
+    my ( $self, $T, $rztab, $z_default ) = @_;
+
+    # Given T, lookup the value of z in a table of the form [T,z]
+    # return -t before the start of the table
+    # return the supplied default beyond the end of the table
+    return unless ($rztab);
+    my $jl = $self->{_jl2};
+    my $ju = $self->{_ju2};
+
+    # Locate this point in the table
+    my $ntab  = @{$rztab};
+    my $rhash = {
+        _jl     => $jl,
+        _ju     => $ju,
+        _rtable => $rztab,
+    };
+    ( $jl, $ju ) = _locate_2d( $rhash, $T, 0 );
+    my $zz;
+    my $tt = exp($T);
+    if ( $jl < 0 ) { 
+
+	# before start of table; 
+	# assume pos phase ends at origin (r=0), so
+        $zz = -$tt; 
+    }
+    elsif ( $ju >= $ntab ) {
+
+        # off end of table; use supplied default
+        $zz = $z_default;
+    }
+    else {
+        my $rrow = _interpolate_table_rows( $T, $rztab, $jl );
+        if ($rrow) {
+            $zz = $rrow->[1];
+        }
+    }
+    return $zz;
+}
 
 sub get_impulse {
     my ( $self, $result ) = @_;
@@ -898,8 +974,8 @@ sub get_impulse {
     return unless ( defined($jl) );
 
     my (
-        $rpint_pos, $rpint_neg, $z_pos,  $z_neg,    $Qint_pos,
-        $rovp_min,  $z_ovp_min, $ke_pos, $work_pos, $Disp_pos,
+        $rpint_pos, $rpint_neg, $z_pose_rs,  $z_nege_rs,    $Qint_pos,
+        $rovp_min,  $z_pmin_rs, $ke_pos, $work_pos, $Disp_pos,
     );
 
     # Handle case before start of the table
@@ -907,9 +983,10 @@ sub get_impulse {
 
         my $rrow = $rimpulse_table->[0];
         my (
-            $X_b,      $Y_b, $rpint_pos_b, $rpint_neg_b, $z_pos_b,
-            $z_neg_b,  $Qint_pos_b,  $rovp_min_b,  $z_ovp_min_b,
-            $ke_pos_b, $work_pos_b,  $Disp_pos_b,
+            $X_b,         $Y_b,            $Z_b,        $rpint_pos_b,
+            $rpint_neg_b, $z_pose_rs_b,     $z_nege_rs_b, $Qint_pos_b,
+            $rovp_min_b,  $z_pmin_rs_b, $ke_pos_b,   $work_pos_b,
+            $Disp_pos_b,
         ) = @{$rrow};
 
 	# ke_pos becomes constant (the KE of the similarity solution)
@@ -930,15 +1007,15 @@ sub get_impulse {
 
 	# time of ovp_min becomes a constant (time of central pressure min), so
 	# t=r-z constant or z-r=constant or
-        $z_ovp_min = $z_ovp_min_b + $r - $r_b;
+        $z_pmin_rs = $z_pmin_rs_b + $r - $r_b;
 
 	# pint_neg becomes constant (and equal to min central pressure)
 	$rpint_neg = $rpint_neg_b*$rprat;
 
 	# z coordinates of zero overpressure lines are constant at early time
 	# (they approach the times of the central pressure)
-	$z_pos = $z_pos_b;
-	$z_neg = $z_neg_b;
+	$z_pose_rs = $z_pose_rs_b;
+	$z_nege_rs = $z_nege_rs_b;
 
 	# use log extrapolation for these variables:
 	$Disp_pos = $Disp_pos_b;
@@ -948,9 +1025,10 @@ sub get_impulse {
         if ( @{$rimpulse_table} > 2 ) {
             my $rrow_a = $rimpulse_table->[1];
             my (
-                $X_a,         $Y_a,      $rpint_pos_a, $rpint_neg_a,
-                $z_pos_a,     $z_neg_a,  $Qint_pos_a,  $rovp_min_a,
-                $z_ovp_min_a, $ke_pos_a, $work_pos_a,  $Disp_pos_a,
+                $X_a,         $Y_a,         $Z_a,      $rpint_pos_a,
+                $rpint_neg_a, $z_pose_rs_a,     $z_nege_rs_a,  $Qint_pos_a,
+                $rovp_min_a,  $z_pmin_rs_a, $ke_pos_a, $work_pos_a,
+                $Disp_pos_a,
             ) = @{$rrow_a};
 
 	    my $F_a = log($rpint_pos_a);
@@ -981,14 +1059,15 @@ sub get_impulse {
 
         my $rrow = $rimpulse_table->[-1];
         my (
-            $X_e,      $Y_e, $rpint_pos_e, $rpint_neg_e, $z_pos_e,
-            $z_neg_e,  $Qint_pos_e,  $rovp_min_e,  $z_ovp_min_e,
-            $ke_pos_e, $work_pos_e,  $Disp_pos_e,
+            $X_e,         $Y_e,         $Z_e,      $rpint_pos_e,
+            $rpint_neg_e, $z_pose_rs_e,     $z_nege_rs_e,  $Qint_pos_e,
+            $rovp_min_e,  $z_pmin_rs_e, $ke_pos_e, $work_pos_e,
+            $Disp_pos_e,
         ) = @{$rrow};
 
-	# FIXME: rovp_min and z_ovp_min at long range require some work
+	# FIXME: rovp_min and z_pmin_rs at long range require some work
 	# Set Tentative values for now
-	$z_ovp_min = $z_ovp_min_e;
+	$z_pmin_rs = $z_pmin_rs_e;
 	$rovp_min = $rovp_min_e;
 
 	# Qint_pos varis in proportion to Sigma/r^n at long range
@@ -1001,8 +1080,8 @@ sub get_impulse {
 	$rpint_neg = $rpint_neg_e;
 
 	# z coordinates of zero overpressure lines become constant at long range
-	$z_pos = $z_pos_e;
-	$z_neg = $z_neg_e;
+	$z_pose_rs = $z_pose_rs_e;
+	$z_nege_rs = $z_nege_rs_e;
 
 	# peak displacement times r^(n/2) becomes constant and equals the integral of Sigma
 	# so ln{disp * (n/2)r} = const = ln(disp)+(n/2)X = Disp_e + n/2 X_e
@@ -1023,9 +1102,9 @@ sub get_impulse {
         my $rrow = _interpolate_table_rows( $X, $rimpulse_table, $jl );
         if ($rrow) {
             (
-                my $X_i, my $Y_i, $rpint_pos, $rpint_neg, $z_pos,
-                $z_neg,  $Qint_pos,  $rovp_min,  $z_ovp_min,
-                $ke_pos, $work_pos,  $Disp_pos
+                my $X_i, my $Y_i,   my $Z_i,   $rpint_pos, $rpint_neg,
+                $z_pose_rs,  $z_nege_rs,    $Qint_pos, $rovp_min,  $z_pmin_rs,
+                $ke_pos, $work_pos, $Disp_pos
             ) = @{$rrow};
         }
     }
@@ -1034,9 +1113,9 @@ sub get_impulse {
     $rreturn_hash->{rpint_pos} = $rpint_pos;
     $rreturn_hash->{rpint_neg} = $rpint_neg;
     $rreturn_hash->{rovp_min}  = $rovp_min;
-    $rreturn_hash->{z_ovp_min} = $z_ovp_min;
-    $rreturn_hash->{z_pos}     = $z_pos;
-    $rreturn_hash->{z_neg}     = $z_neg;
+    $rreturn_hash->{z_pmin_rs} = $z_pmin_rs;
+    $rreturn_hash->{z_pose_rs}     = $z_pose_rs;
+    $rreturn_hash->{z_nege_rs}     = $z_nege_rs;
     $rreturn_hash->{KE_pos}    = $ke_pos;
     $rreturn_hash->{W_pos}     = $work_pos;
     $rreturn_hash->{disp_pos}  = $disp_pos;
@@ -1485,9 +1564,8 @@ sub wavefront {
     #       'dYdX' if Q = dY/dX = d(ln p)/d(ln r)
     #       'Z'    if Q = ln(R-cT), where T=scaled time of arrival
     #       'dZdX' if Q = dZ/dX
-    # OLD:  'W'    if Q = ln(T), where T=scaled time of arrival
-    # NEW:  'T'    if Q = ln(T), where T=scaled time of arrival
-    #       'dWdX' if Q = dW/dX
+    #       'T'    if Q = ln(T), where T=scaled time of arrival
+    #       'dTdX' if Q = dT/dX
 
     # The hash may also contain (mainly for debugging):
     #      'interpolation_flag' => $interp
@@ -1604,10 +1682,10 @@ sub wavefront {
 
     # PATCH: Avoid trouble in case user adds a table without E variables
     if ( !defined($E1) ) { $E1 = 0; $dE1dX = 0 }
-    if ( !defined($Er) ) { $Er = 0; $dErdX  = 0 }
+    if ( !defined($Er) ) { $Er = 0; $dErdX = 0 }
 
-    # Fix possible minor problem in which slight differences in interpolation can cause
-    # Er to be slightly below E1 at the threshold of a tail shock.
+    # Fix possible minor problem in which slight differences in interpolation
+    # can cause Er to be slightly below E1 at the threshold of a tail shock.
     if ( $Er < $E1 ) { $Er = $E1 }
 
     my $W_blast = 1 - $gamma * $Er;
@@ -1616,73 +1694,84 @@ sub wavefront {
     # Get impulse and related values
     my $rimpulse_hash = $self->get_impulse($result);
     my (
-        $rpint_pos, $rpint_neg, $rovp_min, $z_ovp_min, $z_pos,
-        $z_neg,     $KE_pos,    $W_pos,    $disp_pos,  $qint_pos
+        $rpint_pos, $rpint_neg, $rovp_min, $z_pmin_rs, $z_pose_rs,
+        $z_nege_rs,  $KE_pos,    $W_pos,    $disp_pos,     $qint_pos
     );
     if ($rimpulse_hash) {
-        $rpint_pos = $rimpulse_hash->{rpint_pos};
-        $rpint_neg = $rimpulse_hash->{rpint_neg};
-        $rovp_min  = $rimpulse_hash->{rovp_min};
-        $z_ovp_min = $rimpulse_hash->{z_ovp_min};
-        $z_pos     = $rimpulse_hash->{z_pos};
-        $z_neg     = $rimpulse_hash->{z_neg};
-        $KE_pos    = $rimpulse_hash->{KE_pos};
-        $W_pos     = $rimpulse_hash->{W_pos};
-        $disp_pos  = $rimpulse_hash->{disp_pos};
-        $qint_pos  = $rimpulse_hash->{qint_pos};
+        $rpint_pos    = $rimpulse_hash->{rpint_pos};
+        $rpint_neg    = $rimpulse_hash->{rpint_neg};
+        $rovp_min     = $rimpulse_hash->{rovp_min};
+        $z_pmin_rs = $rimpulse_hash->{z_pmin_rs};
+        $z_pose_rs     = $rimpulse_hash->{z_pose_rs};
+        $z_nege_rs     = $rimpulse_hash->{z_nege_rs};
+        $KE_pos       = $rimpulse_hash->{KE_pos};
+        $W_pos        = $rimpulse_hash->{W_pos};
+        $disp_pos     = $rimpulse_hash->{disp_pos};
+        $qint_pos     = $rimpulse_hash->{qint_pos};
     }
-
-    my $rs = exp($X);
-    my $zs = exp($Z);
-    my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
- 
-    # use more accurate value if possible
-    if (defined($z_pos)) {$Tpos = $zs - $z_pos;}
 
     # FIXME: evaluate sigma and Sigma = sigma*r**(symmetry/2)
 
-    # FIXME: Should we report distance to the zero p or distance
-    # between the two zero's???
+    # find z coordinates along a profile in space which includes this shock
+    my ( $z_pose_ts, $z_pmin_ts, $z_nege_ts ) = ($z_pose_rs, $z_pmin_rs, $z_nege_rs);
+
+    my $rztables = $self->{_rztables};
+    if ( defined($rztables) ) {
+        my ( $rzpose_table, $rzpmin_table, $rznege_table ) = @{$rztables};
+        $z_pose_ts = $self->get_z( $T, $rzpose_table, $z_pose_ts );
+        $z_pmin_ts = $self->get_z( $T, $rzpmin_table, $z_pmin_ts );
+        $z_nege_ts = $self->get_z( $T, $rznege_table, $z_nege_ts );
+    }
+
+    # backup analytical fit to zero pressure lines
+    my $rs = exp($X);
+    my $zs = exp($Z);
+    my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
+
+    # FUTURE: use more accurate values if possible
+    #if ( defined($z_pose_rs) ) { $Tpos = $zs - $z_pose_rs; }
+    #if ( defined($z_pose_ts) ) { $Lpos = $zs - $z_pose_ts; }
+
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
 
     my $return_hash = {
-        'X'         => $X,                    
-        'Y'         => $Y,                    
-        'dYdX'      => $dYdX,                 
-        'Z'         => $Z,                    
-        'dZdX'      => $dZdX,                 
-        'T'         => $T,                    
-        'dTdX'      => $dTdX,                 
-        'E1'        => $E1,                   
-        'dE1dX'     => $dE1dX,                
-        'Er'        => $Er,
-        'dErdX'     => $dErdX,                 
-        'W_blast'   => $W_blast,
-        'W_atm'     => $W_atm,
- 	'KE_pos'    => $KE_pos,
- 	'W_pos'     => $W_pos,
-        'Tpos'      => $Tpos,
-        ##'Tpos2'     => $Tpos2,
-        'Lpos'      => $Lpos,
-        ##'Tneg'      => $Tneg,
-        ##'Tneg2'     => $Tneg2,
-        'Lneg'      => $Lneg,
-        'TableLoc'  => [ $il, $iu, $ntab ],
-        'TableVars' => $result,
-        'Ixr_pos_lim'   => $Sint_pos * $gamma,
-        'Ixr_neg_lim'   => $Sint_neg * $gamma,
-        'Sint_pos'  => $Sint_pos,
-        'Sint_neg'  => $Sint_neg,
-        'Ixr_pos'   => $rpint_pos,
-        'Ixr_neg'   => $rpint_neg,
-	'rovp_min' => $rovp_min,
-	'z_ovp_min' => $z_ovp_min,
-        'z_pos'    => $z_pos,
-	'z_neg'    => $z_neg,
-	'disp_pos' => $disp_pos,
-	'qint_pos' => $qint_pos,
+        'X'           => $X,
+        'Y'           => $Y,
+        'dYdX'        => $dYdX,
+        'Z'           => $Z,
+        'dZdX'        => $dZdX,
+        'T'           => $T,
+        'dTdX'        => $dTdX,
+        'E1'          => $E1,
+        'dE1dX'       => $dE1dX,
+        'Er'          => $Er,
+        'dErdX'       => $dErdX,
+        'W_blast'     => $W_blast,
+        'W_atm'       => $W_atm,
+        'KE_pos'      => $KE_pos,
+        'W_pos'       => $W_pos,
+        'Tpos'        => $Tpos,
+        'Lpos'        => $Lpos,
+        #'Lneg'        => $Lneg,
+        'TableLoc'    => [ $il, $iu, $ntab ],
+        'TableVars'   => $result,
+        'Ixr_pos_lim' => $Sint_pos * $gamma,
+        'Ixr_neg_lim' => $Sint_neg * $gamma,
+        'Sint_pos'    => $Sint_pos,
+        'Sint_neg'    => $Sint_neg,
+        'Ixr_pos'     => $rpint_pos,
+        'Ixr_neg'     => $rpint_neg,
+        'rovp_min_rs' => $rovp_min,
+        'z_pmin_rs'   => $z_pmin_rs,
+        'z_pose_rs'   => $z_pose_rs,
+        'z_nege_rs'   => $z_nege_rs,
+        'disp_pos'    => $disp_pos,
+        'qint_pos'    => $qint_pos,
+        'z_pmin_ts'   => $z_pmin_ts,
+        'z_pose_ts'   => $z_pose_ts,
+        'z_nege_ts'   => $z_nege_ts,
     };
     return $return_hash;
 }
@@ -2589,7 +2678,8 @@ sub _make_intermediate_gamma_table {
     foreach my $igam ( @{$rilist_6} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha  = alpha_interpolate( $symmetry, $gamma );
-        my $rtable = get_builtin_table($table_name);
+        #my $rtable = get_builtin_table($table_name);
+        my ( $rtable, $rimpulse_table, $rtail_shock_table ) = get_builtin_tables($table_name);
         my $A      = -log( ( $gamma + 1 ) * $alpha );
         my $dA     = ( $A_x - $A );
         if ( !defined($dA_min) || abs($dA) < $dA_min ) {
@@ -2603,7 +2693,8 @@ sub _make_intermediate_gamma_table {
     foreach my $igam ( @{$rilist_4} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha  = alpha_interpolate( $symmetry, $gamma );
-        my $rtable = get_builtin_table($table_name);
+        ##my $rtable = get_builtin_table($table_name);
+        my ( $rtable, $rimpulse_table, $rtail_shock_table ) = get_builtin_tables($table_name);
         my $A      = -log( ( $gamma + 1 ) * $alpha );
         push @{$rlag_points_4}, [ $rtable, $A, $gamma, $alpha, $table_name ];
         push @{$rA_4}, $A;
