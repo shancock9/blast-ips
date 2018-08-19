@@ -1017,17 +1017,30 @@ sub get_impulse {
 	$z_pose_rs = $z_pose_rs_b;
 	$z_nege_rs = $z_nege_rs_b;
 
-	# use log extrapolation for these variables:
+	# We will use log extrapolation for these variables back to the origin:
 	$Disp_pos = $Disp_pos_b;
 	$Qint_pos = $Qint_pos_b;
 	$rpint_pos = $rpint_pos_b;
 
+	# Here are the theoretical slopes for dQint_pos/dX from the similarity solution.  
+        # The table values are very close to these.
+	# -0.5 for spherical symmetry
+	#    0 for cylindrical symmetry
+	# +0.5 for plane symmetry
+
+	# Positive phase impulse and displacement are harder to do theoretically
+        # because they end when absolute pressure hits 1, so the integral does not
+	# go to infinity.  So it seems best to just use log slopes of the computed
+	# values to continue the solution before the first table point.
+
         if ( @{$rimpulse_table} > 2 ) {
+
+	    # Get the next row so that we can calculate the slope
             my $rrow_a = $rimpulse_table->[1];
             my (
-                $X_a,         $Y_a,         $Z_a,      $rpint_pos_a,
-                $rpint_neg_a, $z_pose_rs_a,     $z_nege_rs_a,  $Qint_pos_a,
-                $rovp_min_a,  $z_pmin_rs_a, $ke_pos_a, $work_pos_a,
+                $X_a,         $Y_a,         $Z_a,         $rpint_pos_a,
+                $rpint_neg_a, $z_pose_rs_a, $z_nege_rs_a, $Qint_pos_a,
+                $rovp_min_a,  $z_pmin_rs_a, $ke_pos_a,    $work_pos_a,
                 $Disp_pos_a,
             ) = @{$rrow_a};
 
@@ -1043,14 +1056,6 @@ sub get_impulse {
             $Disp_pos = $Disp_pos_b + $dDdX * ( $X - $X_b );
             my $FF = $F_b + $dFdX * ( $X - $X_b );
 	    $rpint_pos = exp($FF);
-
-	    # FIXME: check these
-	    # dQint_pos/dX appears to become exactly -0.5 for spherical symmetry
-	    # pint = rpint/r**(n/2)
-	    # ln(pint)=ln(rpint)-(n/2)X
-	    # dln(pint)/dX = dln(rpint)/dX-n/2
-            # dln(pint)/dX is about -0.25 for spherical sym so dln(rpint)/dX is about 0.25
-
         }
     }
 
