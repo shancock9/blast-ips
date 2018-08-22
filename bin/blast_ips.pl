@@ -123,6 +123,8 @@ sub show_summary_information {
     my $Ixr_neg                 = $gamma * $Sint_neg;
     my $r_tail_shock            = $rinfo->{r_tail_shock};
     my $z_tail_shock            = $rinfo->{z_tail_shock};
+    my $r_tail_formed            = $rinfo->{r_tail_formed};
+    my $z_tail_formed            = $rinfo->{z_tail_formed};
     my $KE_initial_ratio        = $rinfo->{KE_initial_ratio};
     my $pcenter_initial_ratio   = $rinfo->{pcenter_initial_ratio};
     my $t_u_plus_c_zero         = $rinfo->{t_u_plus_c_zero};
@@ -157,8 +159,10 @@ I+        = $Ixr_pos = positive impulse $pstr at long range
 I-        = $Ixr_neg = negative impulse $pstr at long range
 S+        = $Sint_pos = positive integral of Sigma x dr at long range
 S-        = $Sint_neg = negative integral of Sigma x dr at long range
-r TS      = $r_tail_shock = scaled radius at which Tail Shock forms
-z TS      = $z_tail_shock = scaled z at which Tail Shock forms 
+r TS      = $r_tail_shock = scaled radius at which Tail Shock first forms
+z TS      = $z_tail_shock = scaled z at which Tail Shock first forms 
+r TF      = $r_tail_formed = scaled radius at which Tail Shock becomes peak
+z TF      = $z_tail_formed = scaled z at which Tail Shock becomes peak
 
 Overpressure at r=0:
 pc/ps0      = $pcenter_initial_ratio = initial ratio of overpressure to shock overpressure 
