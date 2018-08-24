@@ -46,12 +46,12 @@ while (1) {
 MAIN MENU: Point Source Explosion in Ideal Gas 
 ==============================================
 Enter one of the following:
-  N     - New Table - Change Symmetry and/or Gamma
+  N     - change Symmetry and/or Gamma
           Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
-  I     - show summary Information for this blast
-  P     - Point evaluations ...
-  T     - Table operations ...
-  U     - Units: $units_name{$units};
+  I     - show Global Information about this blast
+  P     - do Point evaluations ...
+  T     - do Table operations ...
+  U     - select Units: $units_name{$units};
   Q     - Quit
 EOM
     my $ans = queryu(":");
@@ -209,34 +209,32 @@ sub select_variable {
     my $i=0;
     my %menu = (
         'x'    => [ ++$i,  'scaled range, = r/d' ],
-        'y'    => [ ++$i,  'overpressure ratio, =(p-p0)/p0' ],
-        't'    => [ ++$i,  'scaled time of arrival, = c0 time / d' ],
-        'z'    => [ ++$i,  'x - w' ],
+        'y'    => [ ++$i,  'overpressure ratio, =(P-P0)/P0' ],
+        't'    => [ ++$i,  'scaled time of arrival, = c0*TOA/d' ],
+        'z'    => [ ++$i,  'x - t' ],
         'X'    => [ ++$i,  'ln(x)' ],
         'Y'    => [ ++$i,  'ln(y)' ],
         'T'    => [ ++$i,  'ln(t)' ],
         'Z'    => [ ++$i,  'ln(z)' ],
-        'E1'   => [ ++$i,  'E_residual_primary' ],
-        'E'    => [ ++$i,  'E_residual' ],
+        'E1'   => [ ++$i,  'residual energy from primary shock' ],
+        'E'    => [ ++$i,  'residual energy (total)' ],
         'dYdX' => [ ++$i,  'dY/dX' ],
         'dZdX' => [ ++$i, 'dZ/dX' ],
         'dWdX' => [ ++$i, 'dW/dX' ],
         'dE1dX'=> [ ++$i,  'dE1/dX' ],
-        'm'    => [ ++$i, '= (S/c0), where S is the shock speed' ],
-        'q'    => [ ++$i, '= (c0/S)^2, where S is the shock speed' ],
+        'M'    => [ ++$i, '= (S/c0), = shock Mach number (S=shock speed)' ],
+        'q'    => [ ++$i, '= 1/M^2' ],
     );
 
     my $menu_text = <<EOM;
-Point evaluation with one dimensionless variable
-
+========================================
+VARIABLE SELECTION MENU (Dimensionless): 
+========================================
 Let
- r = range; t = time of arrival; p = shock pressure; 
- d = scaled distance (E/p0)^(1/N) 
+ d = scaled distance (E/P0)^(1/N) 
  E is energy and N = 1,2, or 3 is symmetry
- p0 = initial atmospheric pressure and c0 = sound speed 
- D = shock speed
-
-You may vary any of these variables: 
+ P0, c0 = ambient atmospheric pressure, sound speed 
+You may vary One of these variables: 
 EOM
     foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
         $menu_text .= "    $key : $menu{$key}->[1]\n";
@@ -418,8 +416,8 @@ sub point_evaluations_dimensionless {
         my $Z         = $ret->{Z};
         my $dYdX      = $ret->{dYdX};
         my $dZdX      = $ret->{dZdX};
-        my $Lpos      = $ret->{Lpos};
-        my $Tpos      = $ret->{Tpos};
+        #my $Lpos      = $ret->{Lpos};
+        #my $Tpos      = $ret->{Tpos};
         #my $Lneg      = $ret->{Lneg};
         my $Ixr_pos   = $ret->{Ixr_pos};
         my $Ixr_neg   = $ret->{Ixr_neg};
@@ -485,17 +483,24 @@ sub point_evaluations_dimensionless {
         my ( $density_ratio_shock, $density_ratio_equilibrium ) =
           density_ratios( $Y, $gamma );
 
-
         foreach ( $x, $y, $z, $t, $X, $Y, $Z, $T, $dYdX, $dZdX ) {
             $_ = sprintf( "%0.8g", $_ );
         }
             #$Lpos,     $Lneg,     
+            #$Lpos,                $Tpos,
         foreach (
-            $m,        $q,       $up,      $Ixr_pos,
-            $Ixr_neg,  $E1,       $W_atm,    $Er,      $E2,      $W_blast,
-            $dEdE1,    $ke_pos,   $work_pos, $dt_pose_rs, $dt_pmin_rs, $dt_nege_rs,
-            $dr_pose_ts, $dr_pmin_ts, $dr_nege_ts,
-            $rovp_min_rs, $disp_pos, $disp_end, $Lpos, $Tpos,
+            $m,                   $q,
+            $up,                  $Ixr_pos,
+            $Ixr_neg,             $E1,
+            $W_atm,               $Er,
+            $E2,                  $W_blast,
+            $dEdE1,               $ke_pos,
+            $work_pos,            $dt_pose_rs,
+            $dt_pmin_rs,          $dt_nege_rs,
+            $dr_pose_ts,          $dr_pmin_ts,
+            $dr_nege_ts,          $rovp_min_rs,
+            $disp_pos,            $disp_end,
+            $density_ratio_shock, $density_ratio_equilibrium,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -512,20 +517,19 @@ sub point_evaluations_dimensionless {
 #r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
 #r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
 #L-    = $Lneg = (OLD) length of negative phase $d_unit
+#t+   - toa = $Tpos = (OLD) time duration to end of positive overpressure phase at shock radius, $t_unit
+#L+    = $Lpos = (OLD) length of positive phase $d_unit
         print <<EOM;
-
-Results at a single point; symmetry=$symmetry, gamma=$gamma; 
-Shock Table Region: $table_location
+----------------------------------------------------------
+Symmetry: $symmetry   Gamma: $gamma Method: $table_location  
 x    = $x = scaled range r/d;       ln(x) = X = $X 
 y    = $y = (P-P0)/P0;              ln(y) = Y = $Y 
 z    = $z = (r-c0 t)/d;             ln(z) = Z = $Z 
 toa  = $t = scaled time of arrival  ln(t) = T = $T 
 dYdX = $dYdX
-t+   - toa = $Tpos = (OLD) time duration to end of positive overpressure phase at shock radius, $t_unit
 t+   - toa = $dt_pose_rs = time duration to end of positive overpressure phase at shock radius, $t_unit
 tmin - toa = $dt_pmin_rs = time duration to minimum overpressure at shock radius, $t_unit
 t-   - toa = $dt_nege_rs = time duration to end of negative phase at shock radius, $t_unit (spherical only)
-L+    = $Lpos = (OLD) length of positive phase $d_unit
 L+    = $dr_pose_ts = distance from shock front to end of positive phase $d_unit
 Lmin  = $dr_pmin_ts = distance from shock front to minimum overpressure $d_unit
 L-    = $dr_nege_ts = distance from shock front to end of negative phase $d_unit
