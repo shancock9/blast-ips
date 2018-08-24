@@ -17,47 +17,47 @@ Blast::IPS
 ## DESCRIPTION
 
 Blast::IPS evaluates the shock overpressure for a point source explosion in an
-ideal homogeneous atmosphere.  This problem has a precise mathematical
-definition but it does not have an analytic solution except for the special
-case that the ambient atmospheric pressure is zero, so results are obtained by
-interpolating a builtin table of values.
+ideal homogeneous atmosphere.  This problem does not have an analytic solution
+except for the special case that the ambient atmospheric pressure is zero, so
+results are obtained by interpolating builtin tables of pre-computed values.
 
 This problem was one of the first problems to be addressed when digital
-computers became available, and it remains a very important theoretical model.
-Despite the importance of this problem, and a significant amount of past research,
-someone wishing to evaluate the solution to this problem for a specific case,
-*and estimate the error in such a solution*, would have great difficulty.
-This software can make such an evaluation a simple task.
-
-My own interest in this problem came from working with models of the damaging
-effects of blast waves at long distances from accidental rocket explosions,
-but it has many other applications such as computer model verification.
+computers became available, and it remains an important theoretical model for
+understanding explosions.  My own interest in this problem came from working
+with models of the damaging effects of blast waves at long distances from
+accidental rocket explosions.
 
 The builtin tables cover the three one-dimensional symmetries (plane,
 cylindrical, spherical) and values of the ideal gas gamma from 1.1 to 7 (6.5
 for spherical symmetry).  They were prepared with calculations using a finite
-difference method and the method of characteristics.  
+difference method for the initial blast wave formation and the method of
+characteristics for propagation to very long distances.
 
 The emphasis of this project is on getting an accurate estimate of the maximum
 error in the final interpolated values.  Accuracy information is largely
 unavailable in existing published results, and when it is given it is usually
-highly approximate.  The numerical methods employed here produce smooth results
-and converge as 1/N^2, where N is the number of spatial points in the finite
-difference calculation. This makes it easy to obtain an accurate error estimate,
-and the maximum error can be driven to very small values by increasing N.
+highly approximate.  The tables used here were created with numerical methods
+which produced very smooth results and which converged as 1/N^2, where N is the
+number of spatial points in the finite difference calculation. This made it
+relatively easy to obtain an accurate error estimate, and the maximum error was
+driven to very small values by increasing N.
 
 The estimated maximum relative error in shock overpressure obtained after
 interpolating the builtin tables with cubic interpolation for the gamma value
 of one of the builtin tables is about 1.e-6 at all ranges. 
 
-The software can also perform accurate interpolation to arbitrary gamma values,
-not just the gamma values of the builtin tables. This interpolation increases
-the relative error in overpressure ratio by about 1.e-6 over most of the range
-(above about gamma=1.2), so the maximum estimated relative error in
-overpressure ratio for arbitrary gamma and range is only about 2.e-6.
+The software can also perform accurate interpolation to values of gamma between
+the tabulated vaules, not just the gamma values of the builtin tables.  This
+additional interpolation increases the relative error in overpressure ratio by
+about 1.e-6 over most of the range (above about gamma=1.2), so the maximum
+estimated relative error in overpressure ratio for arbitrary gamma and range is
+about 2.e-6.
 
-Test problems and example scripts illustrate how to use the module.  I will
-be adding documentation in the future.  
+Besides shock strength values, the tables include impulses, residual energy
+distribution, and information on the tail shock. 
+
+Test problems and example scripts illustrate how to use the module.  A detailed 
+description of the numerical methods used to construct the tables is being prepared.
 
 # AUTHOR
 
