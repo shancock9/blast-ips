@@ -18,62 +18,158 @@ my $gamma       = 1.4;
 my $symmetry    = 2;
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
-my $sspd_amb = 1;
-my $p_amb    = 1;                                # ambient pressure
-my $rho_amb  = $gamma * $p_amb / $sspd_amb**2;
-$symmetry = $blast_table->get_symmetry();
-my $medium   = {
-    _gamma    => $gamma,
-    _sspd_amb => $sspd_amb,
-    _rho_amb  => $rho_amb,
-    _p_amb    => $p_amb,
-    _symmetry => $symmetry,
-};
-
-my $units      = 'D';
-my %units_name = (
-    'D'  => "Dimensionless",
-    'SI' => "SI",
-);
-
-# main loop
+# Main Loop
+my $selection = 'D';
 while (1) {
-    my $table_name = $blast_table->get_table_name();
-    $symmetry = $blast_table->get_symmetry();
-    $gamma    = $blast_table->get_gamma();
-    print <<EOM;
-==============================================
-MAIN MENU: Point Source Explosion in Ideal Gas 
-==============================================
+    if ( $selection eq 'D' ) {
+        ( $blast_table, $selection ) = eval_dimensionless( $blast_table );
+    }
+    elsif ( $selection eq 'SI' ) {
+        ( $blast_table, $selection ) = eval_si( $blast_table );
+    }
+    else { last; }
+}
+
+{
+
+    my $medium_stp;
+    my $medium;
+
+    BEGIN {
+	my $gamma = 1.4;
+	my $symmetry = 2;
+        my $p_sea_level    = 1.01325e5;
+        my $sspd_sea_level = 340.43;
+        my $E0             = 1;
+        my $medium_stp     = {
+            _gamma    => $gamma,
+            _p_amb    => $p_sea_level,
+            _sspd_amb => $sspd_sea_level,
+            _symmetry => $symmetry,
+            _rho_amb  => $gamma * $p_sea_level / $sspd_sea_level**2,
+            _E0       => $E0,
+        };
+        $medium = $medium_stp;
+    }
+
+    sub eval_si {
+        my ($blast_table) = @_;
+        my $symmetry      = $blast_table->get_symmetry();
+        my $gamma         = $blast_table->get_gamma();
+	my $units  = 'SI';
+        if ( $gamma != $medium->{_gamma} ) {
+
+            # gamma has changed...fix medium
+
+        }
+        my $return_selection = 'D';
+        while (1) {
+            my $table_name = $blast_table->get_table_name();
+            $symmetry = $blast_table->get_symmetry();
+            $gamma    = $blast_table->get_gamma();
+            print <<EOM;
+====================================
+Point Explosion Main Menu - SI units
+====================================
 Enter one of the following:
   N     - change Symmetry and/or Gamma
           Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
   I     - show Global Information about this blast
   P     - do Point evaluations ...
   T     - do Table operations ...
-  U     - select Units: $units_name{$units};
+  D     - switch to Dimensionless mode 
   Q     - Quit
 EOM
-    my $ans = queryu(":");
-    if ( $ans eq 'N' ) {
-        ( $blast_table, $medium ) = select_blast_table( $blast_table, $medium );
+            my $ans = queryu(":");
+            if ( $ans eq 'N' ) {
+                ( $blast_table, $medium ) =
+                  select_blast_table( $blast_table, $medium );
+            }
+            elsif ( $ans eq 'I' ) {
+                show_summary_information( $blast_table, $medium, $units );
+            }
+            elsif ( $ans eq 'D' ) {
+                $return_selection = 'D';
+                last;
+            }
+            elsif ( $ans eq 'P' ) {
+                point_evaluations_SI( $blast_table, $medium );
+            }
+            elsif ( $ans eq 'T' ) {
+                table_operations( $blast_table, $medium );
+            }
+            elsif ( $ans eq 'Q' ) {
+                $return_selection = 'Q';
+                last;
+            }
+        }
+        return ( $blast_table, $return_selection );
     }
-    elsif ( $ans eq 'I' ) {
-        show_summary_information( $blast_table, $medium, $units );
+}
+
+sub eval_dimensionless {
+
+    my ( $blast_table ) = @_;
+
+    # FIXME: eliminate $units, $medium
+
+    my $symmetry = $blast_table->get_symmetry();
+    my $gamma    = $blast_table->get_gamma();
+    my $units = 'D';
+    my $medium = {
+        _gamma    => $gamma,
+        _sspd_amb => 1,
+        _p_amb    => 1,
+        _symmetry => $symmetry,
+        _rho_amb  => $gamma,
+        _E0       => 1,
+    };
+
+    # main loop
+    my $return_selection;
+    while (1) {
+        my $table_name = $blast_table->get_table_name();
+        $symmetry = $blast_table->get_symmetry();
+        $gamma    = $blast_table->get_gamma();
+        print <<EOM;
+=========================================
+Point Explosion Main Menu - Dimensionless
+=========================================
+Enter one of the following:
+  N     - change Symmetry and/or Gamma
+          Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
+  I     - show Global Information about this blast
+  P     - do Point evaluations ...
+  T     - do Table operations ...
+  SI    - switch to SI Units
+  Q     - Quit
+EOM
+        my $ans = queryu(":");
+        if ( $ans eq 'N' ) {
+            ( $blast_table, $medium ) =
+              select_blast_table( $blast_table, $medium );
+        }
+        elsif ( $ans eq 'I' ) {
+            show_summary_information( $blast_table, $medium, $units );
+        }
+        elsif ( $ans eq 'SI' ) {
+	    $return_selection = 'SI';
+	    last;
+        }
+        elsif ( $ans eq 'P' ) {
+            my $vname = 'X';
+            $vname = select_dimensionless_variable($vname);
+            point_evaluations_dimensionless( $blast_table, $medium, $vname );
+        }
+        elsif ( $ans eq 'T' ) {
+            table_operations( $blast_table, $medium );
+        }
+        elsif ( $ans eq 'Q' ) {
+	    $return_selection = 'Q';
+            last;
+        }
     }
-    elsif ( $ans eq 'U' ) {
-        my $test = queryu("Enter 'D' for Dimensionless, 'SI' for SI Units");
-        $units = ( $test eq 'D' || $test eq 'SI' ) ? $test : $units;
-    }
-    elsif ( $ans eq 'P' ) {
-        point_evaluations( $blast_table, $medium, $units );
-    }
-    elsif ( $ans eq 'T' ) {
-        table_operations( $blast_table, $medium );
-    }
-    elsif ( $ans eq 'Q' ) {
-        last;
-    }
+    return ($blast_table, $return_selection);
 }
 
 #sub get_medium {
@@ -84,10 +180,12 @@ EOM
 
 sub select_blast_table {
     my ( $blast_table, $medium ) = @_;
-    my $symmetry = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
-    if ( !$symmetry ) { $symmetry = 'S' }
+    my $symmetry_name = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
+    if ( !$symmetry_name ) { $symmetry_name = 'S' }
     my $gamma = get_num( "Enter gamma", 1.4 );
     my $blast_table_old = $blast_table;
+    
+    my $symmetry=($symmetry_name eq 'S' ? 2 : $symmetry_name eq 'C' ? 1 : 0);
     $blast_table =
       Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my $err = $blast_table->get_error();
@@ -95,18 +193,12 @@ sub select_blast_table {
         query("Error: $err; no changes made");
         return ( $blast_table_old, $medium );
     }
-
-    $sspd_amb = 1;
-    $p_amb    = 1;                                # ambient pressure
-    $rho_amb  = $gamma * $p_amb / $sspd_amb**2;
-    $symmetry = $blast_table->get_symmetry();
-    $medium   = {
-        _gamma    => $gamma,
-        _symmetry => $symmetry,
-        _sspd_amb => $sspd_amb,
-        _rho_amb  => $rho_amb,
-        _p_amb    => $p_amb,
-    };
+    my $p_amb    = $medium->{_p_amb};
+    my $sspd_amb = $medium->{_sspd_amb};
+    my $rho_amb  = $gamma * $p_amb / $sspd_amb**2;
+    $medium->{_gamma}    = $gamma;
+    $medium->{_symmetry} = $symmetry;
+    $medium->{_rho_amb}  = $rho_amb;
     return ( $blast_table, $medium );
 }
 
@@ -188,45 +280,37 @@ EOM
     return;
 }
 
-sub point_evaluations {
-    my ( $blast_table, $medium, $units ) = @_;
-    if ( $units eq 'D' ) {
-        my $vname = 'X';
-        $vname = select_variable($vname);
-        point_evaluations_dimensionless( $blast_table, $medium, $vname );
+{
+    my $vname;
+
+    BEGIN {
+        $vname = 'x';
     }
-    else {
-        point_evaluations_with_units( $blast_table, $medium, $units );
-    }
-    return;
-}
 
-sub select_variable {
+    sub select_dimensionless_variable {
 
-    my ($vname) = @_;
+        # key => [ order, text ]
+        my $i    = 0;
+        my %menu = (
+            'x'     => [ ++$i, 'scaled range, = r/d' ],
+            'y'     => [ ++$i, 'overpressure ratio, =(P-P0)/P0' ],
+            't'     => [ ++$i, 'scaled time of arrival, = c0*TOA/d' ],
+            'z'     => [ ++$i, 'x - t' ],
+            'X'     => [ ++$i, 'ln(x)' ],
+            'Y'     => [ ++$i, 'ln(y)' ],
+            'T'     => [ ++$i, 'ln(t)' ],
+            'Z'     => [ ++$i, 'ln(z)' ],
+            'E1'    => [ ++$i, 'residual energy from primary shock' ],
+            'E'     => [ ++$i, 'residual energy (total)' ],
+            'dYdX'  => [ ++$i, 'dY/dX' ],
+            'dZdX'  => [ ++$i, 'dZ/dX' ],
+            'dWdX'  => [ ++$i, 'dW/dX' ],
+            'dE1dX' => [ ++$i, 'dE1/dX' ],
+            'M' => [ ++$i, '= (S/c0), = shock Mach number (S=shock speed)' ],
+            'q' => [ ++$i, '= 1/M^2' ],
+        );
 
-    # key => [ order, text ]
-    my $i=0;
-    my %menu = (
-        'x'    => [ ++$i,  'scaled range, = r/d' ],
-        'y'    => [ ++$i,  'overpressure ratio, =(P-P0)/P0' ],
-        't'    => [ ++$i,  'scaled time of arrival, = c0*TOA/d' ],
-        'z'    => [ ++$i,  'x - t' ],
-        'X'    => [ ++$i,  'ln(x)' ],
-        'Y'    => [ ++$i,  'ln(y)' ],
-        'T'    => [ ++$i,  'ln(t)' ],
-        'Z'    => [ ++$i,  'ln(z)' ],
-        'E1'   => [ ++$i,  'residual energy from primary shock' ],
-        'E'    => [ ++$i,  'residual energy (total)' ],
-        'dYdX' => [ ++$i,  'dY/dX' ],
-        'dZdX' => [ ++$i, 'dZ/dX' ],
-        'dWdX' => [ ++$i, 'dW/dX' ],
-        'dE1dX'=> [ ++$i,  'dE1/dX' ],
-        'M'    => [ ++$i, '= (S/c0), = shock Mach number (S=shock speed)' ],
-        'q'    => [ ++$i, '= 1/M^2' ],
-    );
-
-    my $menu_text = <<EOM;
+        my $menu_text = <<EOM;
 ========================================
 VARIABLE SELECTION MENU (Dimensionless): 
 ========================================
@@ -236,22 +320,28 @@ Let
  P0, c0 = ambient atmospheric pressure, sound speed 
 You may vary One of these variables: 
 EOM
-    foreach my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) ) {
-        $menu_text .= "    $key : $menu{$key}->[1]\n";
-    }
+        foreach
+          my $key ( sort { $menu{$a}->[0] <=> $menu{$b}->[0] } keys(%menu) )
+        {
+            $menu_text .= "    $key : $menu{$key}->[1]\n";
+        }
 
-    while (1) {
-        print $menu_text;
-        my $ans = query("Select one of these variables; <cr>='x':");
-        $ans = 'x' unless ($ans);
-        if ( defined( $menu{$ans} ) ) {
-            return $ans;
+	# Default; could also be previous value
+        my $default = 'x';  
+        while (1) {
+            print $menu_text;
+            my $ans = query("Select one of these variables; <cr>='$default':");
+            $ans = $default unless ($ans);
+            if ( defined( $menu{$ans} ) ) {
+                $vname = $ans;
+                return $vname;
+            }
+            else {
+                hitcr("error, try again");
+            }
         }
-        else {
-            hitcr("error, try again");
-        }
+        return $vname;
     }
-    return $vname;
 }
 
 {
@@ -267,8 +357,8 @@ EOM
         $ground_plane = 1;
     }
 
-    sub point_evaluations_with_units {
-        my ( $blast_table, $medium, $units ) = @_;
+    sub point_evaluations_SI {
+        my ( $blast_table, $medium ) = @_;
 
         # perform point evaluations with units
         # internal units are SI but other display units may be used
@@ -350,11 +440,13 @@ sub point_evaluations_dimensionless {
     my ( $blast_table, $medium, $vname ) = @_;
     my $gamma    = $medium->{_gamma};
     my $symmetry = $medium->{_symmetry};
-    my $p_amb    = 1;                      # FIXME;
+    my $p_amb    = $medium->{_p_amb}; 
     my $pi       = 4 * atan2( 1, 1 );
     my $NN       = $symmetry + 1;
+    my $another = 'a';
     while (1) {
-        my $val = get_num("Enter a value for '$vname', or <cr> to quit:");
+        my $val = get_num("Enter $another value for '$vname', or <cr> to quit:");
+	$another = 'another';
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
@@ -939,4 +1031,220 @@ sub density_ratios {
     my $density_ratio_shock = $top / $bot;
     my $density_ratio_ambient = $density_ratio_shock * ( 1 / ( 1 + $y ) )**( 1 / $gamma );
     return ($density_ratio_shock, $density_ratio_ambient);
+}
+
+#($p_amb, $sspd_amb)=altitude($p_amb, $sspd_amb);
+#print "got ==$p_amb, c=$sspd_amb\n";
+
+sub altitude {
+
+    # return pressure and sound speed at a given altitude
+    # leave them unchanged if not selected
+    my ( $p_amb, $sspd_amb ) = @_;
+    while (1) {
+        my $zz_m = query("altitude, m:");
+	my $zz_ft = 3.2808*$zz_m;
+        my $zz_km = $zz_m*1000;
+        my ( $pp, $tt, $rr, $ww ) = atmos($zz_m);
+        my $ttf            = 32. + ( $tt - 273.15 ) * 9. / 5.;
+        my $psi            = $pp * 14.5e-5;
+        my $sspdms         = 331.48 * sqrt( $tt / 273.15 );
+        my $sspdz          = 0.001 * 3.2808 * $sspdms;
+        my $pressure_ratio = $pp / 1.01325e5;
+        foreach ( $zz_km, $zz_ft, $zz_m, $pp, $psi, $pressure_ratio, $tt, $ttf,
+            $rr, $ww, $sspdms, $sspdz )
+        {
+            $_ = sprintf "%0.6g", $_;
+        }
+		
+        my $menu           = <<EOM;
+--------Atmosphere----------
+altitude, m  .......... $zz_m
+altitude, km .......... $zz_km
+altitude, ft .......... $zz_ft 
+pressure, Pa .......... $pp 
+pressure, psi ......... $psi 
+pressure ratio, P/P(z=0) $pressure_ratio
+temperature, K......... $tt 
+temperature, F......... $ttf 
+density, kg/m3......... $rr 
+molecular wt........... $ww 
+sound speed, m/s....... $sspdms 
+sound speed, ft/ms..... $sspdz 
+
+Z  enter another altitude );
+Y  YES..change P,T to these values );
+X  return without changing P,T );
+EOM
+	print $menu;
+        my $ans = queryu('-->');
+        next if ( $ans eq 'Z' );
+
+        if ( $ans eq 'Y' ) {
+            $p_amb = $pp;
+            $sspd_amb = $sspdms;
+	    last;
+        }
+        last if ($ans eq 'X');
+    }
+    return ( $p_amb, $sspd_amb );
+}
+
+{    # sub atmos
+
+    #
+    #       atmospheric model, based upon table 2.7 in Regan, Reentry Vehicle...
+    #       compute pressure, temperature, density as function of altitude
+    #
+    #       input parameter -
+    #               zz = altitude in meters
+    #       output parameters -
+    #               pp = pressure in Pa
+    #               tt = temperature in K
+    #               rr = density
+    #
+
+    # saved arrays
+    my ( $rptab, $rrtab, $rttab, $rwtab, $rxlapse, $rztab );
+
+    # saved constants
+    my ($rgas, $grav, $w0, $pref, $b);
+
+    # cached values
+    my ($ppsave, $ttsave, $zzsave, $rrsave, $wwsave );
+
+    INIT {
+
+        #       constants
+        $rgas   = 287.;
+        $grav   = 9.806;
+        $w0     = 28.964;
+        $pref   = 1.01325e5;
+        $b      = 3.139e-7;
+        $ppsave = 0.;
+        $ttsave = 0.;
+        $zzsave = -1.;
+        $rrsave = 0.;
+        $wwsave = 0.;
+
+        #       altitude, km
+        $rztab = [
+            0.0,   11.019, 20.063, 32.162, 47.435, 52.43, 61.59, 80.0,
+            90.0,  100.0,  110.0,  120.0,  150.0,  160.0, 170.0, 190.0,
+            230.0, 300.0,  400.0,  500.0,  600.0,  700.0
+        ];
+
+        #       temp
+        $rttab = [
+            288.1,   216.65,  216.65,  228.65,  270.65,  270.65,
+            252.65,  180.65,  180.65,  210.65,  260.65,  360.65,
+            960.65,  1110.6,  1210.65, 1350.65, 1550.65, 1830.65,
+            2160.65, 2420.65, 2590.65, 2700.65
+        ];
+
+        #       p/p0
+        $rptab = [
+            1.000,     2.284e-1, 5.462e-2, 8.567e-3, 1.095e-3,  5.823e-4,
+            1.797e-4,  1.024e-5, 1.622e-6, 2.98e-7,  7.22e-8,   2.488e-8,
+            5.0e-9,    3.64e-9,  2.756e-9, 1.66e-9,  6.869e-10, 1.86e-10,
+            3.977e-11, 1.08e-11, 3.4e-12,  1.176e-12
+        ];
+
+        #       molecular weight
+        $rwtab = [
+            28.964, 28.964, 28.964, 28.964, 28.964, 28.964, 28.964, 28.964,
+            28.964, 28.88,  28.56,  28.07,  26.92,  26.66,  26.5,   25.85,
+            24.69,  22.66,  19.94,  17.94,  16.84,  16.17
+        ];
+
+        for ( my $n = 0 ; $n < @{$rztab} ; $n++ ) {
+            $rztab->[$n] *= 1000.;
+            $rptab->[$n] *= $pref;
+            $rrtab->[$n] = $rptab->[$n] / ( $rgas * $rttab->[$n] );
+        }
+        for ( my $n = 1 ; $n < @{$rztab} ; $n++ ) {
+            $rxlapse->[ $n - 1 ] =
+              ( $rttab->[$n] - $rttab->[ $n - 1 ] ) /
+              ( $rztab->[$n] - $rztab->[ $n - 1 ] );
+        }
+
+    }
+
+    sub atmos {
+
+	my ($zz) = @_;
+
+	my ($pp, $tt, $rr, $ww);
+
+        #       fixup altitude
+        if ( $zz < 0.0 ) { $zz = 0.0 }
+        if ( $zz > $rztab->[ -1 ] ) { $zz = $rztab->[  1 ]; }
+
+        #       check cache
+        if ( $zz == $zzsave ) {
+            $pp = $ppsave;
+            $tt = $ttsave;
+            $rr = $rrsave;
+            $ww = $wwsave;
+            goto L900;
+        }
+
+        #       lookup the altitude
+        for ( my $n = 1 ; $n < @{$rztab}; $n += 1 ) {
+            print "n=$n, zz=$zz; ztab=$rztab->[ $n ] \n";
+            if ( $zz <= $rztab->[ $n ] ) {
+                my $i  = $n - 1;
+                my $dz = $zz - $rztab->[ $i ];
+
+                #         in isothermal layer
+                if ( abs( $rxlapse->[ $i ] ) < 1.e-5 ) {
+                    my $tt = $rttab->[ $i ];
+                    my $q8 =
+                      $grav * $dz *
+                      ( 1. - ( $b / 2. ) * ( $zz + $rztab->[ $i ] ) ) /
+                      ( $rgas * $rttab->[ $i - 1 ] );
+                    my $expq8 = exp( -$q8 );
+                    $pp    = $expq8 * $rptab->[ $i ];
+                    $rr    = $expq8 * $rrtab->[ $i ];
+                }
+
+
+                #         in non-isothermal layer
+                else {
+
+                    my $q1 = 1. + $b *
+                      ( $rttab->[ $i ] / $rxlapse->[ $i ] - $rztab->[ $i ] );
+                    my $q2 = ( $q1 * $grav ) / ( $rgas * $rxlapse->[ $i ] );
+                    $tt = $rttab->[ $i ] + $rxlapse->[ $i ] * $dz;
+                    my $q3 = $tt / $rttab->[ $i ];
+                    my $q4 = $q3**( -$q2 );
+                    my $q5 =
+                      exp( $b * $grav * $dz / ( $rgas * $rxlapse->[ $i ] ) );
+                    my $q6 = $q4 * $q5;
+                    $pp = $rptab->[ $i ] * $q6;
+                    my $q7 = $q2 + 1.0;
+                    $rr = $rrtab->[ $i ] * ( $q3**( -$q7 ) ) * $q5;
+                }
+                $ww =
+                  $rwtab->[ $i ] +
+                  ( $rwtab->[ $i + 1 ] - $rwtab->[ $i ] ) /
+                  ( $rztab->[ $i + 1 ] - $rztab->[ $i ] ) *
+                  $dz;
+
+		# ???
+                my $t9 = ( $ww * $tt ) / $w0;
+                goto L900;
+            }
+        }
+        print STDERR "**error** in atmos\n";
+
+        #       save results
+      L900:
+        $ppsave = $pp;
+        $zzsave = $zz;
+        $ttsave = $tt;
+        $rrsave = $rr;
+        $wwsave = $ww;
+        return ($pp, $tt, $rr, $ww);
+    }
 }
