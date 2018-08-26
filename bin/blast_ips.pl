@@ -54,26 +54,35 @@ while (1) {
 
     sub eval_si {
         my ($blast_table) = @_;
-        my $symmetry      = $blast_table->get_symmetry();
-        my $gamma         = $blast_table->get_gamma();
+        my $symmetry = $medium->{_symmetry};
+        my $p_amb    = $medium->{_p_amb};
+        my $sspd_amb = $medium->{_sspd_amb};
+        my $gamma    = $medium->{_gamma};
 	my $units  = 'SI';
-        if ( $gamma != $medium->{_gamma} ) {
 
-            # gamma has changed...fix medium
+        my $symmetry_2 = $blast_table->get_symmetry();
+        my $gamma_2    = $blast_table->get_gamma();
 
+        if ( $symmetry != $symmetry_2 || $gamma != $gamma_2 ) {
+            $blast_table =
+              Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
+            query(
+"Switching from symmetry=$symmetry_2, gamma=$gamma_2 to symmetry=$symmetry, gamma=$gamma"
+            );
         }
+
         my $return_selection = 'D';
         while (1) {
             my $table_name = $blast_table->get_table_name();
             $symmetry = $blast_table->get_symmetry();
             $gamma    = $blast_table->get_gamma();
             print <<EOM;
-====================================
-Point Explosion Main Menu - SI units
-====================================
+====================
+Main Menu - SI units
+====================
 Enter one of the following:
-  N     - change Symmetry and/or Gamma
-          Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
+  G     - Geometry: $symmetry_name{$symmetry}
+  A     - Atmosphere: gamma=$gamma, P0=$p_amb Pa, sspd=$sspd_amb m/s
   I     - show Global Information about this blast
   P     - do Point evaluations ...
   T     - do Table operations ...
@@ -81,9 +90,13 @@ Enter one of the following:
   Q     - Quit
 EOM
             my $ans = queryu(":");
-            if ( $ans eq 'N' ) {
+            if ( $ans eq 'G' ) {
                 ( $blast_table, $medium ) =
-                  select_blast_table( $blast_table, $medium );
+                  select_geometry( $blast_table, $medium );
+            }
+            elsif ( $ans eq 'A' ) {
+                ( $blast_table, $medium ) =
+                  select_atmosphere_SI( $blast_table, $medium );
             }
             elsif ( $ans eq 'I' ) {
                 show_summary_information( $blast_table, $medium, $units );
@@ -99,8 +112,10 @@ EOM
                 table_operations( $blast_table, $medium );
             }
             elsif ( $ans eq 'Q' ) {
-                $return_selection = 'Q';
-                last;
+                if ( ifyes("Quit blast_ips? [Y/N]") ) {
+                    $return_selection = 'Q';
+                    last;
+                }
             }
         }
         return ( $blast_table, $return_selection );
@@ -165,8 +180,10 @@ EOM
             table_operations( $blast_table, $medium );
         }
         elsif ( $ans eq 'Q' ) {
-	    $return_selection = 'Q';
-            last;
+            if ( ifyes("Quit blast_ips? [Y/N]") ) {
+                $return_selection = 'Q';
+                last;
+            }
         }
     }
     return ($blast_table, $return_selection);
@@ -177,6 +194,105 @@ EOM
 #    my $patm_pa  = 1.e5 * $patm_psi / 14.5;
 #    my $sspd     = 345;
 #}
+sub select_geometry {
+    my ( $blast_table, $medium ) = @_;
+    my $symmetry_now = $blast_table->get_symmetry();
+    my $symmetry_name_now =
+      ( $symmetry_now == 2 ? 'S' : $symmetry_now == 1 ? 'C' : 'P' );
+    my $symmetry_name =
+      queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='$symmetry_name_now'");
+    if ( !$symmetry_name ) { $symmetry_name = $symmetry_name_now }
+    my $symmetry =
+      ( $symmetry_name eq 'S' ? 2 : $symmetry_name eq 'C' ? 1 : 0 );
+    if ( $symmetry != $symmetry_now ) {
+	my $blast_table_old=$blast_table;
+        $blast_table =
+          Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
+        my $err = $blast_table->get_error();
+        if ($err) {
+            query("Error: $err; no changes made");
+            return ( $blast_table_old, $medium );
+        }
+        $medium->{_symmetry} = $symmetry;
+    }
+    return ( $blast_table, $medium );
+}
+
+{
+    my $alt_m;
+    BEGIN {
+        $alt_m = 0;
+    }
+
+    sub select_atmosphere_SI {
+        my ( $blast_table, $medium ) = @_;
+
+        my $gamma           = $medium->{_gamma};
+        my $p_amb           = $medium->{_p_amb};
+        my $sspd_amb        = $medium->{_sspd_amb};
+        my $symmetry        = $medium->{_symmetry};
+        my $blast_table_old = $blast_table;
+        while (1) {
+            print <<EOM;
+==========================
+Set atmospheric conditions
+==========================
+AL  - Set earth altitude; current value............: $alt_m m 
+G   - change gamma; current value..................: $gamma 
+P   - change ambient pressure; currrent value......: $p_amb Pa
+C   - change ambient sound speed; current value....: $sspd_amb m/s
+Y   - Yes, return with these values
+Q   - Quit, keep original values
+EOM
+            my $ans = queryu('-->');
+            if ( $ans eq 'AL' ) {
+                $gamma = 1.4;
+                ( $p_amb, $sspd_amb, $alt_m ) = altitude( $p_amb, $sspd_amb, $alt_m );
+            }
+            elsif ( $ans eq 'G' ) {
+                $gamma = get_num( "Enter gamma", 1.4 );
+		$alt_m="?";
+            }
+            elsif ( $ans eq 'P' ) {
+                $p_amb = get_num( "Enter ambient pressure, Pa", $p_amb );
+		$alt_m="?";
+            }
+            elsif ( $ans eq 'C' ) {
+                $sspd_amb =
+                  get_num( "Enter ambient sound speed, m/s", $sspd_amb );
+		$alt_m="?";
+            }
+            elsif ( $ans eq 'Y' ) {
+                my $gamma_old    = $blast_table->get_gamma();
+                my $symmetry_old = $blast_table->get_symmetry();
+                if ( $gamma != $gamma_old || $symmetry != $symmetry_old ) {
+                    my $blast_table_old = $blast_table;
+                    $blast_table = Blast::IPS->new(
+                        'symmetry' => $symmetry,
+                        'gamma'    => $gamma
+                    );
+                    my $err = $blast_table->get_error();
+                    if ($err) {
+                        query("Error: $err; no changes made");
+                        $blast_table = $blast_table_old;
+                        last;
+                    }
+                }
+                $medium->{_gamma}    = $gamma;
+                $medium->{_p_amb}    = $p_amb;
+                $medium->{_sspd_amb} = $sspd_amb;
+                my $rho_amb = $gamma * $p_amb / $sspd_amb**2;
+                $medium->{_rho_amb} = $rho_amb;
+                last;
+            }
+            elsif ( $ans eq 'Q' ) {
+                last;
+            }
+        }
+        return ( $blast_table, $medium );
+    }
+}
+
 
 sub select_blast_table {
     my ( $blast_table, $medium ) = @_;
@@ -393,7 +509,7 @@ EOM
   Z Zoom  - view latest results, 1 screen per channel
   L List  - view latest results, 1 line per channel
   F files (read/write)...
-  X=eXit  CL=Clear  LG=List Gages LD=List Data
+  Q=Quit  CL=Clear  LG=List Gages LD=List Data
 
 EOM
             my $ans = queryu(":");
@@ -427,7 +543,7 @@ EOM
             }
             elsif ( $ans eq 'EI' ) {
             }
-            elsif ( $ans eq 'X' ) {
+            elsif ( $ans eq 'Q' ) {
                 return;
             }
             else {
@@ -1040,24 +1156,25 @@ sub altitude {
 
     # return pressure and sound speed at a given altitude
     # leave them unchanged if not selected
-    my ( $p_amb, $sspd_amb ) = @_;
+    my ( $p_amb, $sspd_amb, $alt_m ) = @_;
     while (1) {
-        my $zz_m = query("altitude, m:");
-	my $zz_ft = 3.2808*$zz_m;
-        my $zz_km = $zz_m*1000;
+        my $zz_m  = query("altitude, m:");
+        my $zz_ft = 3.2808 * $zz_m;
+        my $zz_km = $zz_m * 1000;
         my ( $pp, $tt, $rr, $ww ) = atmos($zz_m);
         my $ttf            = 32. + ( $tt - 273.15 ) * 9. / 5.;
         my $psi            = $pp * 14.5e-5;
         my $sspdms         = 331.48 * sqrt( $tt / 273.15 );
         my $sspdz          = 0.001 * 3.2808 * $sspdms;
         my $pressure_ratio = $pp / 1.01325e5;
+
         foreach ( $zz_km, $zz_ft, $zz_m, $pp, $psi, $pressure_ratio, $tt, $ttf,
             $rr, $ww, $sspdms, $sspdz )
         {
             $_ = sprintf "%0.6g", $_;
         }
-		
-        my $menu           = <<EOM;
+
+        my $menu = <<EOM;
 --------Atmosphere----------
 altitude, m  .......... $zz_m
 altitude, km .......... $zz_km
@@ -1072,22 +1189,23 @@ molecular wt........... $ww
 sound speed, m/s....... $sspdms 
 sound speed, ft/ms..... $sspdz 
 
-Z  enter another altitude );
-Y  YES..change P,T to these values );
-X  return without changing P,T );
+Z  enter another altitude
+Y  YES..change to these values
+Q  Quit; return without changing values
 EOM
-	print $menu;
+        print $menu;
         my $ans = queryu('-->');
         next if ( $ans eq 'Z' );
 
         if ( $ans eq 'Y' ) {
-            $p_amb = $pp;
+            $p_amb    = $pp;
             $sspd_amb = $sspdms;
-	    last;
+            $alt_m    = $zz_m;
+            last;
         }
-        last if ($ans eq 'X');
+        last if ( $ans eq 'Q' );
     }
-    return ( $p_amb, $sspd_amb );
+    return ( $p_amb, $sspd_amb, $alt_m );
 }
 
 {    # sub atmos
@@ -1095,6 +1213,7 @@ EOM
     #
     #       atmospheric model, based upon table 2.7 in Regan, Reentry Vehicle...
     #       compute pressure, temperature, density as function of altitude
+    # 	    converted from the fortran version with f2pl
     #
     #       input parameter -
     #               zz = altitude in meters
@@ -1191,7 +1310,6 @@ EOM
 
         #       lookup the altitude
         for ( my $n = 1 ; $n < @{$rztab}; $n += 1 ) {
-            print "n=$n, zz=$zz; ztab=$rztab->[ $n ] \n";
             if ( $zz <= $rztab->[ $n ] ) {
                 my $i  = $n - 1;
                 my $dz = $zz - $rztab->[ $i ];
@@ -1231,7 +1349,7 @@ EOM
                   ( $rztab->[ $i + 1 ] - $rztab->[ $i ] ) *
                   $dz;
 
-		# ???
+		# ? unused var
                 my $t9 = ( $ww * $tt ) / $w0;
                 goto L900;
             }
