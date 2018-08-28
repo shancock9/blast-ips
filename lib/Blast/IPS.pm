@@ -84,7 +84,10 @@ my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
 my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
 
-my ($I_X, $I_Y, $I_dYdX, $I_Z, $I_dZdX, $I_T, $I_dTdX, $I_ZmX, $I_dZmXdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX);
+my (
+    $I_X,   $I_Y,      $I_dYdX, $I_Z,     $I_dZdX, $I_T, $I_dTdX,
+    $I_ZmX, $I_dZmXdX, $I_E1,   $I_dE1dX, $I_Er,   $I_dErdX
+);
 
 INIT {
 
@@ -138,10 +141,11 @@ INIT {
 
     sub _merge_energy_tables {
 
-       # Merge the energy tables into the shock tables. The ShockTables and EnergyTables have 
-       # the same X values in column 1 but they have been stored separately for flexibility.
-       # The disadvantage is that we have to merge them and at the same time verify that
-       # the X values are still identical.
+       # Merge the energy tables into the shock tables. The ShockTables and
+       # EnergyTables have the same X values in column 1 but they have been
+       # stored separately for flexibility.  The disadvantage is that we have
+       # to merge them and at the same time verify that the X values are still
+       # identical.
         my ( $table_name );
         my @errors;
         my $table_error = sub {
@@ -169,11 +173,11 @@ INIT {
                 }
 
                 # Combine variables in shock table and energy table,
-                # leaving two spots for T and dTdX
+                # leaving spots for T and dTdX, Z-X and dZ-X/dX
 		my @vars=@{$renergy_table->[$i]};
 		shift @vars;  # remove leading X
                 push @{$rnew_table},
-                  [ @{ $rshock_table->[$i] }, 0, 0, @vars ];
+                  [ @{ $rshock_table->[$i] }, 0, 0, 0, 0, @vars ];
             }
 
             # Success, install the new table
@@ -1004,7 +1008,7 @@ sub get_impulse {
 	$ke_pos = $ke_pos_b;
 
 	# positive work equals total work since there is no negative work
-        # my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $Er, $dErdX ) = @{$result};
+        ### my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $ZmX, $dZmXdX, $E1, $dE1dX, $Er, $dErdX ) = @{$result};
 	my $Er = $result->[$I_Er];
 	$work_pos = 1-$gamma*$Er;
 
@@ -1582,6 +1586,8 @@ sub wavefront {
     #       'dZdX' if Q = dZ/dX
     #       'T'    if Q = ln(T), where T=scaled time of arrival
     #       'dTdX' if Q = dT/dX
+    #       'Z-X'  if Q = Z-X
+    #       'dZ-XdX' if Q = d(Z-X)/dX
 
     # The hash may also contain (mainly for debugging):
     #      'interpolation_flag' => $interp
@@ -1695,8 +1701,10 @@ sub wavefront {
           _interpolate_rows( $Q, $icol, $rtab->[$il], $rtab->[$iu], $interp );
     }
 
-    my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $Er, $dErdX ) =
-      @{$result};
+    my (
+        $X,   $Y,      $dYdX, $Z,     $dZdX, $T, $dTdX,
+        $ZmX, $dZmXdX, $E1,   $dE1dX, $Er,   $dErdX
+    ) = @{$result};
 
     # PATCH: Avoid trouble in case user adds a table without E variables
     if ( !defined($E1) ) { $E1 = 0; $dE1dX = 0 }
@@ -2077,8 +2085,9 @@ sub _short_range_calc {
 
     # The result
     my $result_i = [
-        $X_i,     $Y_i,       $dY_dX_i,   $Z_i,
-        $dZ_dX_i, $T_i, $dTdX_i, $E1_i, $dE1dX_i, $Er_i, $dErdX_i
+        $X_i,     $Y_i,    $dY_dX_i,    $Z_i,         $dZ_dX_i,
+        $T_i,     $dTdX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
+        $dE1dX_i, $Er_i,   $dErdX_i
     ];
 
     return $result_i;
@@ -2115,9 +2124,10 @@ sub _add_long_range_energy {
     my ( $X_i, $Y_i, $dYdX_i ) = @{$result_i};
 
     # last table point is reference state
+    # FIXME: use indexes
     my (
         $X_e,    $Y_e,  $dYdX_e,  $Z_e, $dZdX_e, $T_e,
-        $dTdX_e, $E1_e, $dE1dX_e, $Er_e, $dErdX_e
+        $dTdX_e, $ZmX_e, $dZmXdX_e, $E1_e, $dE1dX_e, $Er_e, $dErdX_e
     ) = @{ $rtab->[-1] };
 
     # Tentative initialize to table end in case work is zero
@@ -2173,9 +2183,11 @@ sub _long_range_sphere {
     }
     my $kA = 0.5 * ( $gamma + 1 ) * $A_far;
     my $rtab = $self->{_rtable};
+
+    # FIXME: use indexes
     my (
         $X_e,    $Y_e,  $dYdX_e,  $Z_e,  $dZdX_e, $T_e,
-        $dTdX_e, $E1_e, $dE1dX_e, $E_e, $dEdX_e
+        $dTdX_e, $ZmX, $dZmXdX, $E1_e, $dE1dX_e, $E_e, $dEdX_e
     ) = @{ $rtab->[-1] };
 
     my $X_i;
@@ -2498,8 +2510,6 @@ sub _interpolate_rows {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dZmX_dX_b, $X_b, 0, $dZmX_dX_e, $X_e, 0, 1 );
     }
-
-
     elsif ( $icol == $I_E1 ) {
         ( $X_i, my $dX_dE1_i, my $d2X_dE12_i ) =
           _interpolate_scalar( $Q, $E1_b, $X_b, 1 / $dE1_dX_b,
@@ -2539,8 +2549,9 @@ sub _interpolate_rows {
       = _interpolate_scalar( $X_i, $X_b, $E_b, $dE_dX_b, $X_e, $E_e, $dE_dX_e,
         $interp );
     return [
-        $X_i,     $Y_i,  $dY_dX_i,  $Z_i, $dZ_dX_i, $T_i,
-        $dT_dX_i, $E1_i, $dE1_dX_i, $E_i, $dE_dX_i
+        $X_i,      $Y_i,     $dY_dX_i,    $Z_i,         $dZ_dX_i,
+        $T_i,      $dT_dX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
+        $dE1_dX_i, $E_i,     $dE_dX_i
     ];
 }
 
@@ -2711,8 +2722,9 @@ sub _make_intermediate_gamma_table {
     foreach my $igam ( @{$rilist_6} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha  = alpha_interpolate( $symmetry, $gamma );
-        #my $rtable = get_builtin_table($table_name);
-        my ( $rtable, $rimpulse_table, $rtail_shock_table ) = get_builtin_tables($table_name);
+        my ( $rtable, $rimpulse_table, $rtail_shock_table ) =
+          get_builtin_tables($table_name);
+
         my $A      = -log( ( $gamma + 1 ) * $alpha );
         my $dA     = ( $A_x - $A );
         if ( !defined($dA_min) || abs($dA) < $dA_min ) {
@@ -2823,11 +2835,14 @@ EOM
 
         my $missing_item;
         foreach my $rpoint ( @{$rlag_points_6} ) {
-            my ( $rtable, $A ) = @{$rpoint};
+            my ( $rtable, $A, $gamma ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $E, $dEdX )
-              = @{$item};
+# FIXME: use indexes
+            my (
+                $X,   $YY,     $dYdX, $Z,     $dZdX, $T, $dTdX,
+                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX
+            ) = @{$item};
             push @{$rX}, $X;
             push @{$rZ}, $Z;
             push @{$rE1}, $E1;
@@ -2839,11 +2854,15 @@ EOM
         next if ($missing_item);
 
         foreach my $rpoint ( @{$rlag_points_4} ) {
-            my ( $rtable, $A ) = @{$rpoint};
+            my ( $rtable, $A, $gamma ) = @{$rpoint};
             my $item = $lookup->( $Y, $rtable );
             if ( !defined($item) ) { $missing_item = 1; last }
-            my ( $X, $YY, $dYdX, $Z, $dZdX, $T, $dTdX, $E1, $dE1dX, $E, $dEdX )
-              = @{$item};
+
+# FIXME: use indexes
+            my (
+                $X,   $YY,     $dYdX, $Z,     $dZdX, $T, $dTdX,
+                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX
+            ) = @{$item};
             push @{$rdYdX}, $dYdX;
             push @{$rdZdX}, $dZdX;
             push @{$rdE1dX}, $dE1dX;
@@ -2860,9 +2879,13 @@ EOM
         my $dE1dX_x = polint( $A_x, $rA_4, $rdE1dX );
         my $dEdX_x  = polint( $A_x, $rA_4, $rdEdX ); 
 
-	# leave two spaces for T and dTdX
+	# leave spaces for T and dTdX, Z-X and slope
         push @{$rtab_x},
-          [ $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, 0, 0, $E1_x, $dE1dX_x, $E_x, $dEdX_x ];
+          [
+            $X_x, $Y, $dYdX_x, $Z_x,  $dZdX_x,  0,
+            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
+            $dEdX_x
+          ];
     }
     return $rtab_x;
 }
