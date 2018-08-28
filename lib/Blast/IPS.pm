@@ -18,6 +18,12 @@ package Blast::IPS;
 
 # TODO list:
 
+# Update for specifying z/x:
+# _update_toa to also set
+#   [$I_ZmX] = $Z-$X
+#   [$I_dZmXdX] = $dZdX-1
+# allow 'Z-X' queries
+
 # - Needed to check the extrapolation method beyond the ranges of the tables for
 # some spherical symmetry variables.
 
@@ -78,14 +84,14 @@ my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
 my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
 
-my ($I_X, $I_Y, $I_dYdX, $I_Z, $I_dZdX, $I_T, $I_dTdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX);
+my ($I_X, $I_Y, $I_dYdX, $I_Z, $I_dZdX, $I_T, $I_dTdX, $I_ZmX, $I_dZmXdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX);
 
 INIT {
 
     # Shock Table variable layout
     (
-        $I_X,    $I_Y,  $I_dYdX,  $I_Z, $I_dZdX, $I_T,
-        $I_dTdX, $I_E1, $I_dE1dX, $I_Er, $I_dErdX
+        $I_X,   $I_Y,      $I_dYdX, $I_Z,     $I_dZdX, $I_T, $I_dTdX,
+        $I_ZmX, $I_dZmXdX, $I_E1,   $I_dE1dX, $I_Er,   $I_dErdX
     ) = ( 0 .. 20 );
 
     # Make an index table for searching gamma...
@@ -853,16 +859,21 @@ sub _check_table {
 sub _update_toa_row {
     my ($row) = @_;
 
-    # Update the values of T and dTdX, where T=ln(time of arrival)
+    # Set the values of T and dTdX, where T=ln(time of arrival)
     # in a single table row of shock values
+    # Also set Z-X and its slope.
+    # These enable evaluations as function of time and of ln(z/r) or ln(t/r)
+    
     my ( $X, $Y, $dYdX, $Z, $dZdX ) = @{$row};
     my $z    = exp($Z);
     my $dzdX = $z * $dZdX;
     my $x    = exp($X);
     my $T    = log( $x - $z );
     my $dTdX = ( $x - $dzdX ) / ( $x - $z );
-    $row->[$I_T]    = $T;
-    $row->[$I_dTdX] = $dTdX;
+    $row->[$I_T]      = $T;
+    $row->[$I_dTdX]   = $dTdX;
+    $row->[$I_ZmX]    = $Z - $X;
+    $row->[$I_dZmXdX] = $dZdX - 1;
     return;
 }
 
@@ -1619,17 +1630,19 @@ sub wavefront {
     # For interpolation variables, This lists the corresponding table columns.
     # For the interpolation flag it lists the default value
     my %valid_input_keys = (
-        X                  => 0,
-        Y                  => 1,
-        dYdX               => 2,
-        Z                  => 3,
-        dZdX               => 4,
-        T                  => 5,
-        dTdX               => 6,
-        E1                 => 7,    # primary shock residual energy
-        dE1dX              => 8,
-        Er                 => 9,    # total shock residual energy
-        dErdX              => 10,
+        X                  => $I_X,
+        Y                  => $I_Y,
+        dYdX               => $I_dYdX,
+        Z                  => $I_Z,
+        dZdX               => $I_dZdX,
+        T                  => $I_T,
+        dTdX               => $I_dTdX,
+        'Z-X'              => $I_ZmX,    
+        'dZ-XdX'           => $I_dZmXdX,    
+        E1                 => $I_E1,    # primary shock residual energy
+        dE1dX              => $I_dE1dX,
+        Er                 => $I_Er,    # total shock residual energy
+        dErdX              => $I_dErdX,
         interpolation_flag => 0,
     );
 
@@ -2425,12 +2438,16 @@ sub _interpolate_rows {
 
     # Interpolate all of the variables between two table rows. Each row has
     # these values
-    # 	[X,Y,Z,dYdX,dZdX,T,dTdX,E1, dE1dX, E, dEdX]
+    # 	[X,Y,Z,dYdX,dZdX,T,ZmX, dZmXdX, dTdX,E1, dE1dX, E, dEdX]
 
-    my ( $X_b, $Y_b, $dY_dX_b, $Z_b, $dZ_dX_b, $T_b, $dT_dX_b, $E1_b,
-        $dE1_dX_b, $E_b, $dE_dX_b ) = @{$row_b};
-    my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e, $T_e, $dT_dX_e, $E1_e,
-        $dE1_dX_e, $E_e, $dE_dX_e ) = @{$row_e};
+    my (
+        $X_b,   $Y_b,      $dY_dX_b, $Z_b,      $dZ_dX_b, $T_b, $dT_dX_b,
+        $ZmX_b, $dZmX_dX_b, $E1_b,    $dE1_dX_b, $E_b,     $dE_dX_b
+    ) = @{$row_b};
+    my (
+        $X_e,   $Y_e,      $dY_dX_e, $Z_e,      $dZ_dX_e, $T_e, $dT_dX_e,
+        $ZmX_e, $dZmX_dX_e, $E1_e,    $dE1_dX_e, $E_e,     $dE_dX_e
+    ) = @{$row_e};
 
     # FIXME: for slope interpolation, we are currently doing liner interp
     # We should either iterate or do parabolic interpolation using the
@@ -2438,55 +2455,66 @@ sub _interpolate_rows {
 
     # If this is an inverse problem, first find X=X_i
     my $X_i;
-    if ( $icol == 0 ) {
+    if ( $icol == $I_X ) {
         $X_i = $Q;
     }
 
     # FIXME: these could be collapsed into two calls
     # if icol is odd do a cubic interpolation of icol with slope icol+1
-    elsif ( $icol == 1 ) {
+    elsif ( $icol == $I_Y ) {
         ( $X_i, my $dX_dY_i, my $d2X_dY2_i ) =
           _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
             $Y_e, $X_e, 1 / $dY_dX_e, $interp );
     }
     # if icol is even do a slope interpolation 
-    elsif ( $icol == 2 ) {
+    elsif ( $icol == $I_dYdX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dY_dX_b, $X_b, 0, $dY_dX_e, $X_e, 0, 1 );
     }
-    elsif ( $icol == 3 ) {
+    elsif ( $icol == $I_Z ) {
         ( $X_i, my $dX_dZ_i, my $d2X_dZ2_i ) =
           _interpolate_scalar( $Q, $Z_b, $X_b, 1 / $dZ_dX_b,
             $Z_e, $X_e, 1 / $dZ_dX_e, $interp );
     }
-    elsif ( $icol == 4 ) {
+    elsif ( $icol == $I_dZdX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dZ_dX_b, $X_b, 0, $dZ_dX_e, $X_e, 0, 1 );
     }
-    elsif ( $icol == 5 ) {
+    elsif ( $icol == $I_T ) {
         ( $X_i, my $dX_dT_i, my $d2X_dT2_i ) =
           _interpolate_scalar( $Q, $T_b, $X_b, 1 / $dT_dX_b,
             $T_e, $X_e, 1 / $dT_dX_e, $interp );
     }
-    elsif ( $icol == 6 ) {
+    elsif ( $icol == $I_dTdX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dT_dX_b, $X_b, 0, $dT_dX_e, $X_e, 0, 1 );
     }
-    elsif ( $icol == 7 ) {
+    elsif ( $icol == $I_ZmX ) {
+        ( $X_i, my $dX_dZmX_i, my $d2X_dZmX2_i ) =
+          _interpolate_scalar( $Q, $ZmX_b, $X_b, 1 / $dZmX_dX_b,
+            $ZmX_e, $X_e, 1 / $dZmX_dX_e, $interp );
+    }
+    elsif ( $icol == $I_dZmXdX ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dZmX_dX_b, $X_b, 0, $dZmX_dX_e, $X_e, 0, 1 );
+    }
+
+
+    elsif ( $icol == $I_E1 ) {
         ( $X_i, my $dX_dE1_i, my $d2X_dE12_i ) =
           _interpolate_scalar( $Q, $E1_b, $X_b, 1 / $dE1_dX_b,
             $E1_e, $X_e, 1 / $dE1_dX_e, $interp );
     }
-    elsif ( $icol == 8 ) {
+    elsif ( $icol == $I_dE1dX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dE1_dX_b, $X_b, 0, $dE1_dX_e, $X_e, 0, 1 );
     }
-    elsif ( $icol == 9 ) {
+    elsif ( $icol == $I_Er ) {
         ( $X_i, my $dX_dE_i, my $d2X_dE2_i ) =
           _interpolate_scalar( $Q, $E_b, $X_b, 1 / $dE_dX_b,
             $E_e, $X_e, 1 / $dE_dX_e, $interp );
     }
-    elsif ( $icol == 10 ) {
+    elsif ( $icol == $I_dErdX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dE_dX_b, $X_b, 0, $dE_dX_e, $X_e, 0, 1 );
     }

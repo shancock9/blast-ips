@@ -19,13 +19,18 @@ my $symmetry    = 2;
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
 # Main Loop
-my $selection = 'D';
+my $selection = queryu(<<EOM);
+Please select a starting mode (you can switch anytime):
+D  - Dimensionless
+SI - SI units
+EOM
+$selection = 'SI' unless $selection eq 'D';
 while (1) {
     if ( $selection eq 'D' ) {
-        ( $blast_table, $selection ) = eval_dimensionless( $blast_table );
+        ( $blast_table, $selection ) = eval_dimensionless($blast_table);
     }
     elsif ( $selection eq 'SI' ) {
-        ( $blast_table, $selection ) = eval_si( $blast_table );
+        ( $blast_table, $selection ) = eval_si($blast_table);
     }
     else { last; }
 }
@@ -36,8 +41,8 @@ while (1) {
     my $medium;
 
     BEGIN {
-	my $gamma = 1.4;
-	my $symmetry = 2;
+        my $gamma          = 1.4;
+        my $symmetry       = 2;
         my $p_sea_level    = 1.01325e5;
         my $sspd_sea_level = 340.43;
         my $E0             = 1;
@@ -54,11 +59,11 @@ while (1) {
 
     sub eval_si {
         my ($blast_table) = @_;
-        my $symmetry = $medium->{_symmetry};
-        my $p_amb    = $medium->{_p_amb};
-        my $sspd_amb = $medium->{_sspd_amb};
-        my $gamma    = $medium->{_gamma};
-	my $units  = 'SI';
+        my $symmetry      = $medium->{_symmetry};
+        my $p_amb         = $medium->{_p_amb};
+        my $sspd_amb      = $medium->{_sspd_amb};
+        my $gamma         = $medium->{_gamma};
+        my $units         = 'SI';
 
         my $symmetry_2 = $blast_table->get_symmetry();
         my $gamma_2    = $blast_table->get_gamma();
@@ -124,14 +129,14 @@ EOM
 
 sub eval_dimensionless {
 
-    my ( $blast_table ) = @_;
+    my ($blast_table) = @_;
 
     # FIXME: eliminate $units, $medium
 
     my $symmetry = $blast_table->get_symmetry();
     my $gamma    = $blast_table->get_gamma();
-    my $units = 'D';
-    my $medium = {
+    my $units    = 'D';
+    my $medium   = {
         _gamma    => $gamma,
         _sspd_amb => 1,
         _p_amb    => 1,
@@ -168,8 +173,8 @@ EOM
             show_summary_information( $blast_table, $medium, $units );
         }
         elsif ( $ans eq 'SI' ) {
-	    $return_selection = 'SI';
-	    last;
+            $return_selection = 'SI';
+            last;
         }
         elsif ( $ans eq 'P' ) {
             my $vname = 'X';
@@ -186,7 +191,7 @@ EOM
             }
         }
     }
-    return ($blast_table, $return_selection);
+    return ( $blast_table, $return_selection );
 }
 
 #sub get_medium {
@@ -205,7 +210,7 @@ sub select_geometry {
     my $symmetry =
       ( $symmetry_name eq 'S' ? 2 : $symmetry_name eq 'C' ? 1 : 0 );
     if ( $symmetry != $symmetry_now ) {
-	my $blast_table_old=$blast_table;
+        my $blast_table_old = $blast_table;
         $blast_table =
           Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
         my $err = $blast_table->get_error();
@@ -220,6 +225,7 @@ sub select_geometry {
 
 {
     my $alt_m;
+
     BEGIN {
         $alt_m = 0;
     }
@@ -232,6 +238,7 @@ sub select_geometry {
         my $sspd_amb        = $medium->{_sspd_amb};
         my $symmetry        = $medium->{_symmetry};
         my $blast_table_old = $blast_table;
+        my $touched;
         while (1) {
             print <<EOM;
 ==========================
@@ -245,22 +252,24 @@ Y   - Yes, return with these values
 Q   - Quit, keep original values
 EOM
             my $ans = queryu('-->');
+            if ( $ans ne 'Y' && $ans ne 'Q' ) { $touched = 1 }
             if ( $ans eq 'AL' ) {
                 $gamma = 1.4;
-                ( $p_amb, $sspd_amb, $alt_m ) = altitude( $p_amb, $sspd_amb, $alt_m );
+                ( $p_amb, $sspd_amb, $alt_m ) =
+                  altitude( $p_amb, $sspd_amb, $alt_m );
             }
             elsif ( $ans eq 'G' ) {
                 $gamma = get_num( "Enter gamma", 1.4 );
-		$alt_m="?";
+                $alt_m = "?";
             }
             elsif ( $ans eq 'P' ) {
                 $p_amb = get_num( "Enter ambient pressure, Pa", $p_amb );
-		$alt_m="?";
+                $alt_m = "?";
             }
             elsif ( $ans eq 'C' ) {
                 $sspd_amb =
                   get_num( "Enter ambient sound speed, m/s", $sspd_amb );
-		$alt_m="?";
+                $alt_m = "?";
             }
             elsif ( $ans eq 'Y' ) {
                 my $gamma_old    = $blast_table->get_gamma();
@@ -286,13 +295,13 @@ EOM
                 last;
             }
             elsif ( $ans eq 'Q' ) {
-                last;
+                last if ( !$touched );
+                last if ( ifyes("Return without keeping changes?[Y/N}") );
             }
         }
         return ( $blast_table, $medium );
     }
 }
-
 
 sub select_blast_table {
     my ( $blast_table, $medium ) = @_;
@@ -300,8 +309,9 @@ sub select_blast_table {
     if ( !$symmetry_name ) { $symmetry_name = 'S' }
     my $gamma = get_num( "Enter gamma", 1.4 );
     my $blast_table_old = $blast_table;
-    
-    my $symmetry=($symmetry_name eq 'S' ? 2 : $symmetry_name eq 'C' ? 1 : 0);
+
+    my $symmetry =
+      ( $symmetry_name eq 'S' ? 2 : $symmetry_name eq 'C' ? 1 : 0 );
     $blast_table =
       Blast::IPS->new( 'symmetry' => $symmetry, 'gamma' => $gamma );
     my $err = $blast_table->get_error();
@@ -331,8 +341,8 @@ sub show_summary_information {
     my $Ixr_neg                 = $gamma * $Sint_neg;
     my $r_tail_shock            = $rinfo->{r_tail_shock};
     my $z_tail_shock            = $rinfo->{z_tail_shock};
-    my $r_tail_formed            = $rinfo->{r_tail_formed};
-    my $z_tail_formed            = $rinfo->{z_tail_formed};
+    my $r_tail_formed           = $rinfo->{r_tail_formed};
+    my $z_tail_formed           = $rinfo->{z_tail_formed};
     my $KE_initial_ratio        = $rinfo->{KE_initial_ratio};
     my $pcenter_initial_ratio   = $rinfo->{pcenter_initial_ratio};
     my $t_u_plus_c_zero         = $rinfo->{t_u_plus_c_zero};
@@ -416,6 +426,7 @@ EOM
             'Y'     => [ ++$i, 'ln(y)' ],
             'T'     => [ ++$i, 'ln(t)' ],
             'Z'     => [ ++$i, 'ln(z)' ],
+            'Z-X'   => [ ++$i, 'ln(z/x)' ],
             'E1'    => [ ++$i, 'residual energy from primary shock' ],
             'E'     => [ ++$i, 'residual energy (total)' ],
             'dYdX'  => [ ++$i, 'dY/dX' ],
@@ -442,8 +453,8 @@ EOM
             $menu_text .= "    $key : $menu{$key}->[1]\n";
         }
 
-	# Default; could also be previous value
-        my $default = 'x';  
+        # Default; could also be previous value
+        my $default = 'x';
         while (1) {
             print $menu_text;
             my $ans = query("Select one of these variables; <cr>='$default':");
@@ -462,14 +473,11 @@ EOM
 
 {
 
-    my ( $E0, $p_amb, $sspd_amb, $range, $ground_plane, $symmetry,
-        $blast_table );
+    my ( $E0, $range, $ground_plane, $dscale );
 
     BEGIN {
-        $E0           = 1;
-        $p_amb        = 1;
-        $sspd_amb     = 1;
-        $range        = 1;
+        $E0           = undef;
+        $range        = undef;
         $ground_plane = 1;
     }
 
@@ -480,13 +488,49 @@ EOM
         # internal units are SI but other display units may be used
         #  AL ALtimeter reading, m............    0.0
         #  AT Atmospheric Temperature, K......    59.0
-        my ( $p_amb, $sspd_amb );
         my $gamma    = $medium->{_gamma};
         my $symmetry = $medium->{_symmetry};
+        my $p_amb    = $medium->{_p_amb};
+        my $sspd_amb = $medium->{_sspd_amb};
+        if ( $p_amb <= 0 || $sspd_amb <= 0 ) {
+            query("Enter positive atmospheric pressure and sspd first");
+            return;
+        }
+
+        my $set_dscale = sub {
+
+            # Set the scaling distance whenever E0 changes
+            return unless defined($E0);
+            $dscale = ( $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
+        };
+        my $ask_for_E0 = sub {
+
+            # Get energy in Joules, but must be >0
+            # Reset distance scale
+            my $test = get_num( "Enter energy E0, Joules:", $E0 );
+            if ( defined($test) && $test > 0 ) {
+                $E0 = $test;
+                $set_dscale ();
+            }
+        };
+        my $ask_for_range = sub {
+
+            # Get range in m, but must be >0
+            my $test = get_num( "Enter range, m:", $range );
+            if ( defined($test) && $test > 0 ) { $range = $test }
+        };
+        my $Nsym      = $symmetry + 1;    # = (1,2 or 3)
+        my $to_string = sub {
+            my ($val) = @_;
+            return ( defined($val) ? $val : '?' );
+        };
+        $set_dscale->();
+
         while (1) {
-            $p_amb    = $medium->{_p_amb};
-            $sspd_amb = $medium->{_sspd_amb};
-            my $gtext = $ground_plane ? "on hard surface" : "in free air";
+            my $range_str  = $to_string->($range);
+            my $dscale_str = $to_string->($dscale);
+            my $E0_str     = $to_string->($E0);
+            my $gtext      = $ground_plane ? "on hard surface" : "in free air";
             print <<EOM;
  ----- Dimensional Solution Menu -------
      gamma...........................    $gamma
@@ -495,16 +539,17 @@ EOM
   AA Ambient Atmospheric conditions
      Atmospheric Pressure, Pa........    $p_amb 
      ambient sound speed, m/s........    $sspd_amb
-  R  Range, m........................    $range
-  E  Energy, Joules..................    $E0
+  R  Range, m........................    $range_str
+  E  Energy, Joules..................    $E0_str   
+     scaling distance (E/P0)^1/N.....    $dscale
    
   RE or C Calculate blast parameters, given: R, E
-  RI calculate Energy, given: Range, Impulse
-  RP  calculate Energy, given: Range, measured Overpressure
+  RI calculate Energy, given: Range, Impulse               [TBD]
+  RP calculate Energy, given: Range, measured Overpressure
   RT calculate Energy, given: Range, measured TOA
   EP calculate Range, given Energy and OVP
-  EI calculate Range, given Energy and IMP
-  ET calculate Range, given Energy and TOA
+  EI calculate Range, given Energy and IMP                 [TBD]
+  ET calculate Range, given Energy and TOA   
   
   Z Zoom  - view latest results, 1 screen per channel
   L List  - view latest results, 1 line per channel
@@ -514,10 +559,10 @@ EOM
 EOM
             my $ans = queryu(":");
             if ( $ans eq 'E' ) {
-                $E0 = get_num("Enter energy E0:");
+                $ask_for_E0->();
             }
             elsif ( $ans eq 'R' ) {
-                $range = get_num("Enter range, m:");
+                $ask_for_range->();
             }
             elsif ( $ans eq 'G' ) {
                 print <<EOM;
@@ -530,25 +575,89 @@ EOM
             elsif ( $ans eq 'AA' ) {
             }
             elsif ( $ans eq 'RE' || $ans eq 'C' ) {
+                if ( !defined($range) ) { $ask_for_range->(); }
+                if ( !defined($E0) )    { $ask_for_E0->(); }
+                my $x    = $range / $dscale;
+                my $X    = log($x);
+                my $ret  = $blast_table->wavefront( 'X' => $X );
+                my $Y    = $ret->{Y};
+                my $y    = exp($Y);
+                my $dYdX = $ret->{dYdX};
+                query("ovp ratio=$y; dYdX=$dYdX");
             }
             elsif ( $ans eq 'RI' ) {
             }
             elsif ( $ans eq 'RT' ) {
+                if ( !defined($range) ) { $ask_for_range->(); }
+                my $t = get_num("Enter toa, s:");
+                next if ( $t <= 0 );
+                my $z = ( $range - $t * $sspd_amb );
+                if ( $z <= 0 ) {
+                    my $toa_min = $range / $sspd_amb;
+                    query("toa must exceed $toa_min at range $range");
+                    next;
+                }
+                my $ff   = log( $z / $range );
+                my $ret  = $blast_table->wavefront( 'Z-X' => $ff );
+                my $X    = $ret->{X};
+                my $Y    = $ret->{Y};
+                my $T    = $ret->{T};
+                my $dYdX = $ret->{dYdX};
+                my $x    = exp($X);
+                $dscale = $range / $x;
+                my $ttest = $dscale * exp($T);
+                $E0 = $p_amb * ($dscale)**$Nsym;
+                query("Energy is E0=$E0, dYdX=$dYdX, ttest=$ttest =? $t");
             }
             elsif ( $ans eq 'RP' ) {
+                if ( !defined($range) ) { $ask_for_range->(); }
+                my $y = get_num("Enter incident overpressure ratio:");
+                next if ( $y <= 0 );
+                my $Y    = log($y);
+                my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                my $X    = $ret->{X};
+                my $dYdX = $ret->{dYdX};
+                my $x    = exp($X);
+                $dscale = $range / $x;
+                $E0 = $p_amb * ($dscale)**$Nsym;
+                query("E0=$E0 gives ovp ratio=$y at range=$range, dYdX=$dYdX");
             }
             elsif ( $ans eq 'EP' ) {
+                if ( !defined($E0) ) { $ask_for_E0->(); }
+                my $y = get_num("Enter incident overpressure ratio:");
+                next if ( $y <= 0 );
+                my $Y    = log($y);
+                my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                my $X    = $ret->{X};
+                my $dYdX = $ret->{dYdX};
+                my $x    = exp($X);
+                $range = $x * $dscale;
+                query("range=$range gives ovp ratio=$y; dYdX=$dYdX");
             }
             elsif ( $ans eq 'ET' ) {
+                if ( !defined($E0) ) { $ask_for_E0->(); }
+                my $t = get_num("Enter toa, s:");
+                next if ( $t <= 0 );
+                my $T    = log( $t * $sspd_amb / $dscale );
+                my $ret  = $blast_table->wavefront( 'T' => $T );
+                my $X    = $ret->{X};
+                my $Y    = $ret->{Y};
+                my $dYdX = $ret->{dYdX};
+                my $y    = exp($Y);
+                my $x    = exp($X);
+                $range = $x * $dscale;
+                query("t=$t gives range=$range, ovp ratio=$y; dYdX=$dYdX");
             }
             elsif ( $ans eq 'EI' ) {
+                if ( !defined($E0) ) { $ask_for_E0->(); }
             }
             elsif ( $ans eq 'Q' ) {
-                return;
+                last;
             }
             else {
             }
         }
+        return;
     }
 }
 
@@ -556,13 +665,14 @@ sub point_evaluations_dimensionless {
     my ( $blast_table, $medium, $vname ) = @_;
     my $gamma    = $medium->{_gamma};
     my $symmetry = $medium->{_symmetry};
-    my $p_amb    = $medium->{_p_amb}; 
+    my $p_amb    = $medium->{_p_amb};
     my $pi       = 4 * atan2( 1, 1 );
     my $NN       = $symmetry + 1;
-    my $another = 'a';
+    my $another  = 'a';
     while (1) {
-        my $val = get_num("Enter $another value for '$vname', or <cr> to quit:");
-	$another = 'another';
+        my $val =
+          get_num("Enter $another value for '$vname', or <cr> to quit:");
+        $another = 'another';
         last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
@@ -618,66 +728,66 @@ sub point_evaluations_dimensionless {
         else {
             die "coding incomplete for variable '$vname'";
         }
-        my $ret       = $blast_table->wavefront( $iQ => $Q );
-        my $X         = $ret->{X};
-        my $Y         = $ret->{Y};
-        my $Z         = $ret->{Z};
-        my $dYdX      = $ret->{dYdX};
-        my $dZdX      = $ret->{dZdX};
+        my $ret  = $blast_table->wavefront( $iQ => $Q );
+        my $X    = $ret->{X};
+        my $Y    = $ret->{Y};
+        my $Z    = $ret->{Z};
+        my $dYdX = $ret->{dYdX};
+        my $dZdX = $ret->{dZdX};
+
         #my $Lpos      = $ret->{Lpos};
         #my $Tpos      = $ret->{Tpos};
         #my $Lneg      = $ret->{Lneg};
-        my $Ixr_pos   = $ret->{Ixr_pos};
-        my $Ixr_neg   = $ret->{Ixr_neg};
-        my $E1        = $ret->{E1};
-        my $Er        = $ret->{Er};
-        my $W_atm     = $ret->{W_atm};
-        my $W_blast   = $ret->{W_blast};
-        my $dErdX     = $ret->{dErdX};
-        my $dE1dX     = $ret->{dE1dX};
-        my $dEdE1     = $dE1dX && $dErdX ? $dErdX / $dE1dX : 1;
-        my $ke_pos    = $ret->{KE_pos};
-        my $work_pos  = $ret->{W_pos};
-        my $qint_pos  = $ret->{qint_pos};
-        my $z_pose_rs = $ret->{z_pose_rs};
-        my $z_nege_rs = $ret->{z_nege_rs};
-        my $z_pmin_rs = $ret->{z_pmin_rs};
-        my $rovp_min_rs  = $ret->{rovp_min_rs};
-        my $disp_pos  = $ret->{disp_pos};
-        my $TableLoc  = $ret->{TableLoc};
-        my $z_pose_ts = $ret->{z_pose_ts};
-        my $z_nege_ts = $ret->{z_nege_ts};
-        my $z_pmin_ts = $ret->{z_pmin_ts};
+        my $Ixr_pos     = $ret->{Ixr_pos};
+        my $Ixr_neg     = $ret->{Ixr_neg};
+        my $E1          = $ret->{E1};
+        my $Er          = $ret->{Er};
+        my $W_atm       = $ret->{W_atm};
+        my $W_blast     = $ret->{W_blast};
+        my $dErdX       = $ret->{dErdX};
+        my $dE1dX       = $ret->{dE1dX};
+        my $dEdE1       = $dE1dX && $dErdX ? $dErdX / $dE1dX : 1;
+        my $ke_pos      = $ret->{KE_pos};
+        my $work_pos    = $ret->{W_pos};
+        my $qint_pos    = $ret->{qint_pos};
+        my $z_pose_rs   = $ret->{z_pose_rs};
+        my $z_nege_rs   = $ret->{z_nege_rs};
+        my $z_pmin_rs   = $ret->{z_pmin_rs};
+        my $rovp_min_rs = $ret->{rovp_min_rs};
+        my $disp_pos    = $ret->{disp_pos};
+        my $TableLoc    = $ret->{TableLoc};
+        my $z_pose_ts   = $ret->{z_pose_ts};
+        my $z_nege_ts   = $ret->{z_nege_ts};
+        my $z_pmin_ts   = $ret->{z_pmin_ts};
 
-	my ($il, $iu, $ntab)=@{$TableLoc};
+        my ( $il, $iu, $ntab ) = @{$TableLoc};
         my $table_location =
             ( $il < 0 )     ? "Before Table Start"
           : ( $iu > $ntab ) ? "Extrapolation Beyond Table End"
           :                   "Table Interpolation";
 
-	# To be deleted:
+        # To be deleted:
         my $Ixr_pos_lim = $ret->{Ixr_pos_lim};
         my $Ixr_neg_lim = $ret->{Ixr_neg_lim};
 
-	my $E0 = 1; ## For future use
-	my $E2 = $Er - $E1;
+        my $E0 = 1;           ## For future use
+        my $E2 = $Er - $E1;
 
         my $Tpmin = $z_pmin_rs - $z_nege_rs;
 
-        my $x       = exp($X);
-        my $y       = exp($Y);
-        my $z       = exp($Z);
-        my $t       = $x - $z;
-        my $T       = $t > 0 ? log($t) : -999;
-        my $term    = $y * ( $gamma + 1 ) / ( 2 * $gamma );
-        my $m       = sqrt( 1 + $term );
-        my $q       = 1 / $m**2;
-        my $up      = $y / ( $gamma * $m );
+        my $x    = exp($X);
+        my $y    = exp($Y);
+        my $z    = exp($Z);
+        my $t    = $x - $z;
+        my $T    = $t > 0 ? log($t) : -999;
+        my $term = $y * ( $gamma + 1 ) / ( 2 * $gamma );
+        my $m    = sqrt( 1 + $term );
+        my $q    = 1 / $m**2;
+        my $up   = $y / ( $gamma * $m );
 
-
-	my $dV_atm = $W_atm/$p_amb;
-	my $rbar = $x;
-	my $disp_end = displacement($dV_atm, $x, $symmetry);
+        my $dV_atm   = $W_atm / $p_amb;
+        my $rbar     = $x;
+        my $disp_end = displacement( $dV_atm, $x, $symmetry );
 
         my $dt_pose_rs = $z - $z_pose_rs;
         my $dt_pmin_rs = $z - $z_pmin_rs;
@@ -694,8 +804,9 @@ sub point_evaluations_dimensionless {
         foreach ( $x, $y, $z, $t, $X, $Y, $Z, $T, $dYdX, $dZdX ) {
             $_ = sprintf( "%0.8g", $_ );
         }
-            #$Lpos,     $Lneg,     
-            #$Lpos,                $Tpos,
+
+        #$Lpos,     $Lneg,
+        #$Lpos,                $Tpos,
         foreach (
             $m,                   $q,
             $up,                  $Ixr_pos,
@@ -714,14 +825,15 @@ sub point_evaluations_dimensionless {
             $_ = sprintf( "%0.6g", $_ );
         }
 
-	# preparing for future version with units
-	my $t_unit = "(scaled)";
-	my $d_unit = "(scaled)";
-   	my $e_unit = "(scaled)";
-   	my $u_unit = "(scaled)";
+        # preparing for future version with units
+        my $t_unit = "(scaled)";
+        my $d_unit = "(scaled)";
+        my $e_unit = "(scaled)";
+        my $u_unit = "(scaled)";
 
         my $pstr =
           ( $symmetry == 2 ) ? "x r" : ( $symmetry == 1 ) ? "x r^1/2" : "";
+
 #r^n/2 I+ = $Ixr_pos_lim = limiting positive impulse $pstr
 #r^n/2 I- = $Ixr_neg_lim = limiting negative impulse $pstr
 #L-    = $Lneg = (OLD) length of negative phase $d_unit
@@ -1096,7 +1208,7 @@ sub displacement {
     return 0 if ( $dV == 0 );
 
     # cylindrical symmetry, volume = pi * r**2
-    # so solve dV/pi = (rs+d)**2-rs**2 = (2*rs+d)*d 
+    # so solve dV/pi = (rs+d)**2-rs**2 = (2*rs+d)*d
     if ( $symmetry == 1 ) {
         my $root = $rs**2 - $dV / $pi;
         return -$rs if ( $root <= 0 );
@@ -1131,6 +1243,7 @@ sub displacement {
         my $dx      = -$ff / $dfdx;
         my $V       = 4 / 3 * $pi * ( $rs + $xx )**3;
         my $dV_test = $V - $V0;
+
         #print "it=$it, x=$xx, dx=$dx, f=$ff, dfdx=$dfdx dV_test=$dV_test\n";
         $xx += $dx;
         last if ( abs($dx) < $tol * $rs );
@@ -1140,13 +1253,14 @@ sub displacement {
 
 sub density_ratios {
     my ( $Y, $gamma ) = @_;
-    my $y = exp($Y);
-    my $rho_amb = $gamma;
-    my $top     = ( $gamma + 1 ) * ( $y + 1 ) + ( $gamma - 1 );
-    my $bot     = ( $gamma - 1 ) * ( $y + 1 ) + ( $gamma + 1 );
+    my $y                   = exp($Y);
+    my $rho_amb             = $gamma;
+    my $top                 = ( $gamma + 1 ) * ( $y + 1 ) + ( $gamma - 1 );
+    my $bot                 = ( $gamma - 1 ) * ( $y + 1 ) + ( $gamma + 1 );
     my $density_ratio_shock = $top / $bot;
-    my $density_ratio_ambient = $density_ratio_shock * ( 1 / ( 1 + $y ) )**( 1 / $gamma );
-    return ($density_ratio_shock, $density_ratio_ambient);
+    my $density_ratio_ambient =
+      $density_ratio_shock * ( 1 / ( 1 + $y ) )**( 1 / $gamma );
+    return ( $density_ratio_shock, $density_ratio_ambient );
 }
 
 #($p_amb, $sspd_amb)=altitude($p_amb, $sspd_amb);
@@ -1227,10 +1341,10 @@ EOM
     my ( $rptab, $rrtab, $rttab, $rwtab, $rxlapse, $rztab );
 
     # saved constants
-    my ($rgas, $grav, $w0, $pref, $b);
+    my ( $rgas, $grav, $w0, $pref, $b );
 
     # cached values
-    my ($ppsave, $ttsave, $zzsave, $rrsave, $wwsave );
+    my ( $ppsave, $ttsave, $zzsave, $rrsave, $wwsave );
 
     INIT {
 
@@ -1291,13 +1405,13 @@ EOM
 
     sub atmos {
 
-	my ($zz) = @_;
+        my ($zz) = @_;
 
-	my ($pp, $tt, $rr, $ww);
+        my ( $pp, $tt, $rr, $ww );
 
         #       fixup altitude
-        if ( $zz < 0.0 ) { $zz = 0.0 }
-        if ( $zz > $rztab->[ -1 ] ) { $zz = $rztab->[  1 ]; }
+        if ( $zz < 0.0 )          { $zz = 0.0 }
+        if ( $zz > $rztab->[-1] ) { $zz = $rztab->[1]; }
 
         #       check cache
         if ( $zz == $zzsave ) {
@@ -1309,47 +1423,46 @@ EOM
         }
 
         #       lookup the altitude
-        for ( my $n = 1 ; $n < @{$rztab}; $n += 1 ) {
-            if ( $zz <= $rztab->[ $n ] ) {
+        for ( my $n = 1 ; $n < @{$rztab} ; $n += 1 ) {
+            if ( $zz <= $rztab->[$n] ) {
                 my $i  = $n - 1;
-                my $dz = $zz - $rztab->[ $i ];
+                my $dz = $zz - $rztab->[$i];
 
                 #         in isothermal layer
-                if ( abs( $rxlapse->[ $i ] ) < 1.e-5 ) {
-                    my $tt = $rttab->[ $i ];
+                if ( abs( $rxlapse->[$i] ) < 1.e-5 ) {
+                    my $tt = $rttab->[$i];
                     my $q8 =
                       $grav * $dz *
-                      ( 1. - ( $b / 2. ) * ( $zz + $rztab->[ $i ] ) ) /
+                      ( 1. - ( $b / 2. ) * ( $zz + $rztab->[$i] ) ) /
                       ( $rgas * $rttab->[ $i - 1 ] );
                     my $expq8 = exp( -$q8 );
-                    $pp    = $expq8 * $rptab->[ $i ];
-                    $rr    = $expq8 * $rrtab->[ $i ];
+                    $pp = $expq8 * $rptab->[$i];
+                    $rr = $expq8 * $rrtab->[$i];
                 }
-
 
                 #         in non-isothermal layer
                 else {
 
-                    my $q1 = 1. + $b *
-                      ( $rttab->[ $i ] / $rxlapse->[ $i ] - $rztab->[ $i ] );
-                    my $q2 = ( $q1 * $grav ) / ( $rgas * $rxlapse->[ $i ] );
-                    $tt = $rttab->[ $i ] + $rxlapse->[ $i ] * $dz;
-                    my $q3 = $tt / $rttab->[ $i ];
+                    my $q1 = 1. +
+                      $b * ( $rttab->[$i] / $rxlapse->[$i] - $rztab->[$i] );
+                    my $q2 = ( $q1 * $grav ) / ( $rgas * $rxlapse->[$i] );
+                    $tt = $rttab->[$i] + $rxlapse->[$i] * $dz;
+                    my $q3 = $tt / $rttab->[$i];
                     my $q4 = $q3**( -$q2 );
                     my $q5 =
-                      exp( $b * $grav * $dz / ( $rgas * $rxlapse->[ $i ] ) );
+                      exp( $b * $grav * $dz / ( $rgas * $rxlapse->[$i] ) );
                     my $q6 = $q4 * $q5;
-                    $pp = $rptab->[ $i ] * $q6;
+                    $pp = $rptab->[$i] * $q6;
                     my $q7 = $q2 + 1.0;
-                    $rr = $rrtab->[ $i ] * ( $q3**( -$q7 ) ) * $q5;
+                    $rr = $rrtab->[$i] * ( $q3**( -$q7 ) ) * $q5;
                 }
                 $ww =
-                  $rwtab->[ $i ] +
-                  ( $rwtab->[ $i + 1 ] - $rwtab->[ $i ] ) /
-                  ( $rztab->[ $i + 1 ] - $rztab->[ $i ] ) *
+                  $rwtab->[$i] +
+                  ( $rwtab->[ $i + 1 ] - $rwtab->[$i] ) /
+                  ( $rztab->[ $i + 1 ] - $rztab->[$i] ) *
                   $dz;
 
-		# ? unused var
+                # ? unused var
                 my $t9 = ( $ww * $tt ) / $w0;
                 goto L900;
             }
@@ -1363,6 +1476,6 @@ EOM
         $ttsave = $tt;
         $rrsave = $rr;
         $wwsave = $ww;
-        return ($pp, $tt, $rr, $ww);
+        return ( $pp, $tt, $rr, $ww );
     }
 }
