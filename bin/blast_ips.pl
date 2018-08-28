@@ -5,6 +5,9 @@ use strict;
 # This is a driver to illustrate usage of Blast::IPS.
 use Blast::IPS;
 
+# TODO:
+# - implement the ground plane
+
 my $audit_string = "";
 
 my %symmetry_name = (
@@ -547,6 +550,7 @@ EOM
   RI calculate Energy, given: Range, Impulse               [TBD]
   RP calculate Energy, given: Range, measured Overpressure
   RT calculate Energy, given: Range, measured TOA
+  PI calculate Energy, given: OVP, Impulse                 [TBD]
   EP calculate Range, given Energy and OVP
   EI calculate Range, given Energy and IMP                 [TBD]
   ET calculate Range, given Energy and TOA   
@@ -573,8 +577,10 @@ EOM
                 $ground_plane = query(":");
             }
             elsif ( $ans eq 'AA' ) {
+		query("Not programmed yet");
+		next
             }
-            elsif ( $ans eq 'RE' || $ans eq 'C' ) {
+            elsif ( $ans eq 'RE' || $ans eq 'ER' || $ans eq 'C' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
                 if ( !defined($E0) )    { $ask_for_E0->(); }
                 my $x    = $range / $dscale;
@@ -585,9 +591,11 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 query("ovp ratio=$y; dYdX=$dYdX");
             }
-            elsif ( $ans eq 'RI' ) {
+            elsif ( $ans eq 'RI' || $ans eq 'IR' ) {
+		query("Not programmed yet");
+		next
             }
-            elsif ( $ans eq 'RT' ) {
+            elsif ( $ans eq 'RT' || $ans eq 'TR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
                 my $t = get_num("Enter toa, s:");
                 next if ( $t <= 0 );
@@ -609,7 +617,11 @@ EOM
                 $E0 = $p_amb * ($dscale)**$Nsym;
                 query("Energy is E0=$E0, dYdX=$dYdX, ttest=$ttest =? $t");
             }
-            elsif ( $ans eq 'RP' ) {
+            elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
+		query("Not programmed yet");
+		next
+            }
+            elsif ( $ans eq 'RP' || $ans eq 'PR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
                 my $y = get_num("Enter incident overpressure ratio:");
                 next if ( $y <= 0 );
@@ -622,7 +634,7 @@ EOM
                 $E0 = $p_amb * ($dscale)**$Nsym;
                 query("E0=$E0 gives ovp ratio=$y at range=$range, dYdX=$dYdX");
             }
-            elsif ( $ans eq 'EP' ) {
+            elsif ( $ans eq 'EP' || $ans eq 'PE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
                 my $y = get_num("Enter incident overpressure ratio:");
                 next if ( $y <= 0 );
@@ -634,7 +646,7 @@ EOM
                 $range = $x * $dscale;
                 query("range=$range gives ovp ratio=$y; dYdX=$dYdX");
             }
-            elsif ( $ans eq 'ET' ) {
+            elsif ( $ans eq 'ET' || $ans eq 'TE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
                 my $t = get_num("Enter toa, s:");
                 next if ( $t <= 0 );
@@ -648,8 +660,10 @@ EOM
                 $range = $x * $dscale;
                 query("t=$t gives range=$range, ovp ratio=$y; dYdX=$dYdX");
             }
-            elsif ( $ans eq 'EI' ) {
-                if ( !defined($E0) ) { $ask_for_E0->(); }
+            elsif ( $ans eq 'EI' || $ans eq 'IE' ) {
+		query("Not programmed yet");
+		next
+                #if ( !defined($E0) ) { $ask_for_E0->(); }
             }
             elsif ( $ans eq 'Q' ) {
                 last;

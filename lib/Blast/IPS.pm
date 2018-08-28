@@ -18,11 +18,7 @@ package Blast::IPS;
 
 # TODO list:
 
-# Update for specifying z/x:
-# _update_toa to also set
-#   [I_ZmX] = $Z-$X
-#   [I_dZmXdX] = $dZdX-1
-# allow 'Z-X' queries
+# Add impulse variables I_I and I_dIdX for 'RI' queries
 
 # - Needed to check the extrapolation method beyond the ranges of the tables for
 # some spherical symmetry variables.
@@ -83,6 +79,7 @@ my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
 my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
 my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
 my $rgamma_table;
+my %valid_input_keys; 
 
 BEGIN {
 
@@ -103,6 +100,24 @@ BEGIN {
         I_Er     => $i++,
         I_dErdX  => $i++,
     };
+
+    # Allowed keys for queries to sub wavefront
+    %valid_input_keys = (
+        X                  => I_X,
+        Y                  => I_Y,
+        dYdX               => I_dYdX,
+        Z                  => I_Z,
+        dZdX               => I_dZdX,
+        T                  => I_T,
+        dTdX               => I_dTdX,
+        'Z-X'              => I_ZmX,
+        'dZ-XdX'           => I_dZmXdX,
+        E1                 => I_E1,       # primary shock residual energy
+        dE1dX              => I_dE1dX,
+        Er                 => I_Er,       # total shock residual energy
+        dErdX              => I_dErdX,
+        interpolation_flag => 0,
+    );
 }
 
 INIT {
@@ -203,8 +218,6 @@ INIT {
         return;
     }
     _merge_energy_tables();
-
-    # TODO: merge_impulse_tables
 }
 
 sub new {
@@ -764,8 +777,6 @@ EOM
 
     foreach my $key (@info_keys) {
         my $rtable = $rshock_tables->{$key};
-
-        #print STDERR "Checking table $key\n";
 
         # Check for a naming error
         my $item = $rshock_tables_info->{$key};
@@ -1633,36 +1644,6 @@ sub wavefront {
         }
     }
 
-    # FIXME: move to initialization block
-##?    @q = qw(
-##?      grep
-##?      keys
-##?      map
-##?      reverse
-##?      sort
-##?      split
-##?    );
-##?    @is_keyword_returning_list{@q} = (1) x scalar(@q);
-    # For interpolation variables, this lists the corresponding table columns.
-    # For the interpolation flag it lists the default value
-    my %valid_input_keys = (
-        X                  => I_X,
-        Y                  => I_Y,
-        dYdX               => I_dYdX,
-        Z                  => I_Z,
-        dZdX               => I_dZdX,
-        T                  => I_T,
-        dTdX               => I_dTdX,
-        'Z-X'              => I_ZmX,
-        'dZ-XdX'           => I_dZmXdX,
-        E1                 => I_E1,       # primary shock residual energy
-        dE1dX              => I_dE1dX,
-        Er                 => I_Er,       # total shock residual energy
-        dErdX              => I_dErdX,
-        interpolation_flag => 0,
-    );
-
-
     # Validate input keys
     _check_keys( $rinput_hash, \%valid_input_keys,
         "Checking for valid input keys" );
@@ -2142,10 +2123,6 @@ sub _add_long_range_energy {
     my ( $X_i, $Y_i, $dYdX_i ) = @{$result_i}[ I_X, I_Y, I_dYdX ];
 
     # last table point is reference state
-##    my (
-##        $X_e,    $Y_e,  $dYdX_e,  $Z_e, $dZdX_e, $T_e,
-##        $dTdX_e, $ZmX_e, $dZmXdX_e, $E1_e, $dE1dX_e, $Er_e, $dErdX_e
-##    ) = @{ $rtab->[-1] };
     my (
         $X_e,   $Y_e,      $dYdX_e, $Z_e,     $dZdX_e, $T_e, $dTdX_e,
         $ZmX_e, $dZmXdX_e, $E1_e,   $dE1dX_e, $Er_e,   $dErdX_e
@@ -2209,11 +2186,6 @@ sub _long_range_sphere {
     my $kA = 0.5 * ( $gamma + 1 ) * $A_far;
     my $rtab = $self->{_rtable};
 
-    # FIXME: use indexes
-##?    my (
-##?        $X_e,    $Y_e,  $dYdX_e,  $Z_e,  $dZdX_e, $T_e,
-##?        $dTdX_e, $ZmX, $dZmXdX, $E1_e, $dE1dX_e, $E_e, $dEdX_e
-##?    ) = @{ $rtab->[-1] };
     my (
         $X_e,   $Y_e,      $dYdX_e, $Z_e,     $dZdX_e, $T_e, $dTdX_e,
         $ZmX_e, $dZmXdX_e, $E1_e,   $dE1dX_e, $Er_e,   $dErdX_e
@@ -2407,8 +2379,8 @@ sub _long_range_non_sphere {
     }
     elsif ( $icol == 5 ) {
 
-        # Given W=ln(TOA). We have to iterate in this case because assuming
-        # constant dW/dX is not sufficiently accurate.  Since Z hardly changes
+        # Given T=ln(TOA). We have to iterate in this case because assuming
+        # constant dT/dX is not sufficiently accurate.  Since Z hardly changes
         # with distance, an accurate first guess is made using the last Z in
         # the table. Simple iteration converges in just a couple of steps.
         $Z_i = $Z_e;
@@ -2418,7 +2390,6 @@ sub _long_range_non_sphere {
             $X_i = log( exp($Q) + exp($Z_i) );
             $Z_i = $Z_e + $dZ_dX_i * ( $X_i - $X_e );
             my $dX = $X_i - $X_last;
-            ##print STDERR "it=$it, X_i=$X_i, Z_i=$Z_i, dX=$dX\n";
             last if ( abs($dX) < 1.e-8 );
         }
         $Y_i = $Y_e + $dY_dX_i * ( $X_i - $X_e );
@@ -2508,21 +2479,22 @@ sub _interpolate_rows {
     # We should either iterate or do parabolic interpolation using the
     # second derivatives at the segment ends
 
-    # If this is an inverse problem, first find X=X_i
+    # ZERO: If this is an inverse problem, first find X=X_i
     my $X_i;
     if ( $icol == I_X ) {
         $X_i = $Q;
     }
 
-    # FIXME: these could be collapsed into two calls
-    # if icol is odd do a cubic interpolation of icol with slope icol+1
+    # FIXME: these could be collapsed into two calls:
+    # ODD: icol%2==1 : if icol is odd do a cubic interpolation of icol with
+    # slope icol+1
     elsif ( $icol == I_Y ) {
         ( $X_i, my $dX_dY_i, my $d2X_dY2_i ) =
           _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
             $Y_e, $X_e, 1 / $dY_dX_e, $interp );
     }
 
-    # if icol is even do a slope interpolation
+    # EVEN: icol%2==0 : if icol is even do a slope interpolation
     elsif ( $icol == I_dYdX ) {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dY_dX_b, $X_b, 0, $dY_dX_e, $X_e, 0, 1 );
@@ -2946,26 +2918,22 @@ EOM
         my $dE1dX_x = polint( $A_x, $rA_4, $rdE1dX );
         my $dEdX_x  = polint( $A_x, $rA_4, $rdEdX );
 
-        # leave spaces for T and dTdX, Z-X and slope
-        # FIXME: the four unused vars can now be removed
-
+	# Note: do not need to return derived vars T, dTdX, Z-X and its slope
+	# since they are added later.
         my @vars;
-        @vars[
-          I_X,   I_Y,      I_dYdX, I_Z,     I_dZdX, I_T, I_dTdX,
-          I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX
-          ]
-          = (
-            $X_x, $Y, $dYdX_x, $Z_x,  $dZdX_x,  0,
-            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
-            $dEdX_x
-          );
+##        @vars[
+##          I_X,   I_Y,      I_dYdX, I_Z,     I_dZdX, I_T, I_dTdX,
+##          I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX
+##          ]
+##          = (
+##            $X_x, $Y, $dYdX_x, $Z_x,  $dZdX_x,  0,
+##            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
+##            $dEdX_x
+##          );
+        @vars[ I_X, I_Y, I_dYdX, I_Z, I_dZdX, I_E1, I_dE1dX, I_Er, I_dErdX ] =
+          ( $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, $E1_x, $dE1dX_x, $E_x, $dEdX_x );
 
         push @{$rtab_x}, [@vars];
-##?          [
-##?            $X_x, $Y, $dYdX_x, $Z_x,  $dZdX_x,  0,
-##?            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
-##?            $dEdX_x
-##?          ];
     }
     return $rtab_x;
 }
