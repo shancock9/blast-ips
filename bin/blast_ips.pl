@@ -510,7 +510,7 @@ EOM
             my $test = get_num( "Enter energy E0, Joules:", $E0 );
             if ( defined($test) && $test > 0 ) {
                 $E0 = $test;
-                $set_dscale ();
+                $set_dscale->();
             }
         };
         my $ask_for_range = sub {
