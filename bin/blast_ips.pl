@@ -30,12 +30,23 @@ EOM
 $selection = 'SI' unless $selection eq 'D';
 while (1) {
     if ( $selection eq 'D' ) {
-        ( $blast_table, $selection ) = eval_dimensionless($blast_table);
+        ( $blast_table, $selection ) = eval_dimensionless( $blast_table );
     }
     elsif ( $selection eq 'SI' ) {
-        ( $blast_table, $selection ) = eval_si($blast_table);
+        ( $blast_table, $selection) = eval_si( $blast_table );
     }
     else { last; }
+}
+
+sub ask_ground_plane {
+    my $ground_plane;
+    if ( ifyes("Is this explosion on a hard half-plane?[Y/N]") ) {
+        $ground_plane = "YES";
+    }
+    else {
+        $ground_plane = "NO";
+    }
+    return $ground_plane;
 }
 
 {
@@ -49,13 +60,14 @@ while (1) {
         my $p_sea_level    = 1.01325e5;
         my $sspd_sea_level = 340.43;
         my $E0             = 1;
-        my $medium_stp     = {
-            _gamma    => $gamma,
-            _p_amb    => $p_sea_level,
-            _sspd_amb => $sspd_sea_level,
-            _symmetry => $symmetry,
-            _rho_amb  => $gamma * $p_sea_level / $sspd_sea_level**2,
-            _E0       => $E0,
+        my $medium_stp = {
+            _gamma        => $gamma,
+            _p_amb        => $p_sea_level,
+            _sspd_amb     => $sspd_sea_level,
+            _symmetry     => $symmetry,
+            _rho_amb      => $gamma * $p_sea_level / $sspd_sea_level**2,
+            _E0           => undef,
+            _ground_plane => 'YES',
         };
         $medium = $medium_stp;
     }
@@ -66,6 +78,7 @@ while (1) {
         my $p_amb         = $medium->{_p_amb};
         my $sspd_amb      = $medium->{_sspd_amb};
         my $gamma         = $medium->{_gamma};
+        my $ground_plane  = $medium->{_ground_plane}; 
         my $units         = 'SI';
 
         my $symmetry_2 = $blast_table->get_symmetry();
@@ -88,19 +101,28 @@ while (1) {
 ====================
 Main Menu - SI units
 ====================
-Enter one of the following:
-  G     - Geometry: $symmetry_name{$symmetry}
+First set these geometry and atmosphere parameters...
+  S     - Symmetry: $symmetry_name{$symmetry}
+  G     - Ground Plane?: $ground_plane
   A     - Atmosphere: gamma=$gamma, P0=$p_amb Pa, sspd=$sspd_amb m/s
-  I     - show Global Information about this blast
+
+Then evaluate the model with these settings...
   P     - do Point evaluations ...
   T     - do Table operations ...
+  I     - show Global Information about this blast
+
+Use one of these to go back...
   D     - switch to Dimensionless mode 
-  Q     - Quit
+  Q     - Quit the program
 EOM
             my $ans = queryu(":");
-            if ( $ans eq 'G' ) {
+            if ( $ans eq 'S' ) {
                 ( $blast_table, $medium ) =
                   select_geometry( $blast_table, $medium );
+            }
+            elsif ( $ans eq 'G' ) {
+		$ground_plane = ask_ground_plane();
+		$medium->{_ground_plane}=$ground_plane;
             }
             elsif ( $ans eq 'A' ) {
                 ( $blast_table, $medium ) =
@@ -126,13 +148,13 @@ EOM
                 }
             }
         }
-        return ( $blast_table, $return_selection );
+        return ( $blast_table, $return_selection);
     }
 }
 
 sub eval_dimensionless {
 
-    my ($blast_table) = @_;
+    my ( $blast_table, $ground_plane ) = @_;
 
     # FIXME: eliminate $units, $medium
 
@@ -140,12 +162,13 @@ sub eval_dimensionless {
     my $gamma    = $blast_table->get_gamma();
     my $units    = 'D';
     my $medium   = {
-        _gamma    => $gamma,
-        _sspd_amb => 1,
-        _p_amb    => 1,
-        _symmetry => $symmetry,
-        _rho_amb  => $gamma,
-        _E0       => 1,
+        _gamma        => $gamma,
+        _sspd_amb     => 1,
+        _p_amb        => 1,
+        _symmetry     => $symmetry,
+        _rho_amb      => $gamma,
+        _E0           => 1,
+        _ground_plane => $ground_plane
     };
 
     # main loop
@@ -155,23 +178,30 @@ sub eval_dimensionless {
         $symmetry = $blast_table->get_symmetry();
         $gamma    = $blast_table->get_gamma();
         print <<EOM;
-=========================================
-Point Explosion Main Menu - Dimensionless
-=========================================
-Enter one of the following:
-  N     - change Symmetry and/or Gamma
-          Symmetry=$symmetry_name{$symmetry},  Gamma=$gamma
-  I     - show Global Information about this blast
+=========================
+Main Menu - Dimensionless
+=========================
+First set the geometry and atmosphere parameters...
+  A     - symmetry: $symmetry_name{$symmetry}; gamma=$gamma
+
+Then evaluate the model with these settings...
   P     - do Point evaluations ...
   T     - do Table operations ...
+  I     - show Global Information about this blast
+
+Use one of these to go back...
   SI    - switch to SI Units
-  Q     - Quit
+  Q     - Quit the program
 EOM
         my $ans = queryu(":");
-        if ( $ans eq 'N' ) {
+        if ( $ans eq 'A' ) {
             ( $blast_table, $medium ) =
               select_blast_table( $blast_table, $medium );
         }
+##?        elsif ( $ans eq 'G' ) {
+##?            $ground_plane = ask_ground_plane();
+##?            $medium->{_ground_plane} = $ground_plane;
+##?        }
         elsif ( $ans eq 'I' ) {
             show_summary_information( $blast_table, $medium, $units );
         }
@@ -474,14 +504,36 @@ EOM
     }
 }
 
+sub ground_factor {
+    my ( $symmetry, $ground_plane ) = @_;
+
+    # by what factor should we scale the user's energy to
+    # get the energy for use in the analytical model?
+    my $escale = 1;
+    if ( $ground_plane eq 'YES' ) {
+
+        # in spherical and cylindrical symmetry with energy on the ground,
+        # double the energy going from user to model.  Plane symmetry
+        # already assumes a ground plane.
+        if ( $symmetry > 0 ) { $escale = 2 }
+    }
+    elsif ( $ground_plane eq 'NO' ) {
+
+        # in plane symmetry, halve the energy if no
+        # going from user to model
+        if ( $symmetry == 0 ) { $escale = 0.5 }
+    }
+    else {
+	die "Ground plane is '$ground_plane'; expected to be YES or NO\n";
+    }
+    return $escale;
+}
+
 {
 
-    my ( $E0, $range, $ground_plane, $dscale );
-
+    my $range;
     BEGIN {
-        $E0           = undef;
         $range        = undef;
-        $ground_plane = 1;
     }
 
     sub point_evaluations_SI {
@@ -489,22 +541,25 @@ EOM
 
         # perform point evaluations with units
         # internal units are SI but other display units may be used
-        #  AL ALtimeter reading, m............    0.0
-        #  AT Atmospheric Temperature, K......    59.0
-        my $gamma    = $medium->{_gamma};
-        my $symmetry = $medium->{_symmetry};
-        my $p_amb    = $medium->{_p_amb};
-        my $sspd_amb = $medium->{_sspd_amb};
+        my $gamma        = $medium->{_gamma};
+        my $symmetry     = $medium->{_symmetry};
+        my $p_amb        = $medium->{_p_amb};
+        my $sspd_amb     = $medium->{_sspd_amb};
+        my $ground_plane = $medium->{_ground_plane};
+        my $E0           = $medium->{_E0};
+	my $dscale;
         if ( $p_amb <= 0 || $sspd_amb <= 0 ) {
             query("Enter positive atmospheric pressure and sspd first");
             return;
         }
+        my $ground_factor = ground_factor( $symmetry, $ground_plane );
 
         my $set_dscale = sub {
 
             # Set the scaling distance whenever E0 changes
             return unless defined($E0);
-            $dscale = ( $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
+            $dscale =
+              ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
         };
         my $ask_for_E0 = sub {
 
@@ -527,24 +582,60 @@ EOM
             my ($val) = @_;
             return ( defined($val) ? $val : '?' );
         };
+        my $dscale_to_string = sub {
+            my ($dscale) = @_;
+            my $str = '?';
+            if ( defined($dscale) ) {
+		$dscale = sprintf("%0.5g", $dscale);
+                $str = "$dscale";
+            }
+            return $str;
+        };
+        my $range_to_string = sub {
+            my ($range) = @_;
+            my $str = '?';
+            if ( defined($range) ) {
+                my $range_ft = $range * 3.2808;
+		$range = sprintf("%0.5g", $range);
+		$range_ft = sprintf("%0.5g", $range_ft);
+                $str = "$range  m = $range_ft ft";
+            }
+            return $str;
+        };
+        my $E0_to_string = sub {
+            my ($E0) = @_;
+            my $str = '?';
+            if ( defined($E0) ) {
+                my $E0_kt = $E0 / 4.184e12;
+                my $E0_mj = $E0 / 1.e6;
+                #if ($E0_kt > 0.1) {$E0_kt = sprintf( "%0.4f", $E0_kt );}
+                #if ( $E0_mj > 0.1 ) { $E0_mj = sprintf( "%0.4f", $E0_mj ); }
+		$E0_kt = sprintf("%0.5g", $E0_kt);
+		$E0_mj = sprintf("%0.5g", $E0_mj);
+                $str = "$E0_mj MJ = $E0_kt kt";
+            }
+            return $str;
+        };
+
         $set_dscale->();
+	my $pstr="1/".($symmetry+1);
 
         while (1) {
-            my $range_str  = $to_string->($range);
-            my $dscale_str = $to_string->($dscale);
-            my $E0_str     = $to_string->($E0);
-            my $gtext      = $ground_plane ? "on hard surface" : "in free air";
+            my $range_str  = $range_to_string->($range);
+            my $dscale_str = $dscale_to_string->($dscale);
+            my $E0_str     = $E0_to_string->($E0);
+            #my $gtext      = $ground_plane ? "on hard surface" : "in free air";
+
             print <<EOM;
  ----- Dimensional Solution Menu -------
-     gamma...........................    $gamma
-     symmetry........................    $symmetry
-  G  Ground plane option.............    $gtext
-  AA Ambient Atmospheric conditions
-     Atmospheric Pressure, Pa........    $p_amb 
-     ambient sound speed, m/s........    $sspd_amb
-  R  Range, m........................    $range_str
-  E  Energy, Joules..................    $E0_str   
-     scaling distance (E/P0)^1/N.....    $dscale
+     gamma....................... $gamma
+     symmetry.................... $symmetry
+     explosion on a ground plane? $ground_plane (g = $ground_factor)
+     atmospheric Pressure, Pa.... $p_amb 
+     ambient sound speed, m/s.... $sspd_amb
+  E  Energy...................... $E0_str   
+  R  Range....................... $range_str
+     scale dist. (g*E0/P0)^$pstr... $dscale_str m 
    
   RE or C Calculate blast parameters, given: R, E
   RI calculate Energy, given: Range, Impulse               [TBD]
@@ -558,7 +649,7 @@ EOM
   Z Zoom  - view latest results, 1 screen per channel
   L List  - view latest results, 1 line per channel
   F files (read/write)...
-  Q=Quit  CL=Clear  LG=List Gages LD=List Data
+  Q=Quit   CL=Clear  LG=List Gages LD=List Data
 
 EOM
             my $ans = queryu(":");
@@ -614,7 +705,7 @@ EOM
                 my $x    = exp($X);
                 $dscale = $range / $x;
                 my $ttest = $dscale * exp($T);
-                $E0 = $p_amb * ($dscale)**$Nsym;
+                $E0 = $p_amb * ($dscale)**$Nsym / $ground_factor;
                 query("Energy is E0=$E0, dYdX=$dYdX, ttest=$ttest =? $t");
             }
             elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
@@ -671,6 +762,7 @@ EOM
             else {
             }
         }
+	$medium->{$E0} = $E0;
         return;
     }
 }
@@ -683,6 +775,12 @@ sub point_evaluations_dimensionless {
     my $pi       = 4 * atan2( 1, 1 );
     my $NN       = $symmetry + 1;
     my $another  = 'a';
+
+    # Note that a ground_plane and ground factor are not currently used
+    # in dimensionless mode. They have to be applied before converting
+    # to an actual geometry.
+    # my $ground_factor = ground_factor( $symmetry, $ground_plane );
+
     while (1) {
         my $val =
           get_num("Enter $another value for '$vname', or <cr> to quit:");
@@ -1493,3 +1591,23 @@ EOM
         return ( $pp, $tt, $rr, $ww );
     }
 }
+__END__
+Example output, english units:
+
+ Slant Range, ft.....................    328.0 
+ Weight, lb..........................    1.0 
+  
+ Incident Overpressure, psi..........    8.333975241E-2 
+ Ground (measured) overpressure, psi.    8.333975241E-2 
+ Normal reflected overpressure, psi..    0.1666795048 
+  
+ Incident Impulse, psi-ms............    0.2713459657 
+ Ground (measured) impulse, psi-ms...    0.2713459657 
+ Normal reflected impulse, psi-ms....    0.5426919315 
+  
+ Time of arrival, ms.................    286.3715576 
+ Positive Phase duration, ms.........    6.946690553 
+ Shape factor, alpha.................    0.1971577722 
+ Shock velocity, kfps................    1.118106658 
+ hit <cr> to continue
+
