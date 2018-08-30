@@ -22,11 +22,13 @@ my $symmetry    = 2;
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
 # Main Loop
-my $selection = queryu(<<EOM);
+#my $selection = queryu(<<EOM);
+print <<EOM;
 Please select a starting mode (you can switch anytime):
 D  - Dimensionless
 SI - SI units
 EOM
+my $selection = queryu("<cr>='SI':");
 $selection = 'SI' unless $selection eq 'D';
 while (1) {
     if ( $selection eq 'D' ) {
@@ -40,7 +42,7 @@ while (1) {
 
 sub ask_ground_plane {
     my $ground_plane;
-    if ( ifyes("Is this explosion on a hard half-plane?[Y/N]") ) {
+    if ( ifyes("Is this explosion on a hard surface (ground plane)?[Y/N]") ) {
         $ground_plane = "YES";
     }
     else {
@@ -95,13 +97,29 @@ sub ask_ground_plane {
         my $return_selection = 'D';
         while (1) {
             my $table_name = $blast_table->get_table_name();
-            $symmetry = $blast_table->get_symmetry();
-            $gamma    = $blast_table->get_gamma();
+            my $symmetry_x     = $blast_table->get_symmetry();
+            my $gamma_x        = $blast_table->get_gamma();
+            $p_amb        = $medium->{_p_amb};
+            $sspd_amb     = $medium->{_sspd_amb};
+            $symmetry     = $medium->{_symmetry};
+            $p_amb        = $medium->{_p_amb};
+            $sspd_amb     = $medium->{_sspd_amb};
+            $gamma        = $medium->{_gamma};
+            $ground_plane = $medium->{_ground_plane};
+            if ( $symmetry_x != $symmetry || $gamma_x != $gamma ) {
+
+		# just checking, should not happen:
+                query(<<EOM);
+Code bug: 
+if ($symmetry_x != $symmetry || $gamma_x != $gamma) 
+EOM
+            }
+
             print <<EOM;
 ====================
 Main Menu - SI units
 ====================
-First set these geometry and atmosphere parameters...
+First check/set these geometry and atmosphere parameters...
   S     - Symmetry: $symmetry_name{$symmetry}
   G     - Ground Plane?: $ground_plane
   A     - Atmosphere: gamma=$gamma, P0=$p_amb Pa, sspd=$sspd_amb m/s
@@ -116,13 +134,14 @@ Use one of these to go back...
   Q     - Quit the program
 EOM
             my $ans = queryu(":");
+
             if ( $ans eq 'S' ) {
                 ( $blast_table, $medium ) =
                   select_geometry( $blast_table, $medium );
             }
             elsif ( $ans eq 'G' ) {
-		$ground_plane = ask_ground_plane();
-		$medium->{_ground_plane}=$ground_plane;
+                $ground_plane = ask_ground_plane();
+                $medium->{_ground_plane} = $ground_plane;
             }
             elsif ( $ans eq 'A' ) {
                 ( $blast_table, $medium ) =
@@ -181,8 +200,9 @@ sub eval_dimensionless {
 =========================
 Main Menu - Dimensionless
 =========================
-First set the geometry and atmosphere parameters...
-  A     - symmetry: $symmetry_name{$symmetry}; gamma=$gamma
+First check/set the geometry and atmosphere parameters...
+  A     - symmetry: $symmetry_name{$symmetry}
+        - gamma: $gamma
 
 Then evaluate the model with these settings...
   P     - do Point evaluations ...
@@ -195,6 +215,24 @@ Use one of these to go back...
 EOM
         my $ans = queryu(":");
         if ( $ans eq 'A' ) {
+	    print <<EOM;
+
+=========================================================================
+NOTE: In dimensionless mode you are working with one of three symmetries:
+
+P : an infinte planar source on a rigid wall
+C : an infinitely long cylinder source in air (no ground plane)
+S : a sphere in free air (no ground plane)
+
+- The scaling distance is (E/P0)^(1/n), where E is energy and n=1,2, or 3.  
+- You must handle any ground plane yourself:  
+  - For spherical and cylindrical geometries, if you have a ground plane, then 
+   you need to use TWO TIMES your energy in this equation.
+  - For planar geometry, if you do not have a ground plane (rigid wall),
+   you need to use ONE HALF your energy in this equation.
+- To avoid dealing with this issue, use the SI mode which does this for you
+
+EOM
             ( $blast_table, $medium ) =
               select_blast_table( $blast_table, $medium );
         }
@@ -281,8 +319,8 @@ AL  - Set earth altitude; current value............: $alt_m m
 G   - change gamma; current value..................: $gamma 
 P   - change ambient pressure; currrent value......: $p_amb Pa
 C   - change ambient sound speed; current value....: $sspd_amb m/s
-Y   - Yes, return with these values
 Q   - Quit, keep original values
+Y   - Yes, return with these values
 EOM
             my $ans = queryu('-->');
             if ( $ans ne 'Y' && $ans ne 'Q' ) { $touched = 1 }
@@ -329,7 +367,7 @@ EOM
             }
             elsif ( $ans eq 'Q' ) {
                 last if ( !$touched );
-                last if ( ifyes("Return without keeping changes?[Y/N}") );
+                last if ( ifyes("Return without keeping your changes?[Y/N]") );
             }
         }
         return ( $blast_table, $medium );
@@ -577,6 +615,25 @@ sub ground_factor {
             my $test = get_num( "Enter range, m:", $range );
             if ( defined($test) && $test > 0 ) { $range = $test }
         };
+        my $ask_for_overpressure_ratio = sub {
+
+            # Get range in m, but must be >0
+            #my $y = get_num("Enter incident overpressure ratio:");
+	    my $y;
+            my $test = get_num( "Enter incident overpressure ratio:");
+            if ( defined($test) && $test > 0 ) { $y = $test }
+	    return $y;
+        };
+        my $ask_for_impulse = sub {
+
+            # Get range in m, but must be >0
+            #my $y = get_num("Enter incident overpressure ratio:");
+            my $imp;
+            my $test = get_num("Enter incident positive phase impulse, Pa-s:");
+            if ( defined($test) && $test > 0 ) { $imp = $test }
+            return $imp;
+        };
+
         my $Nsym      = $symmetry + 1;    # = (1,2 or 3)
         my $to_string = sub {
             my ($val) = @_;
@@ -586,8 +643,10 @@ sub ground_factor {
             my ($dscale) = @_;
             my $str = '?';
             if ( defined($dscale) ) {
+                my $dscale_ft = $dscale * 3.2808;
 		$dscale = sprintf("%0.5g", $dscale);
-                $str = "$dscale";
+		$dscale_ft = sprintf("%0.5g", $dscale_ft);
+                $str = "$dscale  m = $dscale_ft ft";
             }
             return $str;
         };
@@ -638,13 +697,14 @@ sub ground_factor {
      scale dist. (g*E0/P0)^$pstr... $dscale_str m 
    
   RE or C Calculate blast parameters, given: R, E
+
   RI calculate Energy, given: Range, Impulse               [TBD]
-  RP calculate Energy, given: Range, measured Overpressure
-  RT calculate Energy, given: Range, measured TOA
-  PI calculate Energy, given: OVP, Impulse                 [TBD]
+  RP calculate Energy, given: Range, Overpressure
+  RT calculate Energy, given: Range, TOA
   EP calculate Range, given Energy and OVP
-  EI calculate Range, given Energy and IMP                 [TBD]
+  EI calculate Range, given Energy and Impulse             [TBD]
   ET calculate Range, given Energy and TOA   
+  PI calculate Energy and Range, given: OVP, Impulse
   
   Z Zoom  - view latest results, 1 screen per channel
   L List  - view latest results, 1 line per channel
@@ -709,13 +769,26 @@ EOM
                 query("Energy is E0=$E0, dYdX=$dYdX, ttest=$ttest =? $t");
             }
             elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
-		query("Not programmed yet");
-		next
+                my $y = $ask_for_overpressure_ratio->();
+                next if ( !defined($y) || $y <= 0 );
+                my $Y       = log($y);
+                my $ret     = $blast_table->wavefront( 'Y' => $Y );
+                my $X       = $ret->{X};
+                my $x       = exp($X);
+                my $Ixr_pos = $ret->{Ixr_pos};
+                my $I_pos   = $Ixr_pos / $x**( $symmetry / 2 );
+                my $impulse = $ask_for_impulse->();
+                next if ( !defined($impulse) || $impulse <= 0 );
+                $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
+                $range  = $x * $dscale;
+                $E0     = $p_amb * $range**( $symmetry + 1 );
+                next;
             }
             elsif ( $ans eq 'RP' || $ans eq 'PR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
-                my $y = get_num("Enter incident overpressure ratio:");
-                next if ( $y <= 0 );
+                ##my $y = get_num("Enter incident overpressure ratio:");
+		my $y = $ask_for_overpressure_ratio->();
+                next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
                 my $ret  = $blast_table->wavefront( 'Y' => $Y );
                 my $X    = $ret->{X};
@@ -727,8 +800,10 @@ EOM
             }
             elsif ( $ans eq 'EP' || $ans eq 'PE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
-                my $y = get_num("Enter incident overpressure ratio:");
-                next if ( $y <= 0 );
+                #my $y = get_num("Enter incident overpressure ratio:");
+                #next if ( $y <= 0 );
+		my $y = $ask_for_overpressure_ratio->();
+                next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
                 my $ret  = $blast_table->wavefront( 'Y' => $Y );
                 my $X    = $ret->{X};
@@ -762,7 +837,7 @@ EOM
             else {
             }
         }
-	$medium->{$E0} = $E0;
+	$medium->{_E0} = $E0;
         return;
     }
 }
@@ -1383,8 +1458,9 @@ sub altitude {
     # return pressure and sound speed at a given altitude
     # leave them unchanged if not selected
     my ( $p_amb, $sspd_amb, $alt_m ) = @_;
+    my $zz_m = $alt_m;
     while (1) {
-        my $zz_m  = query("altitude, m:");
+        $zz_m = get_num( "Altitude, m:",$zz_m );
         my $zz_ft = 3.2808 * $zz_m;
         my $zz_km = $zz_m * 1000;
         my ( $pp, $tt, $rr, $ww ) = atmos($zz_m);
@@ -1416,20 +1492,21 @@ sound speed, m/s....... $sspdms
 sound speed, ft/ms..... $sspdz 
 
 Z  enter another altitude
-Y  YES..change to these values
-Q  Quit; return without changing values
+Q  return 
 EOM
+#Q  Quit; return without changing values
+#Y  YES..change to these values
         print $menu;
         my $ans = queryu('-->');
         next if ( $ans eq 'Z' );
 
-        if ( $ans eq 'Y' ) {
+        if ( $ans eq 'Q' ) {
             $p_amb    = $pp;
             $sspd_amb = $sspdms;
             $alt_m    = $zz_m;
             last;
         }
-        last if ( $ans eq 'Q' );
+        #last if ( $ans eq 'Q' );
     }
     return ( $p_amb, $sspd_amb, $alt_m );
 }
