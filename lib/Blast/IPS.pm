@@ -1146,6 +1146,14 @@ sub get_impulse {
     }
     my $disp_pos = defined($Disp_pos) ? exp($Disp_pos) : undef;
     my $qint_pos = defined($Qint_pos) ? exp($Qint_pos) : undef;
+
+    # Switching to impulse instead of impulse time r^(j/2)
+    my $r      = exp($X);
+    my $rpow   = $r**( $symmetry / 2 );
+    my $pint_pos = $rpint_pos/$rpow;
+    my $pint_neg = $rpint_neg/$rpow;
+    $rreturn_hash->{pint_pos} = $pint_pos;
+    $rreturn_hash->{pint_neg} = $pint_neg;
     $rreturn_hash->{rpint_pos} = $rpint_pos;
     $rreturn_hash->{rpint_neg} = $rpint_neg;
     $rreturn_hash->{rovp_min}  = $rovp_min;
@@ -1717,11 +1725,14 @@ sub wavefront {
     my $rimpulse_hash = $self->get_impulse($result);
     my (
         $rpint_pos, $rpint_neg, $rovp_min, $z_pmin_rs, $z_pose_rs,
-        $z_nege_rs, $KE_pos,    $W_pos,    $disp_pos,  $qint_pos
+        $z_nege_rs, $KE_pos,    $W_pos,    $disp_pos,  $qint_pos,
+	$pint_pos, $pint_neg,
     );
     if ($rimpulse_hash) {
         $rpint_pos = $rimpulse_hash->{rpint_pos};
         $rpint_neg = $rimpulse_hash->{rpint_neg};
+        $pint_pos = $rimpulse_hash->{pint_pos};
+        $pint_neg = $rimpulse_hash->{pint_neg};
         $rovp_min  = $rimpulse_hash->{rovp_min};
         $z_pmin_rs = $rimpulse_hash->{z_pmin_rs};
         $z_pose_rs = $rimpulse_hash->{z_pose_rs};
@@ -1786,6 +1797,8 @@ sub wavefront {
         'Sint_neg'    => $Sint_neg,
         'Ixr_pos'     => $rpint_pos,
         'Ixr_neg'     => $rpint_neg,
+        'pint_pos'    => $pint_pos,
+        'pint_neg'    => $pint_neg,
         'rovp_min_rs' => $rovp_min,
         'z_pmin_rs'   => $z_pmin_rs,
         'z_pose_rs'   => $z_pose_rs,
