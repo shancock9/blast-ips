@@ -5,9 +5,6 @@ use strict;
 # This is a driver to illustrate usage of Blast::IPS.
 use Blast::IPS;
 
-# TODO:
-# - implement the ground plane
-
 my $audit_string = "";
 
 my %symmetry_name = (
@@ -175,11 +172,8 @@ sub eval_dimensionless {
 
     my ( $blast_table, $ground_plane ) = @_;
 
-    # FIXME: eliminate $units, $medium
-
     my $symmetry = $blast_table->get_symmetry();
     my $gamma    = $blast_table->get_gamma();
-    my $units    = 'D';
     my $medium   = {
         _gamma        => $gamma,
         _sspd_amb     => 1,
@@ -241,7 +235,7 @@ EOM
 ##?            $medium->{_ground_plane} = $ground_plane;
 ##?        }
         elsif ( $ans eq 'I' ) {
-            show_summary_information( $blast_table, $medium, $units );
+            show_summary_information( $blast_table, $medium );
         }
         elsif ( $ans eq 'SI' ) {
             $return_selection = 'SI';
@@ -400,7 +394,7 @@ sub select_blast_table {
 }
 
 sub show_summary_information {
-    my ( $blast_table, $medium, $units ) = @_;
+    my ( $blast_table, $medium ) = @_;
     my $rinfo                   = $blast_table->get_info();
     my $table_name              = $rinfo->{table_name};
     my $alpha                   = $rinfo->{alpha};
@@ -567,6 +561,71 @@ sub ground_factor {
     return $escale;
 }
 
+sub request_value {
+    my ( $msg, $default ) = @_;
+    my $test = get_num( $msg, $default );
+    if ( !defined($test) ) { return $default }
+    return $test;
+}
+
+sub request_positive_value {
+    my ( $msg, $default) = @_;
+    my $test = get_num( $msg, $default );
+    if ( !defined($test) ) { return $default }
+    if ( $test <= 0 ) { return $default }
+    return $test;
+}
+
+sub format_value {
+    my ( $val, $unit_type ) = @_;
+
+    # format $val, which is in SI units
+
+    my $pa_to_psi = 0.00014503773800722;
+    my $m_to_ft = 3.2808;
+
+    # Format a numerical value in SI units as a string with
+    # additional useful units
+    my $str = '?';
+    if ( defined($val) ) {
+        $str = sprintf( "%0.5g", $val );
+        if ( defined($unit_type) ) {
+            if ( $unit_type eq 'L' ) {
+                my $val_ft = $val * $m_to_ft;
+                $val    = sprintf( "%0.5g", $val );
+                $val_ft = sprintf( "%0.5g", $val_ft );
+                $str         = "$val  m = $val_ft ft";
+            }
+            elsif ( $unit_type eq 'T' ) {
+                $val = sprintf( "%0.5g", $val );
+                $str = "$val s";
+            }
+            elsif ( $unit_type eq 'E' ) {
+                my $val_kt = $val / 4.184e12;
+                my $val_lb = $val_kt * 2.e6;
+                my $val_mj = $val / 1.e6;
+                $val_kt = sprintf( "%0.5g", $val_kt );
+                $val_mj = sprintf( "%0.5g", $val_mj );
+                $val_lb = sprintf( "%0.2g", $val_lb );
+                $str =
+                  "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
+            }
+            if ( $unit_type eq 'P' ) {
+                my $val_psi = $val * $pa_to_psi;
+                $val     = sprintf( "%0.5g", $val );
+                $val_psi = sprintf( "%0.5g", $val_psi );
+                $str          = "$val Pa = $val_psi psi";
+            }
+            elsif ( $unit_type eq 'I' ) {
+                $val = sprintf( "%0.5g", $val );
+                my $val_psi_ms = sprintf( "%0.5g", $val * $pa_to_psi*1000 );
+                $str = "$val Pa-s  =  $val_psi_ms psi-ms";
+            }
+        }
+    }
+    return $str;
+}
+
 {
 
     my $range;
@@ -600,90 +659,33 @@ sub ground_factor {
               ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
         };
         my $ask_for_E0 = sub {
-
-            # Get energy in Joules, but must be >0
-            # Reset distance scale
-            my $test = get_num( "Enter energy E0, Joules:", $E0 );
-            if ( defined($test) && $test > 0 ) {
-                $E0 = $test;
-                $set_dscale->();
-            }
+	    $E0=request_positive_value("Enter energy E0, Joules:", $E0);
+            $set_dscale->();
         };
         my $ask_for_range = sub {
-
-            # Get range in m, but must be >0
-            my $test = get_num( "Enter range, m:", $range );
-            if ( defined($test) && $test > 0 ) { $range = $test }
+	    $range=request_positive_value("Enter range, m:", $range);
         };
         my $ask_for_overpressure_ratio = sub {
 
-            # Get range in m, but must be >0
-            #my $y = get_num("Enter incident overpressure ratio:");
-	    my $y;
-            my $test = get_num( "Enter incident overpressure ratio:");
-            if ( defined($test) && $test > 0 ) { $y = $test }
-	    return $y;
+            my $y = request_positive_value( "Enter incident overpressure_ratio",
+                $range );
+            return $y;
         };
         my $ask_for_impulse = sub {
 
-            # Get range in m, but must be >0
-            #my $y = get_num("Enter incident overpressure ratio:");
-            my $imp;
-            my $test = get_num("Enter incident positive phase impulse, Pa-s:");
-            if ( defined($test) && $test > 0 ) { $imp = $test }
+            my $imp = request_positive_value(
+                "Enter incident positive phase impulse, Pa-s:");
             return $imp;
         };
 
         my $Nsym      = $symmetry + 1;    # = (1,2 or 3)
-        my $to_string = sub {
-            my ($val) = @_;
-            return ( defined($val) ? $val : '?' );
-        };
-        my $dscale_to_string = sub {
-            my ($dscale) = @_;
-            my $str = '?';
-            if ( defined($dscale) ) {
-                my $dscale_ft = $dscale * 3.2808;
-		$dscale = sprintf("%0.5g", $dscale);
-		$dscale_ft = sprintf("%0.5g", $dscale_ft);
-                $str = "$dscale  m = $dscale_ft ft";
-            }
-            return $str;
-        };
-        my $range_to_string = sub {
-            my ($range) = @_;
-            my $str = '?';
-            if ( defined($range) ) {
-                my $range_ft = $range * 3.2808;
-		$range = sprintf("%0.5g", $range);
-		$range_ft = sprintf("%0.5g", $range_ft);
-                $str = "$range  m = $range_ft ft";
-            }
-            return $str;
-        };
-        my $E0_to_string = sub {
-            my ($E0) = @_;
-            my $str = '?';
-            if ( defined($E0) ) {
-                my $E0_kt = $E0 / 4.184e12;
-                my $E0_mj = $E0 / 1.e6;
-                #if ($E0_kt > 0.1) {$E0_kt = sprintf( "%0.4f", $E0_kt );}
-                #if ( $E0_mj > 0.1 ) { $E0_mj = sprintf( "%0.4f", $E0_mj ); }
-		$E0_kt = sprintf("%0.5g", $E0_kt);
-		$E0_mj = sprintf("%0.5g", $E0_mj);
-                $str = "$E0_mj MJ = $E0_kt kt";
-            }
-            return $str;
-        };
-
         $set_dscale->();
 	my $pstr="1/".($symmetry+1);
 
         while (1) {
-            my $range_str  = $range_to_string->($range);
-            my $dscale_str = $dscale_to_string->($dscale);
-            my $E0_str     = $E0_to_string->($E0);
-            #my $gtext      = $ground_plane ? "on hard surface" : "in free air";
+            my $range_str  = format_value($range, 'L'); 
+            my $dscale_str = format_value($dscale, 'L'); 
+            my $E0_str     = format_value($E0, 'E'); 
 
             print <<EOM;
  ----- Dimensional Solution Menu -------
@@ -698,11 +700,11 @@ sub ground_factor {
    
   RE or C Calculate blast parameters, given: R, E
 
-  RI calculate Energy, given: Range, Impulse               [TBD]
+  RI calculate Energy, given: Range, Impulse               
   RP calculate Energy, given: Range, Overpressure
   RT calculate Energy, given: Range, TOA
   EP calculate Range, given Energy and OVP
-  EI calculate Range, given Energy and Impulse             [TBD]
+  EI calculate Range, given Energy and Impulse             
   ET calculate Range, given Energy and TOA   
   PI calculate Energy and Range, given: OVP, Impulse
   
@@ -734,17 +736,15 @@ EOM
             elsif ( $ans eq 'RE' || $ans eq 'ER' || $ans eq 'C' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
                 if ( !defined($E0) )    { $ask_for_E0->(); }
-                my $x    = $range / $dscale;
-                my $X    = log($x);
-                my $ret  = $blast_table->wavefront( 'X' => $X );
-                my $Y    = $ret->{Y};
-                my $y    = exp($Y);
-                my $dYdX = $ret->{dYdX};
-                query("ovp ratio=$y; dYdX=$dYdX");
+		$medium->{_E0}=$E0;
+		display_result($range, $medium, $blast_table); 
             }
             elsif ( $ans eq 'RI' || $ans eq 'IR' ) {
-		query("Not programmed yet");
-		next
+                if ( !defined($range) ) { $ask_for_range->(); }
+                my $impulse = $ask_for_impulse->();
+                next if ( !defined($impulse) || $impulse <= 0 );
+                query("FIXME: Need to add impulse to shock table");
+                next;
             }
             elsif ( $ans eq 'RT' || $ans eq 'TR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
@@ -764,9 +764,7 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $dscale = $range / $x;
-                my $ttest = $dscale * exp($T);
                 $E0 = $p_amb * ($dscale)**$Nsym / $ground_factor;
-                query("Energy is E0=$E0, dYdX=$dYdX, ttest=$ttest =? $t");
             }
             elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
                 my $y = $ask_for_overpressure_ratio->();
@@ -781,12 +779,11 @@ EOM
                 next if ( !defined($impulse) || $impulse <= 0 );
                 $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
                 $range  = $x * $dscale;
-                $E0     = $p_amb * $range**( $symmetry + 1 );
+                $E0     = $p_amb / $ground_factor* $dscale**( $symmetry + 1 );
                 next;
             }
             elsif ( $ans eq 'RP' || $ans eq 'PR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
-                ##my $y = get_num("Enter incident overpressure ratio:");
 		my $y = $ask_for_overpressure_ratio->();
                 next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
@@ -796,12 +793,9 @@ EOM
                 my $x    = exp($X);
                 $dscale = $range / $x;
                 $E0 = $p_amb * ($dscale)**$Nsym;
-                query("E0=$E0 gives ovp ratio=$y at range=$range, dYdX=$dYdX");
             }
             elsif ( $ans eq 'EP' || $ans eq 'PE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
-                #my $y = get_num("Enter incident overpressure ratio:");
-                #next if ( $y <= 0 );
 		my $y = $ask_for_overpressure_ratio->();
                 next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
@@ -810,7 +804,6 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $range = $x * $dscale;
-                query("range=$range gives ovp ratio=$y; dYdX=$dYdX");
             }
             elsif ( $ans eq 'ET' || $ans eq 'TE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
@@ -824,12 +817,13 @@ EOM
                 my $y    = exp($Y);
                 my $x    = exp($X);
                 $range = $x * $dscale;
-                query("t=$t gives range=$range, ovp ratio=$y; dYdX=$dYdX");
             }
             elsif ( $ans eq 'EI' || $ans eq 'IE' ) {
-		query("Not programmed yet");
+                if ( !defined($E0) ) { $ask_for_E0->(); }
+                my $impulse = $ask_for_impulse->();
+                next if ( !defined($impulse) || $impulse <= 0 );
+                query("FIXME: Need to add impulse to shock table");
 		next
-                #if ( !defined($E0) ) { $ask_for_E0->(); }
             }
             elsif ( $ans eq 'Q' ) {
                 last;
@@ -840,6 +834,51 @@ EOM
 	$medium->{_E0} = $E0;
         return;
     }
+}
+
+sub display_result {
+    my ( $range, $medium, $blast_table ) = @_;
+    my $gamma         = $medium->{_gamma};
+    my $symmetry      = $medium->{_symmetry};
+    my $p_amb         = $medium->{_p_amb};
+    my $sspd_amb      = $medium->{_sspd_amb};
+    my $ground_plane  = $medium->{_ground_plane};
+    my $E0            = $medium->{_E0};
+    my $ground_factor = ground_factor( $symmetry, $ground_plane );
+    my $dscale =
+      ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
+    my $x         = $range / $dscale;
+    my $X         = log($x);
+    my $ret       = $blast_table->wavefront( 'X' => $X );
+    my $Y         = $ret->{Y};
+    my $y         = exp($Y);
+    my $dYdX      = $ret->{dYdX};
+    my $T         = $ret->{T};
+    my $toa       = exp($T) * $dscale / $sspd_amb;
+    my $Z         = $ret->{Z};
+    my $z         = exp($Z) * $dscale;
+    my $z_pose_rs = $ret->{z_pose_rs} * $dscale;
+    my $tpos      = ( $z - $z_pose_rs ) / $sspd_amb;
+    my $imp       = $ret->{pint_pos} * $p_amb * $dscale / $sspd_amb;
+    my $range_str = format_value( $range, 'L' );
+    my $E0_str    = format_value( $E0, 'E' );
+    my $toa_str   = format_value( $toa, 'T' );
+    my $tpos_str  = format_value( $tpos, 'T' );
+    my $ovp       = $y * $p_amb;
+    my $ovp_str   = format_value( $ovp, 'P' );
+    my $y_str     = format_value($y);
+    my $imp_str   = format_value( $imp, 'I' );
+    print <<EOM;
+Energy...................... $E0_str   
+Range....................... $range_str
+Overpressure ratio.......... $y_str 
+Overpressure ............... $ovp_str 
+Incident Impulse............ $imp_str
+Time of arrival............. $toa_str
+Positive Phase duration..... $tpos_str 
+EOM
+    hitcr();
+    return;
 }
 
 sub point_evaluations_dimensionless {
@@ -1669,22 +1708,5 @@ EOM
     }
 }
 __END__
-Example output, english units:
 
- Slant Range, ft.....................    328.0 
- Weight, lb..........................    1.0 
-  
- Incident Overpressure, psi..........    8.333975241E-2 
- Ground (measured) overpressure, psi.    8.333975241E-2 
- Normal reflected overpressure, psi..    0.1666795048 
-  
- Incident Impulse, psi-ms............    0.2713459657 
- Ground (measured) impulse, psi-ms...    0.2713459657 
- Normal reflected impulse, psi-ms....    0.5426919315 
-  
- Time of arrival, ms.................    286.3715576 
- Positive Phase duration, ms.........    6.946690553 
- Shape factor, alpha.................    0.1971577722 
- Shock velocity, kfps................    1.118106658 
- hit <cr> to continue
 
