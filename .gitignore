@@ -2,6 +2,7 @@
 *~
 *.log
 *.bak
+*.ba?
 *.tmp
 *.sw?
 *.DEBUG
