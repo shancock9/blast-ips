@@ -18,8 +18,6 @@ package Blast::IPS;
 
 # TODO list:
 
-# Add impulse variables I_I and I_dIdX for 'RI' queries
-
 # - Needed to check the extrapolation method beyond the ranges of the tables for
 # some spherical symmetry variables.
 
@@ -99,6 +97,8 @@ BEGIN {
         I_dE1dX  => $i++,
         I_Er     => $i++,
         I_dErdX  => $i++,
+        I_ImX      => $i++,
+        I_dImXdX   => $i++,
     };
 
     # Allowed keys for queries to sub wavefront
@@ -116,6 +116,8 @@ BEGIN {
         dE1dX              => I_dE1dX,
         Er                 => I_Er,       # total shock residual energy
         dErdX              => I_dErdX,
+        'I-X'              => I_ImX,       # total shock residual energy
+        'dI-XdX'           => I_dImXdX,
         interpolation_flag => 0,
     );
 }
@@ -1628,6 +1630,7 @@ sub wavefront {
         carp "$error";
         return;
     }
+    my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
     my $Sint_pos = $self->{_rinfo}->{Sintegral_pos};
     my $Sint_neg = $self->{_rinfo}->{Sintegral_neg};
@@ -1703,11 +1706,11 @@ sub wavefront {
 
     my (
         $X,   $Y,      $dYdX, $Z,     $dZdX, $T, $dTdX,
-        $ZmX, $dZmXdX, $E1,   $dE1dX, $Er,   $dErdX
+        $ZmX, $dZmXdX, $E1,   $dE1dX, $Er,   $dErdX, $ImX, $dImXdX,
       )
       = @{$result}[
       I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX
+      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
       ];
 
     # PATCH: Avoid trouble in case user adds a table without E variables
@@ -1741,6 +1744,13 @@ sub wavefront {
         $W_pos     = $rimpulse_hash->{W_pos};
         $disp_pos  = $rimpulse_hash->{disp_pos};
         $qint_pos  = $rimpulse_hash->{qint_pos};
+    }
+    elsif(defined($ImX)) {
+
+        # get impulse with the I-X method if gamma interpolation makes
+	# the impulse hash unavailable
+        $pint_pos = exp( $ImX + $X );
+        $rpint_pos = $pint_pos*exp($X)**($symmetry/2);
     }
 
     # FIXME: evaluate sigma and Sigma = sigma*r**(symmetry/2)
@@ -1781,6 +1791,8 @@ sub wavefront {
         'dE1dX'   => $dE1dX,
         'Er'      => $Er,
         'dErdX'   => $dErdX,
+        'I-X'       => $ImX,
+        'dI-XdX'    => $dImXdX,
         'W_blast' => $W_blast,
         'W_atm'   => $W_atm,
         'KE_pos'  => $KE_pos,
@@ -2095,11 +2107,17 @@ sub _short_range_calc {
     my $Er_i    = $E1_i;
     my $dErdX_i = $dE1dX_i;
 
+    ## FIXME: assuming constant impulse at very close range; needs research
+    my ( $ImX_0, $dImXdX_0 ) = @{ $rtab->[0] }[ I_ImX, I_dImXdX ];
+    my $ImX_i    = $ImX_0;
+    my $dImXdX_i = $dImXdX_0;
+    ############
+
     # The result
     my $result_i = [
         $X_i,     $Y_i,    $dY_dX_i,    $Z_i,         $dZ_dX_i,
         $T_i,     $dTdX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
-        $dE1dX_i, $Er_i,   $dErdX_i
+        $dE1dX_i, $Er_i,   $dErdX_i, $ImX_i, $dImXdX_i
     ];
 
     return $result_i;
@@ -2138,11 +2156,11 @@ sub _add_long_range_energy {
     # last table point is reference state
     my (
         $X_e,   $Y_e,      $dYdX_e, $Z_e,     $dZdX_e, $T_e, $dTdX_e,
-        $ZmX_e, $dZmXdX_e, $E1_e,   $dE1dX_e, $Er_e,   $dErdX_e
+        $ZmX_e, $dZmXdX_e, $E1_e,   $dE1dX_e, $Er_e,   $dErdX_e, $ImX_e, $dImXdX_e
       )
       = @{ $rtab->[-1] }[
       I_X,    I_Y,   I_dYdX,   I_Z,  I_dZdX, I_T,
-      I_dTdX, I_ZmX, I_dZmXdX, I_Er, I_dErdX
+      I_dTdX, I_ZmX, I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX,
       ];
 
     # Tentative initialize to table end in case work is zero
@@ -2150,8 +2168,13 @@ sub _add_long_range_energy {
     my $Er_i    = $Er_e;
     my $dE1dX_i = $dE1dX_e;
     my $dErdX_i = $dErdX_e;
+    my $dImXdX_i = $dImXdX_e;
+    my $ImX_i = $ImX_e; 
 
-    return unless defined($Er_i);
+    # In case user adds a table (testing only), we do not want to continue
+    return unless ( defined($Er_e) && defined($ImX_e));
+
+    $ImX_i = $ImX_e + $dImXdX_e * ( $X_i - $X_e );
 
     # Work at end state
     my $w_e = 1 - $gamma * $Er_e;
@@ -2179,6 +2202,8 @@ sub _add_long_range_energy {
     $result_i->[I_dE1dX] = $dE1dX_i;
     $result_i->[I_Er]    = $Er_i;
     $result_i->[I_dErdX] = $dErdX_i;
+    $result_i->[I_ImX]     = $ImX_i;
+    $result_i->[I_dImXdX]  = $dImXdX_i;
     return;
 }
 
@@ -2472,20 +2497,20 @@ sub _interpolate_rows {
     my (
         $X_b,      $Y_b,     $dY_dX_b, $Z_b,       $dZ_dX_b,
         $T_b,      $dT_dX_b, $ZmX_b,   $dZmX_dX_b, $E1_b,
-        $dE1_dX_b, $E_b,     $dE_dX_b
+        $dE1_dX_b, $E_b,     $dE_dX_b, $ImX_b, $dImX_dX_b,
       )
       = @{$row_b}[
       I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX
+      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
       ];
     my (
         $X_e,      $Y_e,     $dY_dX_e, $Z_e,       $dZ_dX_e,
         $T_e,      $dT_dX_e, $ZmX_e,   $dZmX_dX_e, $E1_e,
-        $dE1_dX_e, $E_e,     $dE_dX_e
+        $dE1_dX_e, $E_e,     $dE_dX_e, $ImX_e, $dImX_dX_e,
       )
       = @{$row_e}[
       I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX
+      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX,
       ];
 
     # FIXME: for slope interpolation, we are currently doing liner interp
@@ -2558,6 +2583,15 @@ sub _interpolate_rows {
         ( $X_i, my $slope1, my $slope2 ) =
           _interpolate_scalar( $Q, $dE_dX_b, $X_b, 0, $dE_dX_e, $X_e, 0, 1 );
     }
+    elsif ( $icol == I_ImX ) {
+        ( $X_i, my $dX_dI_i, my $d2X_dE2_i ) =
+          _interpolate_scalar( $Q, $ImX_b, $X_b, 1 / $dImX_dX_b,
+            $ImX_e, $X_e, 1 / $dImX_dX_e, $interp );
+    }
+    elsif ( $icol == I_dImXdX ) {
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dImX_dX_b, $X_b, 0, $dImX_dX_e, $X_e, 0, 1 );
+    }
     else {
         carp "unknown call type icol='$icol'";    # Shouldn't happen
     }
@@ -2578,24 +2612,21 @@ sub _interpolate_rows {
     my ( $E_i, $dE_dX_i, $d2E_dX2_i ) =
       _interpolate_scalar( $X_i, $X_b, $E_b, $dE_dX_b, $X_e, $E_e, $dE_dX_e,
         $interp );
+    my ( $ImX_i, $dImX_dX_i, $d2I_dX2_i ) =
+      _interpolate_scalar( $X_i, $X_b, $ImX_b, $dImX_dX_b, $X_e, $ImX_e, $dImX_dX_e,
+        $interp );
 
     my @vars;
     @vars[
       I_X,   I_Y,      I_dYdX, I_Z,     I_dZdX, I_T, I_dTdX,
-      I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX
+      I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX, I_ImX, I_dImXdX
       ]
       = (
         $X_i,      $Y_i,     $dY_dX_i,    $Z_i,         $dZ_dX_i,
         $T_i,      $dT_dX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
-        $dE1_dX_i, $E_i,     $dE_dX_i
+        $dE1_dX_i, $E_i,     $dE_dX_i, $ImX_i, $dImX_dX_i,
       );
     return [@vars];
-
-    #    return [
-    #        $X_i,      $Y_i,     $dY_dX_i,    $Z_i,         $dZ_dX_i,
-    #        $T_i,      $dT_dX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
-    #        $dE1_dX_i, $E_i,     $dE_dX_i
-    #    ];
 }
 
 sub _interpolate_scalar {
@@ -2870,12 +2901,12 @@ EOM
     }
     push @Ylist, $Ymin;
 
-    # We are interpolating X and Z with 6 interpolation points.
-    # We are interpolating dYdX and dZdX with 4 interpolation points.
+    # We are interpolating vars, like X and Z, with 6 interpolation points.
+    # We are interpolating slopes, like dYdX and dZdX, with 4 interpolation points.
     my $rtab_x = [];
 
     foreach my $Y (@Ylist) {
-        my ( $rX, $rdYdX, $rZ, $rdZdX, $rE1, $rdE1dX, $rE, $rdEdX );
+        my ( $rX, $rdYdX, $rZ, $rdZdX, $rE1, $rdE1dX, $rE, $rdEdX, $rImX, $rdImXdX );
 
         my $missing_item;
         foreach my $rpoint ( @{$rlag_points_6} ) {
@@ -2884,17 +2915,18 @@ EOM
             if ( !defined($item) ) { $missing_item = 1; last }
             my (
                 $X,   $YY,     $dYdX, $Z,     $dZdX, $T, $dTdX,
-                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX
+                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX, $ImX, $dImXdX,
               )
               = @{$item}[
               I_X,    I_Y,   I_dYdX,   I_Z,  I_dZdX,  I_T,
               I_dTdX, I_ZmX, I_dZmXdX, I_E1, I_dE1dX, I_Er,
-              I_dErdX
+              I_dErdX, I_ImX, I_dImXdX,
               ];
             push @{$rX},  $X;
             push @{$rZ},  $Z;
             push @{$rE1}, $E1;
             push @{$rE},  $E;
+            push @{$rImX},  $ImX;
         }
 
         # All values must exist in order to interpolate
@@ -2908,17 +2940,18 @@ EOM
 
             my (
                 $X,   $YY,     $dYdX, $Z,     $dZdX, $T, $dTdX,
-                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX
+                $ZmX, $dZmXdX, $E1,   $dE1dX, $E,    $dEdX, $ImX, $dImXdX,
               )
               = @{$item}[
               I_X,    I_Y,   I_dYdX,   I_Z,  I_dZdX,  I_T,
               I_dTdX, I_ZmX, I_dZmXdX, I_E1, I_dE1dX, I_Er,
-              I_dErdX
+              I_dErdX, I_ImX, I_dImXdX,
               ];
             push @{$rdYdX},  $dYdX;
             push @{$rdZdX},  $dZdX;
             push @{$rdE1dX}, $dE1dX;
             push @{$rdEdX},  $dEdX;
+            push @{$rdImXdX},  $dImXdX;
         }
         next if ($missing_item);
 
@@ -2926,10 +2959,12 @@ EOM
         my $Z_x     = polint( $A_x, $rA_6, $rZ );
         my $E1_x    = polint( $A_x, $rA_6, $rE1 );
         my $E_x     = polint( $A_x, $rA_6, $rE );
+        my $ImX_x   = polint( $A_x, $rA_6, $rImX );
         my $dYdX_x  = polint( $A_x, $rA_4, $rdYdX );
         my $dZdX_x  = polint( $A_x, $rA_4, $rdZdX );
         my $dE1dX_x = polint( $A_x, $rA_4, $rdE1dX );
         my $dEdX_x  = polint( $A_x, $rA_4, $rdEdX );
+        my $dImXdX_x  = polint( $A_x, $rA_4, $rdImXdX );
 
 	# Note: do not need to return derived vars T, dTdX, Z-X and its slope
 	# since they are added later.
@@ -2943,8 +2978,8 @@ EOM
 ##            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
 ##            $dEdX_x
 ##          );
-        @vars[ I_X, I_Y, I_dYdX, I_Z, I_dZdX, I_E1, I_dE1dX, I_Er, I_dErdX ] =
-          ( $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, $E1_x, $dE1dX_x, $E_x, $dEdX_x );
+        @vars[ I_X, I_Y, I_dYdX, I_Z, I_dZdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX ] =
+          ( $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, $E1_x, $dE1dX_x, $E_x, $dEdX_x, $ImX_x, $dImXdX_x );
 
         push @{$rtab_x}, [@vars];
     }

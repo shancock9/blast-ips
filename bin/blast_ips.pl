@@ -19,7 +19,6 @@ my $symmetry    = 2;
 my $blast_table = Blast::IPS->new( symmetry => $symmetry, gamma => $gamma );
 
 # Main Loop
-#my $selection = queryu(<<EOM);
 print <<EOM;
 Please select a starting mode (you can switch anytime):
 D  - Dimensionless
@@ -230,10 +229,6 @@ EOM
             ( $blast_table, $medium ) =
               select_blast_table( $blast_table, $medium );
         }
-##?        elsif ( $ans eq 'G' ) {
-##?            $ground_plane = ask_ground_plane();
-##?            $medium->{_ground_plane} = $ground_plane;
-##?        }
         elsif ( $ans eq 'I' ) {
             show_summary_information( $blast_table, $medium );
         }
@@ -244,6 +239,7 @@ EOM
         elsif ( $ans eq 'P' ) {
             my $vname = 'X';
             $vname = select_dimensionless_variable($vname);
+            ##( $blast_table, $medium ) =
             point_evaluations_dimensionless( $blast_table, $medium, $vname );
         }
         elsif ( $ans eq 'T' ) {
@@ -259,11 +255,6 @@ EOM
     return ( $blast_table, $return_selection );
 }
 
-#sub get_medium {
-#    my $patm_psi = 14.7;
-#    my $patm_pa  = 1.e5 * $patm_psi / 14.5;
-#    my $sspd     = 345;
-#}
 sub select_geometry {
     my ( $blast_table, $medium ) = @_;
     my $symmetry_now = $blast_table->get_symmetry();
@@ -309,11 +300,15 @@ sub select_geometry {
 ==========================
 Set atmospheric conditions
 ==========================
+
+You may either use an altitude model or adjust the parameters individually.
+
 AL  - Set earth altitude; current value............: $alt_m m 
+
 G   - change gamma; current value..................: $gamma 
 P   - change ambient pressure; currrent value......: $p_amb Pa
 C   - change ambient sound speed; current value....: $sspd_amb m/s
-Q   - Quit, keep original values
+Q   - Quit, use previous values
 Y   - Yes, return with these values
 EOM
             my $ans = queryu('-->');
@@ -322,6 +317,12 @@ EOM
                 $gamma = 1.4;
                 ( $p_amb, $sspd_amb, $alt_m ) =
                   altitude( $p_amb, $sspd_amb, $alt_m );
+                $medium->{_gamma}    = $gamma;
+                $medium->{_p_amb}    = $p_amb;
+                $medium->{_sspd_amb} = $sspd_amb;
+                my $rho_amb = $gamma * $p_amb / $sspd_amb**2;
+                $medium->{_rho_amb} = $rho_amb;
+                last;
             }
             elsif ( $ans eq 'G' ) {
                 $gamma = get_num( "Enter gamma", 1.4 );
@@ -494,6 +495,7 @@ EOM
             'Z-X'   => [ ++$i, 'ln(z/x)' ],
             'E1'    => [ ++$i, 'residual energy from primary shock' ],
             'E'     => [ ++$i, 'residual energy (total)' ],
+            'I-X'   => [ ++$i, 'ln(i/x)'],
             'dYdX'  => [ ++$i, 'dY/dX' ],
             'dZdX'  => [ ++$i, 'dZ/dX' ],
             'dWdX'  => [ ++$i, 'dW/dX' ],
@@ -600,28 +602,57 @@ sub format_value {
                 $val = sprintf( "%0.5g", $val );
                 $str = "$val s";
             }
+            elsif ( $unit_type eq 'L/T' ) {
+                $val = sprintf( "%0.5g", $val );
+                my $val_fps = sprintf( "%0.5g", $val*$m_to_ft );
+                $str = "$val m/s = $val_fps fps";
+            }
             elsif ( $unit_type eq 'E' ) {
                 my $val_kt = $val / 4.184e12;
                 my $val_lb = $val_kt * 2.e6;
                 my $val_mj = $val / 1.e6;
                 $val_kt = sprintf( "%0.5g", $val_kt );
                 $val_mj = sprintf( "%0.5g", $val_mj );
-                $val_lb = sprintf( "%0.2g", $val_lb );
+                $val_lb = sprintf( "%0.3g", $val_lb );
                 $str =
                   "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
             }
-            if ( $unit_type eq 'P' ) {
+            elsif ( $unit_type eq 'E/L' ) {
+                $val = sprintf( "%0.5g", $val );
+                $str = "$val J/m" 
+            }
+            elsif ( $unit_type eq 'E/L^2' ) {
+                $val = sprintf( "%0.5g", $val );
+                $str = "$val J/m^2" 
+            }
+            elsif ( $unit_type eq 'P' ) {
                 my $val_psi = $val * $pa_to_psi;
                 $val     = sprintf( "%0.5g", $val );
                 $val_psi = sprintf( "%0.5g", $val_psi );
                 $str          = "$val Pa = $val_psi psi";
             }
-            elsif ( $unit_type eq 'I' ) {
+            elsif ( $unit_type eq 'P*T' ) {
                 $val = sprintf( "%0.5g", $val );
                 my $val_psi_ms = sprintf( "%0.5g", $val * $pa_to_psi*1000 );
                 $str = "$val Pa-s  =  $val_psi_ms psi-ms";
             }
         }
+    }
+    return $str;
+}
+
+
+sub format_E {
+    my ( $val, $symmetry ) = @_;
+    my $str;
+    if ( $symmetry == 2 ) {
+        $str = format_value( $val, 'E' );
+    }
+    elsif ( $symmetry == 1 ) {
+        $str = format_value( $val, 'E/L' );
+    }
+    else {
+        $str = format_value( $val, 'E/L^2' );
     }
     return $str;
 }
@@ -649,8 +680,8 @@ sub format_value {
             query("Enter positive atmospheric pressure and sspd first");
             return;
         }
-        my $ground_factor = ground_factor( $symmetry, $ground_plane );
 
+        my $ground_factor = ground_factor( $symmetry, $ground_plane );
         my $set_dscale = sub {
 
             # Set the scaling distance whenever E0 changes
@@ -658,8 +689,15 @@ sub format_value {
             $dscale =
               ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
         };
+        my $set_E_from_dscale = sub {
+            $E0 = $p_amb * $dscale**( $symmetry + 1 ) / $ground_factor;
+        };
         my $ask_for_E0 = sub {
-	    $E0=request_positive_value("Enter energy E0, Joules:", $E0);
+            my $units =
+                ( $symmetry == 2 ) ? "Joules"
+              : ( $symmetry == 1 ) ? "Joules/m"
+              :                      "Joules/m^2";
+            $E0 = request_positive_value( "Enter energy E0, $units:", $E0 );
             $set_dscale->();
         };
         my $ask_for_range = sub {
@@ -667,8 +705,7 @@ sub format_value {
         };
         my $ask_for_overpressure_ratio = sub {
 
-            my $y = request_positive_value( "Enter incident overpressure_ratio",
-                $range );
+            my $y = request_positive_value("Enter incident overpressure_ratio");
             return $y;
         };
         my $ask_for_impulse = sub {
@@ -678,42 +715,48 @@ sub format_value {
             return $imp;
         };
 
-        my $Nsym      = $symmetry + 1;    # = (1,2 or 3)
+        my $Nsym = $symmetry + 1;    # = (1,2 or 3)
         $set_dscale->();
-	my $pstr="1/".($symmetry+1);
+        my $pstr = $symmetry == 0 ? "" : "^1/" . ( $symmetry + 1 );
 
         while (1) {
             my $range_str  = format_value($range, 'L'); 
             my $dscale_str = format_value($dscale, 'L'); 
-            my $E0_str     = format_value($E0, 'E'); 
+            #my $E0_str     = format_value($E0, 'E'); 
+            my $E0_str     = format_E($E0, $symmetry); 
+            $ground_factor = ground_factor( $symmetry, $ground_plane );
 
             print <<EOM;
- ----- Dimensional Solution Menu -------
-     gamma....................... $gamma
-     symmetry.................... $symmetry
-     explosion on a ground plane? $ground_plane (g = $ground_factor)
-     atmospheric Pressure, Pa.... $p_amb 
-     ambient sound speed, m/s.... $sspd_amb
-  E  Energy...................... $E0_str   
-  R  Range....................... $range_str
-     scale dist. (g*E0/P0)^$pstr... $dscale_str m 
-   
-  RE or C Calculate blast parameters, given: R, E
+===========================
+Point Evaluation with Units
+===========================
+1. Settings:
+   A  atmospheric Pressure, Pa.... $p_amb 
+      ambient sound speed, m/s.... $sspd_amb
+      gamma....................... $gamma
+      symmetry.................... $symmetry
+   G  explosion on a ground plane? $ground_plane (g = $ground_factor)
+   E  Energy...................... $E0_str   
+   R  Range....................... $range_str
+      scale dist. (g*E0/P0)$pstr... $dscale_str m 
 
-  RI calculate Energy, given: Range, Impulse               
-  RP calculate Energy, given: Range, Overpressure
-  RT calculate Energy, given: Range, TOA
-  EP calculate Range, given Energy and OVP
-  EI calculate Range, given Energy and Impulse             
-  ET calculate Range, given Energy and TOA   
-  PI calculate Energy and Range, given: OVP, Impulse
+2. Use these commands to estimate E and/or R from other known quantities
+   RI (Range, Impulse)       ->Energy
+   RP (Range, OverPressure)  ->Energy
+   RT (Range, TOA)           ->Energy
+   PI (Overpressure, Impulse)->(Energy, Range)
+   EP (Energy, Overpressure) ->Range
+   ET (Energy, TOA)          ->Range
+
+3. When E and R are defined, evaluate the solution:
+   C  Calculate blast parameters, given: R, E
   
-  Z Zoom  - view latest results, 1 screen per channel
-  L List  - view latest results, 1 line per channel
-  F files (read/write)...
-  Q=Quit   CL=Clear  LG=List Gages LD=List Data
-
+   Q return to previous menu
 EOM
+#  Z Zoom  - view latest results, 1 screen per channel
+#  L List  - view latest results, 1 line per channel
+#  F files (read/write)...
+#  Q=Quit   CL=Clear  LG=List Gages LD=List Data
             my $ans = queryu(":");
             if ( $ans eq 'E' ) {
                 $ask_for_E0->();
@@ -721,17 +764,19 @@ EOM
             elsif ( $ans eq 'R' ) {
                 $ask_for_range->();
             }
-            elsif ( $ans eq 'G' ) {
-                print <<EOM;
-Select a ground plane option:
-  0 = explosion is in free air
-  1 = explosion is on a ground plane (rigid surface)
-EOM
-                $ground_plane = query(":");
+            elsif ( $ans eq 'A' ) {
+                ( $blast_table, $medium ) =
+                  select_atmosphere_SI( $blast_table, $medium );
+                $gamma        = $medium->{_gamma};
+                $symmetry     = $medium->{_symmetry};
+                $p_amb        = $medium->{_p_amb};
+                $sspd_amb     = $medium->{_sspd_amb};
+                $ground_plane = $medium->{_ground_plane};
+                $E0           = $medium->{_E0};
             }
-            elsif ( $ans eq 'AA' ) {
-		query("Not programmed yet");
-		next
+            elsif ( $ans eq 'G' ) {
+                $ground_plane = ask_ground_plane();
+                $medium->{_ground_plane}=$ground_plane;
             }
             elsif ( $ans eq 'RE' || $ans eq 'ER' || $ans eq 'C' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
@@ -743,7 +788,14 @@ EOM
                 if ( !defined($range) ) { $ask_for_range->(); }
                 my $impulse = $ask_for_impulse->();
                 next if ( !defined($impulse) || $impulse <= 0 );
-                query("FIXME: Need to add impulse to shock table");
+                next if ( !defined($range)   || $range <= 0 );
+                my $term =
+                  log( ( $impulse * $sspd_amb ) / ( $p_amb * $range ) );
+                my $ret = $blast_table->wavefront( 'I-X' => $term );
+                my $X   = $ret->{X};
+                my $x   = exp($X);
+                $dscale = $range / $x;
+                $set_E_from_dscale->();
                 next;
             }
             elsif ( $ans eq 'RT' || $ans eq 'TR' ) {
@@ -752,8 +804,8 @@ EOM
                 next if ( $t <= 0 );
                 my $z = ( $range - $t * $sspd_amb );
                 if ( $z <= 0 ) {
-                    my $toa_min = $range / $sspd_amb;
-                    query("toa must exceed $toa_min at range $range");
+                    my $toa_max = $range / $sspd_amb;
+                    query("toa must not exceed $toa_max at range $range");
                     next;
                 }
                 my $ff   = log( $z / $range );
@@ -764,7 +816,8 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $dscale = $range / $x;
-                $E0 = $p_amb * ($dscale)**$Nsym / $ground_factor;
+                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
+                $set_E_from_dscale->();
             }
             elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
                 my $y = $ask_for_overpressure_ratio->();
@@ -779,7 +832,8 @@ EOM
                 next if ( !defined($impulse) || $impulse <= 0 );
                 $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
                 $range  = $x * $dscale;
-                $E0     = $p_amb / $ground_factor* $dscale**( $symmetry + 1 );
+                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
+                $set_E_from_dscale->();
                 next;
             }
             elsif ( $ans eq 'RP' || $ans eq 'PR' ) {
@@ -792,7 +846,8 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $dscale = $range / $x;
-                $E0 = $p_amb * ($dscale)**$Nsym;
+                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
+                $set_E_from_dscale->();
             }
             elsif ( $ans eq 'EP' || $ans eq 'PE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
@@ -818,13 +873,6 @@ EOM
                 my $x    = exp($X);
                 $range = $x * $dscale;
             }
-            elsif ( $ans eq 'EI' || $ans eq 'IE' ) {
-                if ( !defined($E0) ) { $ask_for_E0->(); }
-                my $impulse = $ask_for_impulse->();
-                next if ( !defined($impulse) || $impulse <= 0 );
-                query("FIXME: Need to add impulse to shock table");
-		next
-            }
             elsif ( $ans eq 'Q' ) {
                 last;
             }
@@ -832,7 +880,7 @@ EOM
             }
         }
 	$medium->{_E0} = $E0;
-        return;
+        return ( $blast_table, $medium );
     }
 }
 
@@ -847,27 +895,42 @@ sub display_result {
     my $ground_factor = ground_factor( $symmetry, $ground_plane );
     my $dscale =
       ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
-    my $x         = $range / $dscale;
-    my $X         = log($x);
-    my $ret       = $blast_table->wavefront( 'X' => $X );
-    my $Y         = $ret->{Y};
-    my $y         = exp($Y);
-    my $dYdX      = $ret->{dYdX};
-    my $T         = $ret->{T};
-    my $toa       = exp($T) * $dscale / $sspd_amb;
-    my $Z         = $ret->{Z};
-    my $z         = exp($Z) * $dscale;
-    my $z_pose_rs = $ret->{z_pose_rs} * $dscale;
-    my $tpos      = ( $z - $z_pose_rs ) / $sspd_amb;
-    my $imp       = $ret->{pint_pos} * $p_amb * $dscale / $sspd_amb;
+    my $x           = $range / $dscale;
+    my $X           = log($x);
+    my $ret         = $blast_table->wavefront( 'X' => $X );
+    my $Y           = $ret->{Y};
+    my $y           = exp($Y);
+    my $dYdX        = $ret->{dYdX};
+    my $T           = $ret->{T};
+    my $toa         = exp($T) * $dscale / $sspd_amb;
+    my $Z           = $ret->{Z};
+    my $z           = exp($Z) * $dscale;
+    my $z_pose_rs   = $ret->{z_pose_rs} * $dscale;
+    my $tpos        = ( $z - $z_pose_rs ) / $sspd_amb;
+
+    ###################################################################
+    # FIXME: use the I-X method in IPS.pm
+    #my $imp         = $ret->{pint_pos} * $p_amb * $dscale / $sspd_amb;
+    my $ImX         = $ret->{'I-X'};
+    my $I           = $ImX + $X;
+    my $imp         = exp($I) * $p_amb * $dscale / $sspd_amb;
+    ###################################################################
+
+    my $term        = $y * ( $gamma + 1 ) / ( 2 * $gamma );
+    my $m           = sqrt( 1 + $term );
+    my $up          = $y / ( $gamma * $m );
+    my $shock_speed = $m * $sspd_amb;
+
     my $range_str = format_value( $range, 'L' );
-    my $E0_str    = format_value( $E0, 'E' );
+    ##my $E0_str    = format_value( $E0, 'E' );
+    my $E0_str     = format_E($E0, $symmetry); 
     my $toa_str   = format_value( $toa, 'T' );
     my $tpos_str  = format_value( $tpos, 'T' );
     my $ovp       = $y * $p_amb;
     my $ovp_str   = format_value( $ovp, 'P' );
     my $y_str     = format_value($y);
-    my $imp_str   = format_value( $imp, 'I' );
+    my $imp_str   = format_value( $imp, 'P*T' );
+    my $shock_speed_str   = format_value( $shock_speed, 'L/T' );
     print <<EOM;
 Energy...................... $E0_str   
 Range....................... $range_str
@@ -876,6 +939,7 @@ Overpressure ............... $ovp_str
 Incident Impulse............ $imp_str
 Time of arrival............. $toa_str
 Positive Phase duration..... $tpos_str 
+Shock Speed................. $shock_speed_str 
 EOM
     hitcr();
     return;
@@ -897,12 +961,12 @@ sub point_evaluations_dimensionless {
 
     while (1) {
         my $val =
-          get_num("Enter $another value for '$vname', or <cr> to quit:");
+          query("Enter $another value for '$vname', or <cr> to quit:");
         $another = 'another';
-        last if $val eq "" || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
+        last if !$val  || $val !~ /\d/;    #^\s*[\-\+\d\.]/;
 
         my ( $iQ, $Q );
-        if ( $vname =~ /^([XYZT]|E1|Er|dYdX|dZdX|dTdX|dE1dX|dErdX)/ ) {
+        if ( $vname =~ /^([XYZT]|E1|Er|dYdX|dZdX|dTdX|dE1dX|dErdX|I-X)/ ) {
             $Q  = $val;
             $iQ = $vname;
         }
