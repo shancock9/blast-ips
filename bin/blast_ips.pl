@@ -578,85 +578,6 @@ sub request_positive_value {
     return $test;
 }
 
-sub format_value {
-    my ( $val, $unit_type ) = @_;
-
-    # format $val, which is in SI units
-
-    my $pa_to_psi = 0.00014503773800722;
-    my $m_to_ft = 3.2808;
-
-    # Format a numerical value in SI units as a string with
-    # additional useful units
-    my $str = '?';
-    if ( defined($val) ) {
-        $str = sprintf( "%0.5g", $val );
-        if ( defined($unit_type) ) {
-            if ( $unit_type eq 'L' ) {
-                my $val_ft = $val * $m_to_ft;
-                $val    = sprintf( "%0.5g", $val );
-                $val_ft = sprintf( "%0.5g", $val_ft );
-                $str         = "$val  m = $val_ft ft";
-            }
-            elsif ( $unit_type eq 'T' ) {
-                $val = sprintf( "%0.5g", $val );
-                $str = "$val s";
-            }
-            elsif ( $unit_type eq 'L/T' ) {
-                $val = sprintf( "%0.5g", $val );
-                my $val_fps = sprintf( "%0.5g", $val*$m_to_ft );
-                $str = "$val m/s = $val_fps fps";
-            }
-            elsif ( $unit_type eq 'E' ) {
-                my $val_kt = $val / 4.184e12;
-                my $val_lb = $val_kt * 2.e6;
-                my $val_mj = $val / 1.e6;
-                $val_kt = sprintf( "%0.5g", $val_kt );
-                $val_mj = sprintf( "%0.5g", $val_mj );
-                $val_lb = sprintf( "%0.3g", $val_lb );
-                $str =
-                  "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
-            }
-            elsif ( $unit_type eq 'E/L' ) {
-                $val = sprintf( "%0.5g", $val );
-                $str = "$val J/m" 
-            }
-            elsif ( $unit_type eq 'E/L^2' ) {
-                $val = sprintf( "%0.5g", $val );
-                $str = "$val J/m^2" 
-            }
-            elsif ( $unit_type eq 'P' ) {
-                my $val_psi = $val * $pa_to_psi;
-                $val     = sprintf( "%0.5g", $val );
-                $val_psi = sprintf( "%0.5g", $val_psi );
-                $str          = "$val Pa = $val_psi psi";
-            }
-            elsif ( $unit_type eq 'P*T' ) {
-                $val = sprintf( "%0.5g", $val );
-                my $val_psi_ms = sprintf( "%0.5g", $val * $pa_to_psi*1000 );
-                $str = "$val Pa-s  =  $val_psi_ms psi-ms";
-            }
-        }
-    }
-    return $str;
-}
-
-
-sub format_E {
-    my ( $val, $symmetry ) = @_;
-    my $str;
-    if ( $symmetry == 2 ) {
-        $str = format_value( $val, 'E' );
-    }
-    elsif ( $symmetry == 1 ) {
-        $str = format_value( $val, 'E/L' );
-    }
-    else {
-        $str = format_value( $val, 'E/L^2' );
-    }
-    return $str;
-}
-
 {
 
     my $range;
@@ -693,25 +614,45 @@ sub format_E {
             $E0 = $p_amb * $dscale**( $symmetry + 1 ) / $ground_factor;
         };
         my $ask_for_E0 = sub {
-            my $units =
-                ( $symmetry == 2 ) ? "Joules"
-              : ( $symmetry == 1 ) ? "Joules/m"
-              :                      "Joules/m^2";
-            $E0 = request_positive_value( "Enter energy E0, $units:", $E0 );
+	    if ($symmetry == 0) {
+            	$E0 = request_positive_value( "Enter energy E0, J/m^2:", $E0 );
+	    }
+	    elsif ($symmetry == 1) {
+            	$E0 = request_positive_value( "Enter energy E0, J/m:", $E0 );
+	    }
+	    else {
+            	$E0 = request_dimensional_value( 
+                "Enter Energy E0, (J):", 'E',$E0,0);
+            }
             $set_dscale->();
         };
         my $ask_for_range = sub {
-	    $range=request_positive_value("Enter range, m:", $range);
+            $range =
+              request_dimensional_value( "Enter range, m:", 'L', $range, 0 );
         };
         my $ask_for_overpressure_ratio = sub {
 
-            my $y = request_positive_value("Enter incident overpressure_ratio");
+            my $y;
+            if (
+                ifyes(
+'Do you want to enter overpressure ratio instead of overpressure?[Y/N]'
+                )
+              )
+            {
+                $y =
+                  request_positive_value("Enter incident overpressure_ratio");
+            }
+            else {
+                my $ovp = request_dimensional_value( "Enter Overpressure, Pa:",
+                    'P', undef, 0 );
+                $y = $ovp / $p_amb;
+            }
             return $y;
         };
         my $ask_for_impulse = sub {
 
-            my $imp = request_positive_value(
-                "Enter incident positive phase impulse, Pa-s:");
+            my $imp = request_dimensional_value( 
+                "Enter incident positive phase impulse, Pa-s:", 'P*T',undef,0);
             return $imp;
         };
 
@@ -722,7 +663,6 @@ sub format_E {
         while (1) {
             my $range_str  = format_value($range, 'L'); 
             my $dscale_str = format_value($dscale, 'L'); 
-            #my $E0_str     = format_value($E0, 'E'); 
             my $E0_str     = format_E($E0, $symmetry); 
             $ground_factor = ground_factor( $symmetry, $ground_plane );
 
@@ -734,7 +674,7 @@ Point Evaluation with Units
    A  atmospheric Pressure, Pa.... $p_amb 
       ambient sound speed, m/s.... $sspd_amb
       gamma....................... $gamma
-      symmetry.................... $symmetry
+      symmetry.................... $symmetry_name{$symmetry}
    G  explosion on a ground plane? $ground_plane (g = $ground_factor)
    E  Energy...................... $E0_str   
    R  Range....................... $range_str
@@ -816,7 +756,6 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $dscale = $range / $x;
-                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
                 $set_E_from_dscale->();
             }
             elsif ( $ans eq 'PI' || $ans eq 'IP' ) {
@@ -832,7 +771,6 @@ EOM
                 next if ( !defined($impulse) || $impulse <= 0 );
                 $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
                 $range  = $x * $dscale;
-                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
                 $set_E_from_dscale->();
                 next;
             }
@@ -846,7 +784,6 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
                 $dscale = $range / $x;
-                ##$E0 = $p_amb * $dscale**($symmetry+1) / $ground_factor;
                 $set_E_from_dscale->();
             }
             elsif ( $ans eq 'EP' || $ans eq 'PE' ) {
@@ -1464,6 +1401,30 @@ sub get_num {
     return $val;
 }
 
+sub OLD_get_num_and_unit {
+    my ( $msg, $default );
+    $msg = ':' unless ($msg);
+    my $unit = "";
+    my $val;
+    my $ans  = query("$msg");
+
+    $ans =~ s/\s+$//;
+    $ans =~ s/^\s+//;
+
+    # Examples of valid responses:
+    # 4 psi, 4psi, 4.5 Pa-s, 10psi-ms,  3/3.2808,
+    if ( $ans =~ /(.*[^A-Za-z\-])\s*([A-Za-z\-]+)$/ ) {
+        $val  = $1;
+        $unit = $2;
+        $unit =~ s/\s*$//;
+    }
+    else { $val = $ans }
+    if   ( !$val ) { $val = $default }
+
+    # optional, allow math in the numerical part
+    else           { $val = eval($val); }
+    return ( $val, $unit );
+}
 sub ifyes {
 
     # Updated to have default, which should be "Y" or "N"
@@ -1770,6 +1731,191 @@ EOM
         $wwsave = $ww;
         return ( $pp, $tt, $rr, $ww );
     }
+}
+
+{   # i/o with units
+
+    my ( $kt_to_joules, $pa_to_psi, $m_to_ft, $rto_SI );
+
+    BEGIN {
+        $kt_to_joules = 4.184e12;
+        $pa_to_psi    = 0.00014503773800722;
+        $m_to_ft      = 3.2808;
+        $rto_SI       = {
+            'P' => {
+                'psi' => 1 / $pa_to_psi,
+                'Pa'  => 1,
+                'kPa' => 1.e3,
+                'k'   => 1.e3,
+                'MPa' => 1.e6,
+                'M'   => 1.e6,
+            },
+            'L' => {
+                'ft' => 1 / $m_to_ft,
+                'm'  => 1,
+                'km' => 1000,
+            },
+            'E' => {
+                'J'   => 1,
+                'kJ'  => 1000,
+                'MJ'  => 1.e6,
+                't'   => 0.001 * $kt_to_joules,
+                'kt'  => $kt_to_joules,
+                'Mt'  => 1000 * $kt_to_joules,
+                'lb'  => 0.001 * $kt_to_joules / 2000,
+                'klb' => $kt_to_joules / 2000,
+            },
+            'L/T' => {
+                'm/s' => 1,
+                'mps' => 1,
+                'ft'  => 1 / $m_to_ft,
+                'fps' => 1 / $m_to_ft,
+            },
+            'P*T' => {
+                'Pa-s'   => 1,
+                'psi-s'  => 1 / $pa_to_psi,
+                'psi-ms' => 0.001 / $pa_to_psi,
+                'fps'    => 1 / $m_to_ft,
+            },
+        };
+    }
+
+    sub request_dimensional_value {
+        my ( $msg, $unit_type, $default, $min ) = @_;
+
+	# Get a number with possible unit
+        my $rconversion_factors = $rto_SI->{$unit_type};
+        if ( !defined($rconversion_factors) ) {
+            die "unknown unit type '$unit_type' in get_num_and_unit\n";
+        }
+
+        my @keys = sort ( keys %{$rconversion_factors} );
+        if ( !defined($msg) ) { $msg=""; }
+	if (defined($default)) {$msg .= " (<cr>=$default):"}
+	$msg = <<EOM;
+$msg
+For non-SI units, you may append any of these to your value:
+(@keys)
+EOM
+        my $unit = "";
+        my $val;
+        while (1) {
+            my $ans = query("$msg");
+
+            $ans =~ s/\s+$//;
+            $ans =~ s/^\s+//;
+
+            # Examples of valid responses:
+            # 4 psi, 4psi, 4.5 Pa-s, 10psi-ms,  3/3.2808,
+            my $factor = 1;
+            if ( $ans =~ /(.*[^A-Za-z\-])\s*([A-Za-z\-]+)$/ ) {
+                $val  = $1;
+                $unit = $2;
+                $unit =~ s/\s*$//;
+                $factor = $rconversion_factors->{$unit};
+                if ( !defined($factor) ) {
+                    local $" = ')(';
+                    my @keys = sort ( keys %{$rconversion_factors} );
+                    print <<EOM;
+Unexpected unit: '$unit'
+Expecting on of: (@keys)
+EOM
+                    next;
+                }
+            }
+            else { $val = $ans }
+            if ( !defined($val) ) { $val = $default }
+
+            # optional, allow math in the numerical part
+            else { $val = eval($val); }
+            $val = $factor * $val;
+	    if (defined($min) && $val<=$min) {
+		print "***Value must be >$min; try again***\n";
+		next;
+	    }
+            last;
+        }
+        return $val;
+    }
+
+    sub format_value {
+        my ( $val, $unit_type ) = @_;
+
+        # format $val, which is in SI units
+
+        ##my $pa_to_psi = 0.00014503773800722;
+        ##my $m_to_ft = 3.2808;
+
+        # Format a numerical value in SI units as a string with
+        # additional useful units
+        my $str = '?';
+        if ( defined($val) ) {
+            $str = sprintf( "%0.5g", $val );
+            if ( defined($unit_type) ) {
+                if ( $unit_type eq 'L' ) {
+                    my $val_ft = $val * $m_to_ft;
+                    $val    = sprintf( "%0.5g", $val );
+                    $val_ft = sprintf( "%0.5g", $val_ft );
+                    $str    = "$val  m = $val_ft ft";
+                }
+                elsif ( $unit_type eq 'T' ) {
+                    $val = sprintf( "%0.5g", $val );
+                    $str = "$val s";
+                }
+                elsif ( $unit_type eq 'L/T' ) {
+                    $val = sprintf( "%0.5g", $val );
+                    my $val_fps = sprintf( "%0.5g", $val * $m_to_ft );
+                    $str = "$val m/s = $val_fps fps";
+                }
+                elsif ( $unit_type eq 'E' ) {
+                    my $val_kt = $val / 4.184e12;
+                    my $val_lb = $val_kt * 2.e6;
+                    my $val_mj = $val / 1.e6;
+                    $val_kt = sprintf( "%0.5g", $val_kt );
+                    $val_mj = sprintf( "%0.5g", $val_mj );
+                    $val_lb = sprintf( "%0.3g", $val_lb );
+                    $str    = "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
+                }
+                elsif ( $unit_type eq 'E/L' ) {
+                    $val = sprintf( "%0.5g", $val );
+                    $str = "$val J/m";
+                }
+                elsif ( $unit_type eq 'E/L^2' ) {
+                    $val = sprintf( "%0.5g", $val );
+                    $str = "$val J/m^2";
+                }
+                elsif ( $unit_type eq 'P' ) {
+                    my $val_psi = $val * $pa_to_psi;
+                    $val     = sprintf( "%0.5g", $val );
+                    $val_psi = sprintf( "%0.5g", $val_psi );
+                    $str     = "$val Pa = $val_psi psi";
+                }
+                elsif ( $unit_type eq 'P*T' ) {
+                    $val = sprintf( "%0.5g", $val );
+                    my $val_psi_ms =
+                      sprintf( "%0.5g", $val * $pa_to_psi * 1000 );
+                    $str = "$val Pa-s  =  $val_psi_ms psi-ms";
+                }
+            }
+        }
+        return $str;
+    }
+
+    sub format_E {
+        my ( $val, $symmetry ) = @_;
+        my $str;
+        if ( $symmetry == 2 ) {
+            $str = format_value( $val, 'E' );
+        }
+        elsif ( $symmetry == 1 ) {
+            $str = format_value( $val, 'E/L' );
+        }
+        else {
+            $str = format_value( $val, 'E/L^2' );
+        }
+        return $str;
+    }
+
 }
 __END__
 

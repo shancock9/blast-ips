@@ -16,16 +16,20 @@ Blast::IPS
 
 ## DESCRIPTION
 
-Blast::IPS evaluates the shock overpressure for a point source explosion in an
-ideal homogeneous atmosphere.  This problem does not have an analytic solution
-except for the special case that the ambient atmospheric pressure is zero, so
-results are obtained by interpolating builtin tables of pre-computed values.
+Blast::IPS evaluates the shock overpressure for the classical problem of a
+point source explosion in an ideal homogeneous atmosphere.  This problem does
+not have an analytic solution except for the special case that the ambient
+atmospheric pressure is zero, so results are obtained by interpolating builtin
+tables of pre-computed values.
 
 This problem was one of the first problems to be addressed when digital
 computers became available, and it remains an important theoretical model for
 understanding explosions.  My own interest in this problem came from working
 with models of the damaging effects of blast waves at long distances from
-accidental rocket explosions.
+accidental rocket explosions.  Although many complex factors are involved in a
+real explosion, a precise solution of this ideal problem would have provided a
+very useful point of reference.  The numerical solutions and analytical fits
+available were of unknown accuracy and typically defined over a limited range.
 
 The builtin tables cover the three one-dimensional symmetries (plane,
 cylindrical, spherical) and values of the ideal gas gamma from 1.1 to 7 (6.5
