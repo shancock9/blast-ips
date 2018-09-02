@@ -850,7 +850,7 @@ sub _check_table {
 
     # Y must be decreasing
     if ( !$is_monotonic->(I_Y) < 0 ) {
-        $error .= "Y is not monotonic increasing\n";
+        $error .= "Y is not monotonic decreasing\n";
     }
 
     # dYdX must be negative
@@ -871,6 +871,32 @@ sub _check_table {
         if ( $row->[I_dZdX] <= 0 ) {
             $error .= "dZdX not everywhere positive\n";
             last;
+        }
+    }
+
+    # E1 must be increasing if it is defined
+    if ( defined($rtable->[0]->[I_E1]) && !$is_monotonic->(I_E1) > 0 ) {
+        $error .= "E1 is not monotonic increasing\n";
+    }
+
+    # Er must be increasing if it is defined
+    if ( defined($rtable->[0]->[I_Er]) && !$is_monotonic->(I_Er) > 0 ) {
+        $error .= "Er is not monotonic increasing\n";
+    }
+
+    # we must have 0 <= E1 <= Er <=1
+    # FIXME: NOT Ready for this test yet; need to fix the energy tables
+    if ( !$error
+        && defined( $rtable->[0]->[I_E1] && defined( $rtable->[0]->[I_Er] ) ) )
+    {
+        foreach my $row ( @{$rtable} ) {
+            my $E1 = $row->[ I_E1 ];
+            my $Er = $row->[ I_Er ];
+            my $tol = 1.e-6;
+            if ( $E1 < 0 || ($E1 > $Er + $tol) || $Er < 0 || $Er > 1 ) {
+                $error .= "Table violates 0<= E1=$E1 <= Er=$Er <=1";
+                last;
+            }
         }
     }
 
