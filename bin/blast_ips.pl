@@ -579,12 +579,13 @@ Main Menu - SI units
       scale dist. (g*E0/P0)$pstr... $dscale_str m 
 
 2. Use these commands to estimate E and/or R from other known quantities
-   RI for (Range, Impulse)->Energy
-   RP for (Range, OVP)    ->Energy        || RY (Range, OVP ratio)  ->Energy
-   RT for (Range, TOA)    ->Energy
-   PI for (OVP, Impulse)  ->Energy, Range || YI (OVP ratio, Impulse)->Energy, Range
-   EP for (Energy, OVP)   ->Range         || EY (Energy, OVP ratio) ->Range
-   ET for (Energy, TOA)   ->Range         
+   [use 'P' versions to enter overpressure, 'Y' for overpressure ratio]
+   RI             (Range, Impulse)->Energy
+   RP or RY           (Range, OVP)->Energy        
+   RT                 (Range, TOA)->Energy
+   PI or YI         (OVP, Impulse)->Energy, Range 
+   EP or EY          (Energy, OVP)->Range         
+   ET                (Energy, TOA)->Range         
 
 3. When E and R are defined, evaluate the solution:
    C  Calculate blast parameters, given: R, E
@@ -901,6 +902,10 @@ sub point_evaluations_dimensionless {
         my $z_pose_ts   = $ret->{z_pose_ts};
         my $z_nege_ts   = $ret->{z_nege_ts};
         my $z_pmin_ts   = $ret->{z_pmin_ts};
+        my $dpdr_t = $ret->{dpdr_t};
+        my $dudr_t = $ret->{dudr_t};
+        my $dpdt_r = $ret->{dpdt_r};
+        my $dudt_r = $ret->{dudt_r};
 
         my ( $il, $iu, $ntab ) = @{$TableLoc};
         my $table_location =
@@ -962,6 +967,7 @@ sub point_evaluations_dimensionless {
             $dr_nege_ts,          $rovp_min_rs,
             $disp_pos,            $disp_end,
             $density_ratio_shock, $density_ratio_equilibrium,
+	    $dpdr_t, $dudr_t, $dpdt_r, $dudt_r,
           )
         {
             $_ = sprintf( "%0.6g", $_ );
@@ -1014,6 +1020,8 @@ ke_pos  = $ke_pos = kinetic energy in the positive phase $e_unit
 dEr/dE1  = $dEdE1 = energy dissipation ratio (>1 if tail shock)
 disp_pos = $disp_pos = maximum particle displacement
 disp_end = $disp_end = equilibrium particle displacement
+dpdt|r = $dpdt_r  dudt|r = $dudt_r  shock front slopes
+dpdr|t = $dpdr_t  dudr|t = $dudr_t  shock front slopes
 
 Note: zeros indicate undefined values.
 EOM
