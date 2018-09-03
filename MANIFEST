@@ -10,6 +10,7 @@ lib/Blast/IPS/PzeroFit.pm
 lib/Blast/IPS/PzeroTail.pm
 lib/Blast/IPS/ShockTables.pm
 lib/Blast/IPS/ShockTablesIndex.pm
+lib/Blast/IPS/TailShockTables.pm
 LICENSE
 Makefile.PL
 MANIFEST			This list of files
@@ -33,5 +34,6 @@ t/miles_long_range.t
 t/okhotshimskii.t
 t/pierce.t
 t/sakurai_approximation.t
+t/slope_test.t
 t/taylor-sedov_test.t
 t/test.t

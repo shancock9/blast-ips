@@ -48,12 +48,12 @@
 \#$
 \b\.#
 \.bak$
-\.ba?$
+\.ba.*$
 \.tmp$
 \.#
 \.rej$
 \..*\.sw.?$
-\junk*
+junk*
 
 # Avoid OS-specific files/dirs
 # Mac OSX metadata
