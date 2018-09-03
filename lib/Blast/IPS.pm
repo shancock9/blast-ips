@@ -1052,7 +1052,6 @@ sub get_impulse {
         $ke_pos = $ke_pos_b;
 
         # positive work equals total work since there is no negative work
-        ### my ( $X, $Y, $dYdX, $Z, $dZdX, $T, $dTdX, $ZmX, $dZmXdX, $E1, $dE1dX, $Er, $dErdX ) = @{$result};
         my $Er = $result->[I_Er];
         $work_pos = 1 - $gamma * $Er;
 
@@ -1081,16 +1080,18 @@ sub get_impulse {
         $Qint_pos  = $Qint_pos_b;
         $rpint_pos = $rpint_pos_b;
 
-# Here are the theoretical slopes for dQint_pos/dX from the similarity solution.
-# The table values are very close to these.
-# -0.5 for spherical symmetry
-#    0 for cylindrical symmetry
-# +0.5 for plane symmetry
+	# Here are the theoretical slopes for dQint_pos/dX from the similarity
+	# solution.
+        # The table values are very close to these.
+        # -0.5 for spherical symmetry
+        #    0 for cylindrical symmetry
+        # +0.5 for plane symmetry
 
-      # Positive phase impulse and displacement are harder to do theoretically
-      # because they end when absolute pressure hits 1, so the integral does not
-      # go to infinity.  So it seems best to just use log slopes of the computed
-      # values to continue the solution before the first table point.
+	# Positive phase impulse and displacement are harder to do
+	# theoretically because they end when absolute pressure hits 1, so the
+	# integral does not go to infinity.  So it seems best to just use log
+	# slopes of the computed values to continue the solution before the
+	# first table point.
 
         if ( @{$rimpulse_table} > 2 ) {
 
@@ -1802,15 +1803,14 @@ sub wavefront {
     #if ( defined($z_pose_rs) ) { $Tpos = $zs - $z_pose_rs; }
     #if ( defined($z_pose_ts) ) { $Lpos = $zs - $z_pose_ts; }
 
-    my $medium = {
-        _p_amb    => 1,
-        _ASYM     => $symmetry,
-        _gamma    => $gamma,
-        _sspd_amb => 1,
-        _rho_amb  => $gamma,
-    };
-    my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) =
-      shock_front_slopes_from_dYdX( $medium, exp($X), exp($Y), $dYdX );
+##    my $medium = {
+##        _p_amb    => 1,
+##        _ASYM     => $symmetry,
+##        _gamma    => $gamma,
+##        _sspd_amb => 1,
+##        _rho_amb  => $gamma,
+##    };
+    #my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) =
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
@@ -1856,11 +1856,14 @@ sub wavefront {
         'z_pmin_ts'   => $z_pmin_ts,
         'z_pose_ts'   => $z_pose_ts,
         'z_nege_ts'   => $z_nege_ts,
-        'dpdr_t'      => $dpdr_t,
-        'dudr_t'      => $dudr_t,
-        'dpdt_r'      => $dpdt_r,
-        'dudt_r'      => $dudt_r,
     };
+
+    # add some shock front values
+    my $rsf_values= $self->shock_front_values( $X, $Y, $dYdX );
+    foreach my $key(keys %{$rsf_values}) {
+	$return_hash->{$key}=$rsf_values->{$key};
+    }
+
     return $return_hash;
 }
 
@@ -3009,15 +3012,6 @@ EOM
 	# Note: do not need to return derived vars T, dTdX, Z-X and its slope
 	# since they are added later.
         my @vars;
-##        @vars[
-##          I_X,   I_Y,      I_dYdX, I_Z,     I_dZdX, I_T, I_dTdX,
-##          I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX
-##          ]
-##          = (
-##            $X_x, $Y, $dYdX_x, $Z_x,  $dZdX_x,  0,
-##            0,    0,  0,       $E1_x, $dE1dX_x, $E_x,
-##            $dEdX_x
-##          );
         @vars[ I_X, I_Y, I_dYdX, I_Z, I_dZdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX ] =
           ( $X_x, $Y, $dYdX_x, $Z_x, $dZdX_x, $E1_x, $dE1dX_x, $E_x, $dEdX_x, $ImX_x, $dImXdX_x );
 
@@ -3103,31 +3097,62 @@ sub polint {
     return wantarray ? ( $yy, $dy ) : $yy;
 }
 
+sub shock_front_values {
 
-sub shock_front_slopes_from_dYdX {
+    my ( $self, $X, $Y, $dYdX ) = @_;
 
-    my ( $medium, $lambda, $ovp, $dYdX ) = @_;
-
-    # Given
-    #   lambda = the range
-    #   ovp = the overpressure at the shock front
+    # Given:
+    #   X = ln(range)
+    #   Y = ln(ovp) = ln(overpressure ratio) 
     #   dYdX = d(ln P)/d(ln R) along shock front
     #
-    # Compute wave front slopes:
-    #   dp/dr, du/dr, dp/dt, du/dt
+    # Compute some shock front values and return in a hash ref
     #
-    my $p_amb    = $medium->{_p_amb};
-    my $ASYM     = $medium->{_ASYM};
-    my $gamma    = $medium->{_gamma};
-    my $sspd_amb = $medium->{_sspd_amb};
-    my $rho_amb  = $medium->{_rho_amb};
+    # FIXME: some of these expressions would benefit from Taylor series
+    # expansions for small ovp
+    #
+    my $symmetry     = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
 
-    my $pabs     = $ovp + $p_amb;
+    my $p_amb    = 1; 
+    my $sspd_amb = 1; 
+    my $rho_amb  = $gamma; 
+
+    my $lambda = exp($X);
+    my $ovprat = exp($Y);
+    my $ovp    = $p_amb * $ovprat;
+    my $pabs   = $ovp + $p_amb;
+
     if ( $pabs < 0 ) { print STDERR "Negative abs p in sadek\n"; return }
 
-    # Shock front properties ...
-    my ( $D, $up, $D_minus_c0, $dudp_sf, $rho ) =
-      ushock_from_ovprat($medium, $ovp/$p_amb);
+    # Compute some shock front properties ...
+
+    # D = Shock speed D
+    my $term     = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
+    my $mshock   = sqrt( 1 + $term );
+    my $D   = $sspd_amb * $mshock;
+    my $D_minus_c0  = $D - $sspd_amb;
+
+    # Taylor series expansion of the square root for small overpressures
+    # Switch at a point which keeps error < about 1.e-17
+    if ( $term < 1.e-4 ) {
+        $D_minus_c0 = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
+    }
+
+    # up = shock particle velocity
+    my $up = $ovprat * $p_amb / ( $rho_amb * $D );
+
+    # dup/dovp along shock front
+    my $dudp_sf =
+      $sspd_amb *
+      $sspd_amb / $gamma / $D *
+      ( 1 - ( $gamma + 1 ) / 4 * $up / $D );
+
+    # density ratio and density
+    my $top  = ( $gamma + 1 ) * $pabs + ( $gamma - 1 ) * $p_amb;
+    my $bot  = ( $gamma - 1 ) * $pabs + ( $gamma + 1 ) * $p_amb;
+    my $rhorat = ( $bot > 0 ) ? $top / $bot : 1;
+    my $rho = $rho_amb * $rhorat;
 
     # Sound speed
     my $rhocsq  = $gamma * $pabs;
@@ -3135,7 +3160,15 @@ sub shock_front_slopes_from_dYdX {
     if ( $sspd_sq < 0 ) { $sspd_sq = 0 }
     my $aa = sqrt($sspd_sq);
 
-    # Reference:
+    # sigma and Sigma, the C+ characteristic variable
+    my $sspdx = ( $aa - $sspd_amb ); 
+    my $sigma = ( 2 / ( $gamma - 1 ) ) * $sspdx;
+    my $Sigma = ( $symmetry == 0 ) ? $sigma : $sigma * $lambda**( $symmetry / 2 );
+
+    # Compute the slopes of the wave profile at the shock front ...
+    #   dp/dr, du/dr, dp/dt, du/dt
+
+    # Reference for slopes:
     #  INITIAL DECAY OF FLOW PROPERTJES OF PLANAR, CYLINDRJCAL AND SPHERICAL BLAST WAVES
     #  H. S. I. Sadek and J. J. Gott1ieb
     #  UTIAS Technica1 Note No. 244, CN ISSN 0082-5263
@@ -3161,7 +3194,6 @@ sub shock_front_slopes_from_dYdX {
     #      dpdr|s = [ $sign * det * slope + C2 ] / C1
     #
     my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) = ( 0, 0, 0, 0 );
-    ##my $det = $sspd_sq - $D_minus_u**2;
 
     ###########################################################
     # FIXME: expand for small ovp
@@ -3178,7 +3210,7 @@ sub shock_front_slopes_from_dYdX {
     ###########################################################
 
     my $D_minus_u = $D - $up;
-    #my $det       = $sspd_sq - $D_minus_u**2;
+    #  $det = $sspd_sq - $D_minus_u**2;
     my $det = ( $aa + $D_minus_u ) * ( $aa_minus_c0 - $D_minus_c0 + $up );
     if ( $det != 0 ) {
 
@@ -3188,72 +3220,45 @@ sub shock_front_slopes_from_dYdX {
         $dpdr_t =
           -( $D_minus_u * $dpdt_sf +
               $rhocsq * $dudt_sf +
-              $ASYM * $rhocsq * $up * $D_minus_u / $lambda ) /
+              $symmetry * $rhocsq * $up * $D_minus_u / $lambda ) /
           $det;
 
         $dudr_t =
           -( $D_minus_u * $dudt_sf +
               $dpdt_sf / $rho +
-              $ASYM * $sspd_sq * $up / $lambda ) /
+              $symmetry * $sspd_sq * $up / $lambda ) /
           $det;
 
         $dpdt_r =
           ( ( $sspd_sq + $up * $D_minus_u ) * $dpdt_sf +
               $rhocsq * $D * $dudt_sf +
-              $ASYM * $rhocsq * $up * $D * $D_minus_u / $lambda ) /
+              $symmetry * $rhocsq * $up * $D * $D_minus_u / $lambda ) /
           $det;
 
         $dudt_r =
           ( ( $sspd_sq + $up * $D_minus_u ) * $dudt_sf +
               $D / $rho * $dpdt_sf +
-              $ASYM * $sspd_sq * $up * $D / $lambda ) /
+              $symmetry * $sspd_sq * $up * $D / $lambda ) /
           $det;
 
     }
 
-    return wantarray ? ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) : $dpdr_t;
-}
+    my $rhash = {
+        dpdr_t        => $dpdr_t,
+        dudr_t        => $dudr_t,
+        dpdt_r        => $dpdt_r,
+        dudt_r        => $dudt_r,
+        up            => $up,
+        density_ratio => $rhorat,
+        ushock        => $D,
+        sspd          => $aa,
+	sigma         => $sigma,
+	Sigma         => $Sigma,
+    };
 
-sub ushock_from_ovprat {
-    my ( $self, $ovprat ) = @_;
+    return $rhash;
 
-    # shock speed from overpressure
-    my $gamma    = $self->{_gamma};
-    my $sspd_amb = $self->{_sspd_amb};
-    my $rho_amb  = $self->{_rho_amb};
-    my $p_amb    = $self->{_p_amb};
-    if ( $sspd_amb <=0 || $p_amb <=0 || $rho_amb <=0) {
-	print STDERR "ushock from ovprat: sspd_amb=$sspd_amb, p_amb=$p_amb, rho_amb=$rho_amb\n";
-        my ( $a, $b, $c ) = caller();
-        die "$a, $b, $c\n";
-    }
-    my $term     = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
-    my $mshock   = sqrt( 1 + $term );
-    my $ushock   = $sspd_amb * $mshock;
-    my $ushockx  = $ushock - $sspd_amb;
-
-    # Taylor series expansion of the square root for small overpressures
-    # Switch at a point which keeps error < about 1.e-17
-    if ( $term < 1.e-4 ) {
-        $ushockx = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
-    }
-
-    # shock particle velocity
-    my $upshock = $ovprat * $p_amb / ( $rho_amb * $ushock );
-
-    # dup/dovp
-    my $dup_dovp =
-      $sspd_amb *
-      $sspd_amb / $gamma / $ushock *
-      ( 1 - ( $gamma + 1 ) / 4 * $upshock / $ushock );
-
-    my $pabs = ( $ovprat + 1 ) * $p_amb;
-    my $top  = ( $gamma + 1 ) * $pabs + ( $gamma - 1 ) * $p_amb;
-    my $bot  = ( $gamma - 1 ) * $pabs + ( $gamma + 1 ) * $p_amb;
-    my $rhoshock;
-    if   ( $bot > 0 ) { $rhoshock = $rho_amb * $top / $bot }
-    else              { $rhoshock = $rho_amb }
-    return ( $ushock, $upshock, $ushockx, $dup_dovp, $rhoshock );
+    #return wantarray ? ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) : $dpdr_t;
 }
 
 __END__

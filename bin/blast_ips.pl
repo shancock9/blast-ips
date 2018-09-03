@@ -79,7 +79,7 @@ First check/set the geometry and atmosphere parameters...
         - gamma: $gamma
 
 Then evaluate the model with these settings...
-  P     - do Point evaluations ...
+  C     - Calculate with these settings
   T     - do Table operations ...
   I     - show Global Information about this blast
 
@@ -117,10 +117,9 @@ EOM
             $return_selection = 'SI';
             last;
         }
-        elsif ( $ans eq 'P' ) {
+        elsif ( $ans eq 'C' ) {
             my $vname = 'X';
             $vname = select_dimensionless_variable($vname);
-            ##( $blast_table, $medium ) =
             point_evaluations_dimensionless( $blast_table, $medium, $vname );
         }
         elsif ( $ans eq 'T' ) {
@@ -462,7 +461,6 @@ sub request_positive_value {
 {
 
     my $range;
-    my $medium_stp;
     my $medium;
 
     BEGIN {
@@ -472,7 +470,7 @@ sub request_positive_value {
         my $p_sea_level    = 1.01325e5;
         my $sspd_sea_level = 340.43;
         my $E0             = 1;
-        my $medium_stp     = {
+        my $medium     = {
             _gamma        => $gamma,
             _p_amb        => $p_sea_level,
             _sspd_amb     => $sspd_sea_level,
@@ -481,7 +479,6 @@ sub request_positive_value {
             _E0           => undef,
             _ground_plane => 'YES',
         };
-        $medium = $medium_stp;
     }
 
     sub point_evaluations_SI {
@@ -628,7 +625,7 @@ EOM
                 if ( !defined($range) ) { $ask_for_range->(); }
                 if ( !defined($E0) )    { $ask_for_E0->(); }
 		$medium->{_E0}=$E0;
-		display_result($range, $medium, $blast_table); 
+		display_result_SI($range, $medium, $blast_table); 
             }
             elsif ( $ans eq 'RI' || $ans eq 'IR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
@@ -678,7 +675,6 @@ EOM
                 $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
                 $range  = $x * $dscale;
                 $set_E_from_dscale->();
-                next;
             }
             elsif ( $ans eq 'RP' || $ans eq 'RY' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
@@ -738,7 +734,7 @@ EOM
     }
 }
 
-sub display_result {
+sub display_result_SI {
     my ( $range, $medium, $blast_table ) = @_;
     my $gamma         = $medium->{_gamma};
     my $symmetry      = $medium->{_symmetry};
@@ -1219,7 +1215,7 @@ sub print_table {
     if ( $ofile && open( OUT, ">$ofile" ) ) {
         if ($header) { chomp $header; print OUT "$header\n"; }
         if ( $format eq "PERL" ) {
-            print OUT audit_string('#');
+            ##print OUT audit_string_brief('#');
             print OUT string_to_comment($SETTING_string) if $SETTING_string;
             print OUT string_to_comment($ERROR_string)   if $ERROR_string;
             print OUT "\n";
@@ -1304,7 +1300,6 @@ sub hitcr {
     if ($msg) { $msg .= ". hit <cr> to continue" }
     else      { $msg = "hit <cr> to continue" }
     query($msg);
-    ##query( $msg . ". hit <cr>" );
 }
 
 sub queryu {
@@ -1413,9 +1408,6 @@ sub density_ratios {
     return ( $density_ratio_shock, $density_ratio_ambient );
 }
 
-#($p_amb, $sspd_amb)=altitude($p_amb, $sspd_amb);
-#print "got ==$p_amb, c=$sspd_amb\n";
-
 sub altitude {
 
     # return pressure and sound speed at a given altitude
@@ -1458,8 +1450,6 @@ sound speed, ft/ms..... $sspdz
 Z  enter another altitude
 Q  return 
 EOM
-#Q  Quit; return without changing values
-#Y  YES..change to these values
         print $menu;
         my $ans = queryu('-->');
         next if ( $ans eq 'Z' );
@@ -1470,7 +1460,6 @@ EOM
             $alt_m    = $zz_m;
             last;
         }
-        #last if ( $ans eq 'Q' );
     }
     return ( $p_amb, $sspd_amb, $alt_m );
 }
@@ -1480,7 +1469,7 @@ EOM
     #
     #       atmospheric model, based upon table 2.7 in Regan, Reentry Vehicle...
     #       compute pressure, temperature, density as function of altitude
-    # 	    converted from the fortran version with f2pl
+    # 	    converted from fortran with f2pl
     #
     #       input parameter -
     #               zz = altitude in meters
