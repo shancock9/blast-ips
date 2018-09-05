@@ -885,7 +885,6 @@ sub _check_table {
     }
 
     # we must have 0 <= E1 <= Er <=1
-    # FIXME: NOT Ready for this test yet; need to fix the energy tables
     if ( !$error
         && defined( $rtable->[0]->[I_E1] && defined( $rtable->[0]->[I_Er] ) ) )
     {

@@ -759,13 +759,13 @@ sub display_result_SI {
     my $tpos        = ( $z - $z_pose_rs ) / $sspd_amb;
 
     ###################################################################
-    # FIXME: use the I-X method in IPS.pm
     #my $imp         = $ret->{pint_pos} * $p_amb * $dscale / $sspd_amb;
     my $ImX         = $ret->{'I-X'};
     my $I           = $ImX + $X;
     my $imp         = exp($I) * $p_amb * $dscale / $sspd_amb;
     ###################################################################
 
+    # FIXME: get these from the hash
     my $term        = $y * ( $gamma + 1 ) / ( 2 * $gamma );
     my $m           = sqrt( 1 + $term );
     my $up          = $y / ( $gamma * $m );
