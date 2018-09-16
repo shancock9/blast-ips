@@ -9,10 +9,12 @@ BEGIN {
 
     # This test checks the builtin tables by looking at the value of 'alpha'
     # which characterizes a point source at high pressure.  These values are
-    # obtained by fitting the high pressure part of the shock tables.  
+    # obtained by fitting the high pressure part of the shock tables.  These values
+    # typically have errors below 1.e-6 but for low gamma (about 1.1) the errors
+    # may be a little larger.
 
     # We compare these values with alpha values calculated analytically from
-    # the similarity solution.  Tables of these analytical values are contained
+    # the similarity solution.  Tables of the analytical values are contained
     # in Blast::IPS::AlphaTable.pm and they can be extracted with the
     # appropriate call.  These tabulated values have estimated maximum errors of
     # about 1.e-7 or less.
@@ -26,8 +28,8 @@ BEGIN {
 my $VERBOSE = 0;
 
 # In most cases the differences are below 1.e-6. The current maximum error is
-# 5.75-06 for plane symmetry, gamma = 1.1.  So we set the tolerance just above
-# that.
+# 5.75-06 for plane symmetry, gamma = 1.1.  So we set the acceptable tolerance
+# just above that.
 my $tol = 6.e-6;
 
 print "symmetry\tgamma\talpha1\talpha2\tdiff\n" if ($VERBOSE);
