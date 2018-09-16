@@ -274,6 +274,57 @@ sub select_blast_table {
     return ( $blast_table, $medium );
 }
 
+sub get_timeline_dimensionless {
+    my ( $blast_table, $medium, ) = @_;
+
+
+    # FORMAT:
+    # First line is a header, then come events:
+    # [ti, ri, rsi, "description"]
+
+    my $rinfo                   = $blast_table->get_info();
+    my $rtimeline;
+    my $symmetry                = $rinfo->{symmetry};
+    my $gamma                   = $rinfo->{gamma};
+
+    # First line is the header
+    push @{$rtimeline}, ["T", "R", "Rs", "Event"];
+
+# TBD
+    my $t_pcenter_zero_1        = $rinfo->{t_pcenter_zero_1};
+    my $t_pcenter_min           = $rinfo->{t_pcenter_min};
+
+    my $pcenter_min             = $rinfo->{pcenter_min};
+    my $t_dpdt_center_max       = $rinfo->{t_dpdt_center_max};
+    my $dpdt_center_max         = $rinfo->{dpdt_center_max};
+    my $pcenter_dpdt_center_max = $rinfo->{pcenter_dpdt_center_max};
+    my $r_tail_shock            = $rinfo->{r_tail_shock};
+    my $z_tail_shock            = $rinfo->{z_tail_shock};
+    my $r_tail_formed           = $rinfo->{r_tail_formed};
+    my $z_tail_formed           = $rinfo->{z_tail_formed};
+
+#    foreach ( $alpha, $Sint_pos, $Sint_neg, $Ixr_pos, $Ixr_neg ) {
+#        $_ = sprintf( "%0.6g", $_ );
+#    }
+=pod
+r TS      = $r_tail_shock = scaled radius at which Tail Shock first forms
+z TS      = $z_tail_shock = scaled z at which Tail Shock first forms 
+r TF      = $r_tail_formed = scaled radius at which Tail Shock becomes peak
+z TF      = $z_tail_formed = scaled z at which Tail Shock becomes peak
+
+Overpressure at r=0:
+pc/ps0      = $pcenter_initial_ratio = initial ratio of overpressure to shock overpressure 
+t_pc0       = $t_pcenter_zero_1 = time of first zero overpressure at r=0
+t_pc_min    = $t_pcenter_min   = time of minimum overpressure at r=0
+pc_min      = $pcenter_min   = minimum overpressure at r=0
+t_dpdt_max  = $t_dpdt_center_max = time of maximum dp/dt at r=0
+dpdt_max    = $dpdt_center_max   = maximum dp/dt at r=0
+p_dpdt_max  = $pcenter_dpdt_center_max = ovp at time of maximum dp/dt at r=0
+=cut
+
+    return $rtimeline;
+}
+
 sub show_summary_information {
     my ( $blast_table, $medium ) = @_;
     my $rinfo                   = $blast_table->get_info();
@@ -470,7 +521,7 @@ sub request_positive_value {
         my $p_sea_level    = 1.01325e5;
         my $sspd_sea_level = 340.43;
         my $E0             = 1;
-        my $medium     = {
+        $medium     = {
             _gamma        => $gamma,
             _p_amb        => $p_sea_level,
             _sspd_amb     => $sspd_sea_level,
@@ -1355,9 +1406,9 @@ sub displacement {
     # cylindrical symmetry, volume = pi * r**2
     # so solve dV/pi = (rs+d)**2-rs**2 = (2*rs+d)*d
     if ( $symmetry == 1 ) {
-        my $root = $rs**2 - $dV / $pi;
+        my $root = $rs**2 + $dV / $pi;
         return -$rs if ( $root <= 0 );
-        my $dis = 2 * sqrt($root) - $rs;
+        my $dis = sqrt($root) - $rs;
         return $dis;
     }
 
@@ -1378,8 +1429,6 @@ sub displacement {
     };
 
     # newton iterations
-    ##my $xx0 = $dV / ( 4 * $pi * $rs**2 );
-
     # Start X at a value which works for very small rs
     my $xx = ( 3 * $dV / ( 4 * $pi ) )**( 1 / 3 );
     my $tol = 1.e-8;
