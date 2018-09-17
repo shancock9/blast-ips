@@ -42,7 +42,7 @@ our $ralpha_table;
 use Blast::IPS::MathUtils qw(
   polint
   set_interpolation_points
-  _locate_2d
+  locate_2d
 );
 
 ##################################################################
@@ -656,9 +656,9 @@ sub alpha_interpolate {
     # (currently gamma<1.1 || $gamma>7 )
 
     # alpha is obtained by interpolating a table of pre-computed values.
-    # The estimated accuracy over most of the range of the table is about 1.e-6
     # The table is spaced closely enough that cubic interpolation of the
-    # interpolated values have comparable accuracy.
+    # interpolated values gives comparable accuracy to the tabulated values
+    # (error below about 1.e-7 over most of the range).
 
     return if ( $sym != 0 && $sym != 1 && $sym != 2 );
 
@@ -670,12 +670,7 @@ sub alpha_interpolate {
     # A small tolerance to avoid interpolations
     my $eps = 1.e-6;
 
-    my $rhash = {
-        _jl     => $jl,
-        _ju     => $ju,
-        _rtable => $rtab,
-    };
-    ( $jl, $ju ) = _locate_2d( $rhash, $gamma, $icol );
+    ( $jl, $ju ) = locate_2d( $gamma, $icol, $rtab, $jl, $ju );
     my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
     if ( $jl < 0 ) {

@@ -1,8 +1,32 @@
 package Blast::IPS::MathUtils;
+
+# MIT License
+# Copyright (c) 2018 Steven Hancock
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Math utilities for Blast::IPS
+
 use strict;
 use warnings;
 our @EXPORT_OK = qw(
-  _locate_2d
+  locate_2d
   multiseg_integral
   nbrenti
   nbrentx
@@ -12,227 +36,11 @@ our @EXPORT_OK = qw(
 use Exporter;
 our @ISA = qw(Exporter);
 
-sub nbrenti {
-
-    # call arg declarations
-    my ( $sa, $fa, $sb, $fb, $tol, $bvec ) = @_;
-
-    #
-    #       initialization for brents root finder
-    #       (see-algorithms for minimization without
-    #       derivatives-,by richard p. brent, prentice-hall, 1973.)
-    #
-    #       input parameters -
-    #       bounding states:
-    #         sa - first x coordinate
-    #         fa = f(sa)
-    #         sb - second x coordinate
-    #         fb = f(sb)
-    #         **  must have fa*fb <= 0. **
-    #       tolx = convergence tolerance on x
-    #
-    #       output parameter -
-    #       xnext = next value of x to try
-    #
-    #       there are two subroutines:
-    #               brenti must be called once to start an interation
-    #               brentx must be called once for each step
-    #
-    #****************************************************************
-    #
-    #       sample coding: assume we have a root trapped between sa & sb
-    #
-    #       dimension bvec(7)
-    #       data tol/.001/,maxit/25/
-    #
-    #     call nbrenti (sa,fa,sb,fb,tol,xx,bvec)
-    #
-    #     loop over iterations
-    #     do 250 iter=1,maxit
-    #
-    #       calculate ff(xx)
-    #
-    #       get next value of xx
-    #     call nbrentx (ff,xx,ifconv,bvec)
-    #     if (ifconv.ne.0) go to 700
-    #
-    #       note - it is possible to make a convergence test here on the
-    #       magnitude of ff as well
-    #
-    # 250 continue
-    #
-    #     no convergence after maxit iterations -- cant happen if maxit
-    #               is large enough for the given tol - see brents book
-    #
-    #     converged - finish up
-    # 700 ...
-    #****************************************************************
-    #
-    my $sc        = $sb;
-    my $fc        = $fb;
-    $bvec->[1] = $sa;
-    $bvec->[2] = $fa;
-    $bvec->[3] = $sb;
-    $bvec->[4] = $fb;
-    $bvec->[5] = $sc;
-    $bvec->[6] = $fc;
-    $bvec->[7] = $tol;
-    my ($xnext, $ifconv) = nbrentx( $fb, $bvec );
-    return ($xnext, $ifconv);
-}
-
-sub nbrentx {
-
-    # call arg declarations
-    my ( $flast, $bvec ) = @_;
-
-    #
-    #     take one iteration step with brents method
-    #     flast = value of f of previous step
-    #     xnext = next value of x to try
-    #     ifconv = 0 if not converged
-    #            = 1 if converged
-    #       bvec = state vector
-    #
-    #
-    #       get the previous state
-    my $sa  = $bvec->[1];
-    my $fa  = $bvec->[2];
-    my $sb  = $bvec->[3];
-    my $fb  = $bvec->[4];
-    my $sc  = $bvec->[5];
-    my $fc  = $bvec->[6];
-    my $tol = $bvec->[7];
-
-    my $slast = $sb; ## SLH
-
-    my ($bd, $be, $bs, $bm, $bp, $bq, $br, $xnext, $ifconv);
-    $be=0; # patch because abs function below 230 uses be when not defined
-
-    $fb = $flast;
-    if ( ( $fb > 0. ) && ( $fc > 0. ) ) {
-        goto L210;
-    }
-    if ( ( $fb <= 0. ) && ( $fc <= 0. ) ) {
-        goto L210;
-    }
-    goto L220;
-
-    #
-  L210:
-    $sc = $sa;
-    $fc = $fa;
-    $be = $sb - $sa;
-    $bd = $be;
-  L220:
-    if ( abs($fc) >= abs($fb) ) {
-        goto L230;
-    }
-    $sa = $sb;
-    $sb = $sc;
-    $sc = $sa;
-    $fa = $fb;
-    $fb = $fc;
-    $fc = $fa;
-  L230:
-    $bm = 0.5 * ( $sc - $sb );
-
-    if ( ( abs($bm) <= $tol ) || ( $fb == 0. ) ) {
-        goto L340;
-    }
-    if ( ( abs($be) >= $tol ) && ( abs($fa) > abs($fb) ) ) {
-        goto L240;
-    }
-
-    #
-    #         bisection is forced
-    $be = $bm;
-    $bd = $be;
-    goto L300;
-
-    #
-  L240:
-    $bs = $fb / $fa;
-    if ( $sa != $sc ) {
-        goto L250;
-    }
-
-    #
-    #         linear interpolation
-    $bp = 2. * $bm * $bs;
-    $bq = 1. - $bs;
-    goto L260;
-
-    #
-    #         inverse quadratic interpolation
-  L250:
-    $bq = $fa / $fc;
-    $br = $fb / $fc;
-    $bp = $bs *
-      ( 2. * $bm * $bq * ( $bq - $br ) - ( $sb - $sa ) * ( $br - 1. ) );
-    $bq = ( $bq - 1. ) * ( $br - 1. ) * ( $bs - 1. );
-
-    #
-  L260:
-    if ( $bp <= 0. ) {
-        goto L270;
-    }
-    $bq = -$bq;
-    goto L280;
-  L270:
-    $bp = -$bp;
-  L280:
-    $bs = $be;
-    $be = $bd;
-
-    if (   ( 2. * $bp >= 3. * $bm * $bq - abs( $tol * $bq ) )
-        || ( $bp >= abs( 0.5 * $bs * $bq ) ) )
-    {
-        goto L290;
-    }
-    $bd = $bp / $bq;
-    goto L300;
-  L290:
-    $be = $bm;
-    $bd = $be;
-  L300:
-    $sa = $sb;
-    $fa = $fb;
-
-    if ( abs($bd) <= $tol ) {
-        goto L310;
-    }
-    $sb = $sb + $bd;
-    goto L330;
-  L310:
-    if ( $bm <= 0. ) {
-        goto L320;
-    }
-    $sb = $sb + $tol;
-    goto L330;
-  L320:
-    $sb = $sb - $tol;
-  L330:
-    $xnext  = $sb;
-    $ifconv = 0;
-    goto L900;
-  L340:
-    $ifconv = 1;
-    $xnext  = $slast;  # SLH: added because not defined otherwise
-
-    #
-    #       save the state
-  L900:
-    $bvec->[1] = $sa;
-    $bvec->[2] = $fa;
-    $bvec->[3] = $sb;
-    $bvec->[4] = $fb;
-    $bvec->[5] = $sc;
-    $bvec->[6] = $fc;
-    return ($xnext, $ifconv);
-}
-
 sub multiseg_integral {
+
+    # This is a fairly robust and accurate integrator.
+    # It allows integrating functions which have some very smooth
+    # sections as well as some discontinuous sections (like shock waves).  
 
     # Given a table of irregularly spaced (x, dydx) values
     #   $rxyp = [ x, dydx ]
@@ -256,9 +64,6 @@ sub multiseg_integral {
     # break points where mesh changes significantly (2%)
     # * If rpflags is a scalar value, it is the percent change used to set
     # breakpoints (should be a small fraction say from 0 to .1)
-
-    # This routine allows integrating functions which have some very smooth
-    # sections as well as some discontinuous sections.  
 
     my ( $rxyp, $yy_i, $unknown ) = @_;
     return unless ($rxyp && @{$rxyp});
@@ -408,6 +213,7 @@ sub multiseg_integral {
     }
     return ($rxy);
 }
+
 sub parabolic_integral {
 
     # symmetric version of parabolic integration for irregularly spaced points
@@ -417,7 +223,7 @@ sub parabolic_integral {
     #   $yy_i = a starting value of y  [default=0]
     # return the integral
     #  $rxy = [x, y]
-    # using a symmetric version of simpson's method
+    # using a symmetric version of Simpson's method
 
     my ( $rxyp, $yy_i ) = @_;
     $yy_i = 0 unless defined($yy_i);
@@ -659,25 +465,25 @@ sub set_interpolation_points {
     return [ $j_lo .. $j_hi ];
 }
 
-sub _locate_2d {
-    my ( $self, $xx, $icol, $rtab ) = @_;
+sub locate_2d {
+    my ( $xx, $icol, $rtab, $jl, $ju ) = @_;
 
     # Binary search for two consecutive table row indexes, jl and ju, of a
     # 2D matrix such that the value of x lies between these two table values.
     # $icol is the column of the variable x
     # If x is out of bounds, returns either jl<0 or ju>=N
 
-    $rtab = $self->{_rtable} unless defined($rtab);
+    #  Based on the fortran code in
+    #  Press, William H., Brian P. Flannery, Saul A. Teukolsky and
+    #  William T. Vetterling, 1986, "Numerical Recipes: The Art of
+    #  Scientific Computing" (Fortran), Cambrigde University Press.
+
     return unless $rtab;
     my $num = @{$rtab};
     return unless $num;
     my $dx_is_positive = $rtab->[-1]->[$icol] > $rtab->[0]->[$icol];
 
-    # Set search bounds to previous location ...
-    my $jl = $self->{_jl};
-    my $ju = $self->{_ju};
-
-    # ... but reset to beyond end of table if no longer valid
+    # but reset to beyond end of table if no longer valid
     $jl = -1
       if ( !defined($jl)
         || $jl < 0
@@ -699,10 +505,231 @@ sub _locate_2d {
             $ju = $jm;
         }
     }
-    $self->{_jl} = $jl;
-    $self->{_ju} = $ju;
     return ( $jl, $ju );
 }
+
+sub nbrenti {
+
+    # call arg declarations
+    my ( $sa, $fa, $sb, $fb, $tol, $bvec ) = @_;
+
+    #       initialization for Brent's great root finder
+    #       (see-Algorithms for Minimization Without
+    #       Derivatives, by Richard P. Brent, Prentice-Hall, 1973.)
+
+    #       This is a direct translation of Brent's fortran code
+    #       published in the above reference; translated with help of f2pl
+     
+    #       input parameters -
+    #       bounding states:
+    #         sa - first x coordinate
+    #         fa = f(sa)
+    #         sb - second x coordinate
+    #         fb = f(sb)
+    #         **  must have fa*fb <= 0. **
+    #       tolx = convergence tolerance on x
+    #
+    #       output parameter -
+    #       xnext = next value of x to try
+    #
+    #       there are two subroutines:
+    #               brenti must be called once to start an interation
+    #               brentx must be called once for each step
+    #
+    #****************************************************************
+    #
+    #       sample coding: assume we have a root trapped between sa & sb
+    #
+    #       dimension bvec(7)
+    #       data tol/.001/,maxit/25/
+    #
+    #     call nbrenti (sa,fa,sb,fb,tol,xx,bvec)
+    #
+    #     loop over iterations
+    #     do 250 iter=1,maxit
+    #
+    #       calculate ff(xx)
+    #
+    #       get next value of xx
+    #     call nbrentx (ff,xx,ifconv,bvec)
+    #     if (ifconv.ne.0) go to 700
+    #
+    #       note - it is possible to make a convergence test here on the
+    #       magnitude of ff as well
+    #
+    # 250 continue
+    #
+    #     no convergence after maxit iterations -- cant happen if maxit
+    #               is large enough for the given tol - see brents book
+    #
+    #     converged - finish up
+    # 700 ...
+    #****************************************************************
+    #
+    my $sc        = $sb;
+    my $fc        = $fb;
+    $bvec->[1] = $sa;
+    $bvec->[2] = $fa;
+    $bvec->[3] = $sb;
+    $bvec->[4] = $fb;
+    $bvec->[5] = $sc;
+    $bvec->[6] = $fc;
+    $bvec->[7] = $tol;
+    my ($xnext, $ifconv) = nbrentx( $fb, $bvec );
+    return ($xnext, $ifconv);
+}
+
+sub nbrentx {
+
+    # call arg declarations
+    my ( $flast, $bvec ) = @_;
+
+    #
+    #     take one iteration step with brents method
+    #     flast = value of f of previous step
+    #     xnext = next value of x to try
+    #     ifconv = 0 if not converged
+    #            = 1 if converged
+    #       bvec = state vector
+    #
+    #
+    #       get the previous state
+    my $sa  = $bvec->[1];
+    my $fa  = $bvec->[2];
+    my $sb  = $bvec->[3];
+    my $fb  = $bvec->[4];
+    my $sc  = $bvec->[5];
+    my $fc  = $bvec->[6];
+    my $tol = $bvec->[7];
+
+    my $slast = $sb; ## SLH
+
+    my ($bd, $be, $bs, $bm, $bp, $bq, $br, $xnext, $ifconv);
+    $be=0; # patch because abs function below 230 uses be when not defined
+
+    $fb = $flast;
+    if ( ( $fb > 0. ) && ( $fc > 0. ) ) {
+        goto L210;
+    }
+    if ( ( $fb <= 0. ) && ( $fc <= 0. ) ) {
+        goto L210;
+    }
+    goto L220;
+
+    #
+  L210:
+    $sc = $sa;
+    $fc = $fa;
+    $be = $sb - $sa;
+    $bd = $be;
+  L220:
+    if ( abs($fc) >= abs($fb) ) {
+        goto L230;
+    }
+    $sa = $sb;
+    $sb = $sc;
+    $sc = $sa;
+    $fa = $fb;
+    $fb = $fc;
+    $fc = $fa;
+  L230:
+    $bm = 0.5 * ( $sc - $sb );
+
+    if ( ( abs($bm) <= $tol ) || ( $fb == 0. ) ) {
+        goto L340;
+    }
+    if ( ( abs($be) >= $tol ) && ( abs($fa) > abs($fb) ) ) {
+        goto L240;
+    }
+
+    #
+    #         bisection is forced
+    $be = $bm;
+    $bd = $be;
+    goto L300;
+
+    #
+  L240:
+    $bs = $fb / $fa;
+    if ( $sa != $sc ) {
+        goto L250;
+    }
+
+    #
+    #         linear interpolation
+    $bp = 2. * $bm * $bs;
+    $bq = 1. - $bs;
+    goto L260;
+
+    #
+    #         inverse quadratic interpolation
+  L250:
+    $bq = $fa / $fc;
+    $br = $fb / $fc;
+    $bp = $bs *
+      ( 2. * $bm * $bq * ( $bq - $br ) - ( $sb - $sa ) * ( $br - 1. ) );
+    $bq = ( $bq - 1. ) * ( $br - 1. ) * ( $bs - 1. );
+
+    #
+  L260:
+    if ( $bp <= 0. ) {
+        goto L270;
+    }
+    $bq = -$bq;
+    goto L280;
+  L270:
+    $bp = -$bp;
+  L280:
+    $bs = $be;
+    $be = $bd;
+
+    if (   ( 2. * $bp >= 3. * $bm * $bq - abs( $tol * $bq ) )
+        || ( $bp >= abs( 0.5 * $bs * $bq ) ) )
+    {
+        goto L290;
+    }
+    $bd = $bp / $bq;
+    goto L300;
+  L290:
+    $be = $bm;
+    $bd = $be;
+  L300:
+    $sa = $sb;
+    $fa = $fb;
+
+    if ( abs($bd) <= $tol ) {
+        goto L310;
+    }
+    $sb = $sb + $bd;
+    goto L330;
+  L310:
+    if ( $bm <= 0. ) {
+        goto L320;
+    }
+    $sb = $sb + $tol;
+    goto L330;
+  L320:
+    $sb = $sb - $tol;
+  L330:
+    $xnext  = $sb;
+    $ifconv = 0;
+    goto L900;
+  L340:
+    $ifconv = 1;
+    $xnext  = $slast;  # SLH: added because not defined otherwise
+
+    #
+    #       save the state
+  L900:
+    $bvec->[1] = $sa;
+    $bvec->[2] = $fa;
+    $bvec->[3] = $sb;
+    $bvec->[4] = $fb;
+    $bvec->[5] = $sc;
+    $bvec->[6] = $fc;
+    return ($xnext, $ifconv);
+}
+
 
 1;
 

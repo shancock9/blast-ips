@@ -58,26 +58,24 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
-##use Blast::IPS::AlphaTable;
 use Blast::IPS::BlastInfo qw(get_blast_info);
 use Blast::IPS::ImpulseTables;
 use Blast::IPS::PzeroFit;
 use Blast::IPS::PzeroTail;
 use Blast::IPS::ShockTables;
 use Blast::IPS::ShockTablesIndex;
+use Blast::IPS::ShockUtils qw(shock_front_values);
 use Blast::IPS::EnergyTables;
 use Blast::IPS::TailShockTables;
-##use Blast::IPS::SimilaritySolution qw(alpha_interpolate);
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
 use Blast::IPS::MathUtils qw(
+  locate_2d
   polint
   set_interpolation_points
-  _locate_2d
 );
 
 my $rshock_tables_info = $Blast::IPS::ShockTablesIndex::rshock_tables_info;
 my $rshock_tables      = $Blast::IPS::ShockTables::rshock_tables;
-##my $ralpha_table       = $Blast::IPS::AlphaTable::ralpha_table;
 my $rpzero_fit         = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail        = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
@@ -487,6 +485,23 @@ sub _end_model_setup {
 
     $self->_set_global_info();
     return;
+}
+
+sub _locate_2d {
+    my ( $self, $xx, $icol, $rtab ) = @_;
+
+    # Binary search for two consecutive table row indexes, jl and ju, of a
+    # 2D matrix such that the value of x lies between these two table values.
+    # $icol is the column of the variable x
+    # If x is out of bounds, returns either jl<0 or ju>=N
+
+    $rtab = $self->{_rtable} unless defined($rtab);
+    my $jl = $self->{_jl};
+    my $ju = $self->{_ju};
+    ($jl, $ju) = locate_2d($xx, $icol, $rtab, $jl, $ju);
+    $self->{_jl} = $jl;
+    $self->{_ju} = $ju;
+    return ( $jl, $ju );
 }
 
 sub _make_table_name {
@@ -1768,15 +1783,6 @@ sub wavefront {
     #if ( defined($z_pose_rs) ) { $Tpos = $zs - $z_pose_rs; }
     #if ( defined($z_pose_ts) ) { $Lpos = $zs - $z_pose_ts; }
 
-##    my $medium = {
-##        _p_amb    => 1,
-##        _ASYM     => $symmetry,
-##        _gamma    => $gamma,
-##        _sspd_amb => 1,
-##        _rho_amb  => $gamma,
-##    };
-    #my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) =
-
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
 
@@ -1824,87 +1830,13 @@ sub wavefront {
     };
 
     # add some shock front values
-    my $rsf_values= $self->shock_front_values( $X, $Y, $dYdX );
+    #my $rsf_values= $self->shock_front_values( $X, $Y, $dYdX );
+    my $rsf_values = shock_front_values($symmetry, $gamma, $X, $Y, $dYdX );
     foreach my $key(keys %{$rsf_values}) {
 	$return_hash->{$key}=$rsf_values->{$key};
     }
 
     return $return_hash;
-}
-
-sub lookup {
-
-    #####################################################################
-    # This is the OLD main entry for external calls.
-    # Please call 'wavefront' instead; it will be more general.
-    # TO BE DELETED!
-    #####################################################################
-
-    # Given:
-    #     $Q = a value to lookup
-
-    #     $id_Q defines what Q contains:
-    #       0 or 'X' => ln(R)    [this is the default if $id_Q not specified]
-    #       1 or 'Y' => ln(overpressure)
-    #       3 or 'Z' => ln(z=x-ct), where t=time of arrival
-    #  OLD  5 or 'W' => ln(T)
-    #  NEW  5 or 'T' => ln(T)
-
-    #      $interp = optional interpolation flag
-    #	     = 0 => cubic [This is the default and recommended method]
-    #	     = 1 => linear [This is only intended for error checking]
-
-    # Returns
-    # 	[X, Y, dY/dX, Z]
-
-    # Positive phase duration and length can be computed from Z.
-    # Note that W is not returned but Toa can be computed from
-    #   Toa = exp(X)-Z
-
-    my ( $self, $Q, $id_Q, $interp ) = @_;
-
-    # do not proceed unless the table is good
-    my $error = $self->{_error};
-    if ($error) {
-        carp "$error";
-        return;
-    }
-
-    my $rtab = $self->{_rtable};
-    my $ntab = @{$rtab};
-
-    # Set table column number to search
-    my $icol;
-    if    ( !defined($id_Q) )     { $icol = 0 }
-    elsif ( $id_Q =~ /^[0135]$/ ) { $icol = $id_Q }
-    else {
-        $id_Q = uc($id_Q);
-        if    ( $id_Q eq 'X' ) { $icol = 0 }
-        elsif ( $id_Q eq 'Y' ) { $icol = 1 }
-        elsif ( $id_Q eq 'Z' ) { $icol = 3 }
-        elsif ( $id_Q eq 'W' ) { $icol = 5 }    # OLD
-        elsif ( $id_Q eq 'T' ) { $icol = 5 }    # NEW
-        else                   { croak "unexpected id_Q=$id_Q\n"; }
-    }
-
-    # Locate this point in the table
-    my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
-
-    # Handle case before start of the table
-    if ( $il < 0 ) {
-        return $self->_short_range_calc( $Q, $icol );
-    }
-
-    # Handle case beyond end of the table
-    elsif ( $iu >= $ntab ) {
-        return $self->_long_range_calc( $Q, $icol );
-    }
-
-    # otherwise interpolate within table
-    else {
-        return _interpolate_rows( $Q, $icol, $rtab->[$il], $rtab->[$iu],
-            $interp );
-    }
 }
 
 sub get_table_bounds {
@@ -2593,24 +2525,32 @@ sub _interpolate_rows {
 }
 
 sub _interpolate_scalar {
-    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2, $interp ) = @_;
+    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2, $linear ) = @_;
     my ( $yy, $dydx, $d2ydx2, $d3ydx3 );
 
-    # User tables might not define all variables, such as E
+    # Be sure all variables are defined
     if ( defined($x1) && defined($y1) && defined($x2) && defined($y2) ) {
+	
+        $yy     = $y1;
+        $dydx   = $dydx1;
+        $d2ydx2 = $d3ydx3 = 0;
+        if ( $x1 != $x2 ) {
 
-        # drop down to linear intepolation if slopes not defined
-        if ( !defined($dydx1) || !defined($dydx2) ) { $interp = 1 }
+            # drop down to linear intepolation if slopes not defined
+            if ( !defined($dydx1) || !defined($dydx2) ) { $linear = 1 }
 
-        if ( defined($interp) && $interp == 1 ) {
-            ( $yy, $dydx ) = _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
-            ( $dydx, $d2ydx2 ) =
-              _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
-            $d3ydx3 = 0;
-        }
-        else {
-            ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
-              _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 );
+            if ( defined($linear) && $linear == 1 ) {
+                ( $yy, $dydx ) =
+                  _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
+                ( $dydx, $d2ydx2 ) =
+                  _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
+                $d3ydx3 = 0;
+            }
+            else {
+                ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
+                  _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2,
+                    $dydx2 );
+            }
         }
     }
     return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
@@ -2628,7 +2568,7 @@ sub _linear_interpolation {
 sub _cubic_interpolation {
     my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 ) = @_;
 
-    # Given the value of a function and its slope at two points,
+    # Given the value of a function and its slope at two different points,
     # Use a cubic polynomial to find the value of the function and its
     # derivatives at an intermediate point
 
@@ -2876,168 +2816,6 @@ EOM
         push @{$rtab_x}, [@vars];
     }
     return $rtab_x;
-}
-
-sub shock_front_values {
-
-    my ( $self, $X, $Y, $dYdX ) = @_;
-
-    # Given:
-    #   X = ln(range)
-    #   Y = ln(ovp) = ln(overpressure ratio) 
-    #   dYdX = d(ln P)/d(ln R) along shock front
-    #
-    # Compute some shock front values and return in a hash ref
-    #
-    # FIXME: some of these expressions would benefit from Taylor series
-    # expansions for small ovp
-    #
-    my $symmetry     = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
-
-    my $p_amb    = 1; 
-    my $sspd_amb = 1; 
-    my $rho_amb  = $gamma; 
-
-    my $lambda = exp($X);
-    my $ovprat = exp($Y);
-    my $ovp    = $p_amb * $ovprat;
-    my $pabs   = $ovp + $p_amb;
-
-    if ( $pabs < 0 ) { print STDERR "Negative abs p in sadek\n"; return }
-
-    # Compute some shock front properties ...
-
-    # D = Shock speed D
-    my $term     = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
-    my $mshock   = sqrt( 1 + $term );
-    my $D   = $sspd_amb * $mshock;
-    my $D_minus_c0  = $D - $sspd_amb;
-
-    # Taylor series expansion of the square root for small overpressures
-    # Switch at a point which keeps error < about 1.e-17
-    if ( $term < 1.e-4 ) {
-        $D_minus_c0 = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
-    }
-
-    # up = shock particle velocity
-    my $up = $ovprat * $p_amb / ( $rho_amb * $D );
-
-    # dup/dovp along shock front
-    my $dudp_sf =
-      $sspd_amb *
-      $sspd_amb / $gamma / $D *
-      ( 1 - ( $gamma + 1 ) / 4 * $up / $D );
-
-    # density ratio and density
-    my $top  = ( $gamma + 1 ) * $pabs + ( $gamma - 1 ) * $p_amb;
-    my $bot  = ( $gamma - 1 ) * $pabs + ( $gamma + 1 ) * $p_amb;
-    my $rhorat = ( $bot > 0 ) ? $top / $bot : 1;
-    my $rho = $rho_amb * $rhorat;
-
-    # Sound speed
-    my $rhocsq  = $gamma * $pabs;
-    my $sspd_sq = $rhocsq / $rho;
-    if ( $sspd_sq < 0 ) { $sspd_sq = 0 }
-    my $aa = sqrt($sspd_sq);
-
-    # sigma and Sigma, the C+ characteristic variable
-    my $sspdx = ( $aa - $sspd_amb ); 
-    my $sigma = ( 2 / ( $gamma - 1 ) ) * $sspdx;
-    my $Sigma = ( $symmetry == 0 ) ? $sigma : $sigma * $lambda**( $symmetry / 2 );
-
-    # Compute the slopes of the wave profile at the shock front ...
-    #   dp/dr, du/dr, dp/dt, du/dt
-
-    # Reference for slopes:
-    #  INITIAL DECAY OF FLOW PROPERTJES OF PLANAR, CYLINDRJCAL AND SPHERICAL BLAST WAVES
-    #  H. S. I. Sadek and J. J. Gott1ieb
-    #  UTIAS Technica1 Note No. 244, CN ISSN 0082-5263
-    #  October, 1983
-    #  See eq 3.29, p24 of pdf
-
-    # Solve
-    #      det * dpdr|t + (D-u)D dpdr|s + rho*a**2 * D * dudr|s +
-    #              N*rho*a**2 * up * (D-u)/r = 0
-    # where
-    #       dudr|s = dpdr|s * dudp_s
-    # So
-    #
-    #      det * dpdr|t + [ (D-u)D + rho*a**2 * D *dudp_s ]*dpdr|s +
-    #              N*rho*a**2 * up * (D-u)/r = 0
-    # Or
-    #      det * dpdr|t + C1 * dpdr|s + C2 = 0
-    # or
-    #      dpdr|s = [- det * dpdr|t + C2 ] / C1
-
-    # And in general, with different values for sign, C1 and C2:
-    #
-    #      dpdr|s = [ $sign * det * slope + C2 ] / C1
-    #
-    my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) = ( 0, 0, 0, 0 );
-
-    ###########################################################
-    # FIXME: expand for small ovp
-    ###########################################################
-    # Roundoff control for det...
-    # sspd_sq = $gamma*$pabs/$rho = $gamma*($p_amb+$ovp)/$rho 
-    #    = $sspd_amb_sq+$gamma*$ovp/rho;
-    # sspd_sq - sspd_amb_sq = gamma*$ovp/$rho
-    # (sspd-sspd_amb)*(sspd+sspd_amb)=gamma*ovp/rho
-    # ... so ..
-    # sspdx == sspd-sspd_amb=gamma*ovp/rho/(sspd+sspd_amb)
-    ##my $aa_minus_c0 = $gamma * $ovp / $rho / ( $aa + $sspd_amb );
-    my $aa_minus_c0 = $aa - $sspd_amb;
-    ###########################################################
-
-    my $D_minus_u = $D - $up;
-    #  $det = $sspd_sq - $D_minus_u**2;
-    my $det = ( $aa + $D_minus_u ) * ( $aa_minus_c0 - $D_minus_c0 + $up );
-    if ( $det != 0 ) {
-
-        my $D_minus_u = $D - $up;
-        my $dpdt_sf   = $D * $dYdX * $ovp / $lambda;
-        my $dudt_sf   = $dudp_sf * $dpdt_sf;
-        $dpdr_t =
-          -( $D_minus_u * $dpdt_sf +
-              $rhocsq * $dudt_sf +
-              $symmetry * $rhocsq * $up * $D_minus_u / $lambda ) /
-          $det;
-
-        $dudr_t =
-          -( $D_minus_u * $dudt_sf +
-              $dpdt_sf / $rho +
-              $symmetry * $sspd_sq * $up / $lambda ) /
-          $det;
-
-        $dpdt_r =
-          ( ( $sspd_sq + $up * $D_minus_u ) * $dpdt_sf +
-              $rhocsq * $D * $dudt_sf +
-              $symmetry * $rhocsq * $up * $D * $D_minus_u / $lambda ) /
-          $det;
-
-        $dudt_r =
-          ( ( $sspd_sq + $up * $D_minus_u ) * $dudt_sf +
-              $D / $rho * $dpdt_sf +
-              $symmetry * $sspd_sq * $up * $D / $lambda ) /
-          $det;
-
-    }
-
-    my $rhash = {
-        dpdr_t        => $dpdr_t,
-        dudr_t        => $dudr_t,
-        dpdt_r        => $dpdt_r,
-        dudt_r        => $dudt_r,
-        up            => $up,
-        density_ratio => $rhorat,
-        ushock        => $D,
-        sspd          => $aa,
-	sigma         => $sigma,
-	Sigma         => $Sigma,
-    };
-
-    return $rhash;
 }
 
 1;
