@@ -502,47 +502,6 @@ sub _make_table_name {
     return $table_name;
 }
 
-sub OLD_set_interpolation_points {
-    my ( $jfloor, $ntab, $NLAG ) = @_;
-
-    # Find the index range for NLAG valid lagrange interpolation points
-    # Given:
-    #   $jfloor is the first index before the point of interest
-    #   $ntab is the number of points in the table
-    #   $NLAG is the number of interpolation points desired
-    # Return:
-    #   a reference to a list of consecutive indexes
-    #   the actual number may be less than NLAG for small tables
-
-    return if ( $ntab <= 0 || $NLAG <= 0 );
-
-    # First add points on both sides (will be lopsided if NLAG is odd)
-    #my $j_lo = $jfloor - int( $NLAG / 2 ); # ORIGINAL, lopsided
-    my $j_lo = $jfloor - int( ( $NLAG - 1 ) / 2 );    # Corrected
-    my $j_hi = $j_lo + $NLAG - 1;
-
-    #print STDERR "jfloor=$jfloor, j_lo=$j_lo, j_hi=$j_hi\n";
-
-    # Shift points if too near an edge
-    if ( $j_lo < 0 ) {
-        my $nshift = 0 - $j_lo;
-        $j_lo += $nshift;
-        $j_hi += $nshift;
-    }
-    if ( $j_hi > $ntab - 1 ) {
-        my $nshift = $ntab - 1 - $j_hi;
-        $j_lo += $nshift;
-        $j_hi += $nshift;
-    }
-
-    # Be sure points are in bounds
-    if ( $j_lo < 0 )         { $j_lo = 0 }
-    if ( $j_hi > $ntab - 1 ) { $j_hi = $ntab - 1 }
-
-    #print STDERR "returning j_lo=$j_lo, j_hi=$j_hi\n";
-    return [ $j_lo .. $j_hi ];
-}
-
 sub _gamma_lookup {
     my ( $symmetry, $gamma ) = @_;
 
@@ -2491,51 +2450,6 @@ sub _long_range_non_sphere {
     return $result_i;
 }
 
-sub OLD_locate_2d {
-    my ( $self, $xx, $icol, $rtab ) = @_;
-
-    # Binary search for two consecutive table row indexes, jl and ju, of a
-    # 2D matrix such that the value of x lies between these two table values.
-    # $icol is the column of the variable x
-    # If x is out of bounds, returns either jl<0 or ju>=N
-
-    $rtab = $self->{_rtable} unless defined($rtab);
-    return unless $rtab;
-    my $num = @{$rtab};
-    return unless $num;
-    my $dx_is_positive = $rtab->[-1]->[$icol] > $rtab->[0]->[$icol];
-
-    # Set search bounds to previous location ...
-    my $jl = $self->{_jl};
-    my $ju = $self->{_ju};
-
-    # ... but reset to beyond end of table if no longer valid
-    $jl = -1
-      if ( !defined($jl)
-        || $jl < 0
-        || $jl >= $num
-        || ( $xx > $rtab->[$jl]->[$icol] ne $dx_is_positive ) );
-    $ju = $num
-      if ( !defined($ju)
-        || $ju < 0
-        || $ju >= $num
-        || ( $xx > $rtab->[$ju]->[$icol] eq $dx_is_positive ) );
-
-    # Loop until the requested point lies in a single interval
-    while ( $ju - $jl > 1 ) {
-        my $jm = int( ( $jl + $ju ) / 2 );
-        if ( $xx > $rtab->[$jm]->[$icol] eq $dx_is_positive ) {
-            $jl = $jm;
-        }
-        else {
-            $ju = $jm;
-        }
-    }
-    $self->{_jl} = $jl;
-    $self->{_ju} = $ju;
-    return ( $jl, $ju );
-}
-
 sub _interpolate_rows {
     my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
 
@@ -2738,70 +2652,6 @@ sub _cubic_interpolation {
     my $d3ydx3 = $yp3 / $dx21**3;
     return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
 }
-
-=pod
-sub OLD_alpha_interpolate {
-    my ( $sym, $gamma ) = @_;
-
-    # Given: a 1d symmetry (0, 1, or 2) and an ideal gas gamma
-    # return: parameter alpha for the similarity solution
-    # returns undef if out of bounds of table
-    # (currently gamma<1.1 || $gamma>7 )
-
-    # alpha is obtained by interpolating a table of pre-computed values.
-    # The estimated accuracy over most of the range of the table is about 1.e-6
-    # The table is spaced closely enough that cubic interpolation of the
-    # interpolated values have comparable accuracy.
-
-    return if ( $sym != 0 && $sym != 1 && $sym != 2 );
-
-    my $rtab = $ralpha_table->[$sym];
-    my $ntab = @{$rtab};
-    my ( $jl, $ju );
-    my $icol = 0;
-
-    # A small tolerance to avoid interpolations
-    my $eps = 1.e-6;
-
-    my $rhash = {
-        _jl     => $jl,
-        _ju     => $ju,
-        _rtable => $rtab,
-    };
-    ( $jl, $ju ) = _locate_2d( $rhash, $gamma, $icol );
-    my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
-    my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
-    if ( $jl < 0 ) {
-        return if ( $gamma + $eps < $gamma_min );
-        return $alpha_min;
-    }
-    if ( $ju >= $ntab ) {
-        return if ( $gamma - $eps > $gamma_max );
-        return $alpha_max;
-    }
-
-    # Define N consecutive lagrange interpolation points;
-    # Using 4 points gives sufficient accuracy
-    my $NLAG = 4;
-    my $rj_interp = set_interpolation_points( $jl, $ntab, $NLAG );
-
-    my ( $rx, $ry );
-
-    # alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) },
-    # so we can improve accuracy by interpolating the function
-    # alpha*(gamma-1)*sqrt(gamma+1)
-    foreach my $jj ( @{$rj_interp} ) {
-        my ( $xx, $yy ) = @{ $rtab->[$jj] };
-        push @{$rx}, $xx;
-        push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
-    }
-
-    my $ff = polint( $gamma, $rx, $ry );
-    my $alpha = $ff / ( ( $gamma - 1 ) * sqrt( $gamma + 1 ) );
-
-    return ($alpha);
-}
-=cut
 
 sub is_monotonic_list {
 
@@ -3028,83 +2878,6 @@ EOM
     return $rtab_x;
 }
 
-sub OLD_polint {
-
-    #  Slightly modified versions of the "polint" routine from
-    #  Press, William H., Brian P. Flannery, Saul A. Teukolsky and
-    #  William T. Vetterling, 1986, "Numerical Recipes: The Art of
-    #  Scientific Computing" (Fortran), Cambrigde University Press,
-    #  pp. 80-82.
-
-    # Given:
-    # $xx = an x location where y is required
-    # ($rx, $ry) = arrays of ($x,$y) lagrange interpolation points
-
-    # Return:
-    #  $yy = the interpolated value at $xx
-    #  $dy = the estimated error
-
-    # Example call:
-    # my ( $yy, $dy ) = polint( $xx, $rx, $ry );
-
-    my ( $xx, $rx, $ry ) = @_;
-
-    my $n = @{$rx};
-
-    # Return values
-    my ( $yy, $dy );
-
-    #..find the index ns of the closest table entry; initialize the c and d
-    # tables
-    my ( @c, @d );
-    my $ns  = 0;
-    my $dif = abs( $xx - $rx->[0] );
-    for ( my $i = 0 ; $i < $n ; ++$i ) {
-        my $dift = abs( $xx - $rx->[$i] );
-        if ( $dift < $dif ) {
-            $ns  = $i;
-            $dif = $dift;
-        }
-        $c[$i] = $ry->[$i];
-        $d[$i] = $ry->[$i];
-    }
-
-    #..first guess for y
-    $yy = $ry->[$ns];
-
-    #..for each column of the table, loop over the c's and d's and update them
-    $ns = $ns - 1;
-    for ( my $m = 0 ; $m < $n - 1 ; ++$m ) {
-        for ( my $i = 0 ; $i < $n - $m - 1 ; ++$i ) {
-            my $ho  = $rx->[$i] - $xx;
-            my $hp  = $rx->[ $i + $m + 1 ] - $xx;
-            my $w   = $c[ $i + 1 ] - $d[$i];
-            my $den = $ho - $hp;
-            if ( $den == 0.0 ) {
-                print STDERR "polint: 2 rx entries are the same \n";
-                return;
-            }
-            $den   = $w / $den;
-            $d[$i] = $hp * $den;
-            $c[$i] = $ho * $den;
-        }
-
-        # after each column is completed, decide which correction c or d, to
-        # add to the accumulating value of y, that is, which path to take in
-        # the table by forking up or down. ns is updated as we go to keep track
-        # of where we are. the last dy added is the error indicator.
-        if ( 2 * ( $ns + 1 ) < $n - $m - 1 ) {
-            $dy = $c[ $ns + 1 ];
-        }
-        else {
-            $dy = $d[$ns];
-            $ns = $ns - 1;
-        }
-        $yy += $dy;
-    }
-    return wantarray ? ( $yy, $dy ) : $yy;
-}
-
 sub shock_front_values {
 
     my ( $self, $X, $Y, $dYdX ) = @_;
@@ -3265,10 +3038,6 @@ sub shock_front_values {
     };
 
     return $rhash;
-
-    #return wantarray ? ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) : $dpdr_t;
 }
-
-__END__
 
 1;
