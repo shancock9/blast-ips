@@ -58,7 +58,7 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
-use Blast::IPS::AlphaTable;
+##use Blast::IPS::AlphaTable;
 use Blast::IPS::BlastInfo qw(get_blast_info);
 use Blast::IPS::ImpulseTables;
 use Blast::IPS::PzeroFit;
@@ -67,10 +67,17 @@ use Blast::IPS::ShockTables;
 use Blast::IPS::ShockTablesIndex;
 use Blast::IPS::EnergyTables;
 use Blast::IPS::TailShockTables;
+##use Blast::IPS::SimilaritySolution qw(alpha_interpolate);
+use Blast::IPS::AlphaTable qw(alpha_interpolate);
+use Blast::IPS::MathUtils qw(
+  polint
+  set_interpolation_points
+  _locate_2d
+);
 
 my $rshock_tables_info = $Blast::IPS::ShockTablesIndex::rshock_tables_info;
 my $rshock_tables      = $Blast::IPS::ShockTables::rshock_tables;
-my $ralpha_table       = $Blast::IPS::AlphaTable::ralpha_table;
+##my $ralpha_table       = $Blast::IPS::AlphaTable::ralpha_table;
 my $rpzero_fit         = $Blast::IPS::PzeroFit::rpzero_fit;
 my $rpzero_tail        = $Blast::IPS::PzeroTail::rpzero_tail;
 my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
@@ -495,7 +502,7 @@ sub _make_table_name {
     return $table_name;
 }
 
-sub set_interpolation_points {
+sub OLD_set_interpolation_points {
     my ( $jfloor, $ntab, $NLAG ) = @_;
 
     # Find the index range for NLAG valid lagrange interpolation points
@@ -2484,7 +2491,7 @@ sub _long_range_non_sphere {
     return $result_i;
 }
 
-sub _locate_2d {
+sub OLD_locate_2d {
     my ( $self, $xx, $icol, $rtab ) = @_;
 
     # Binary search for two consecutive table row indexes, jl and ju, of a
@@ -2732,7 +2739,8 @@ sub _cubic_interpolation {
     return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
 }
 
-sub alpha_interpolate {
+=pod
+sub OLD_alpha_interpolate {
     my ( $sym, $gamma ) = @_;
 
     # Given: a 1d symmetry (0, 1, or 2) and an ideal gas gamma
@@ -2793,6 +2801,7 @@ sub alpha_interpolate {
 
     return ($alpha);
 }
+=cut
 
 sub is_monotonic_list {
 
@@ -3019,7 +3028,7 @@ EOM
     return $rtab_x;
 }
 
-sub polint {
+sub OLD_polint {
 
     #  Slightly modified versions of the "polint" routine from
     #  Press, William H., Brian P. Flannery, Saul A. Teukolsky and
