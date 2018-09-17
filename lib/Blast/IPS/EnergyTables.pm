@@ -30,11 +30,10 @@ our $renergy_tables;
 
 BEGIN {
 
-    # Tables of residual energy due to primary shock for an
-# explosion in an ideal homogeneous atmosphere.  The tables were created
-# by integrating the computed shock histories and interpolating to the
-# same X values as the main shock tables.
-
+    # Tables of residual energy due to primary shock for an explosion in an
+    # ideal homogeneous atmosphere.  The tables were created by integrating the
+    # computed shock histories and interpolating to the same X values as the
+    # main shock tables.
 
     # The table format is:
     #  [ X, E1, dE1/dX, E, dEdX, I-X, d(I-X)dX ]
