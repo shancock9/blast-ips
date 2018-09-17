@@ -21,12 +21,29 @@ package Blast::IPS::AlphaTable;
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# This module provides a routine 'alpha_interpolate' which returns an accurate
+# value of the similarity parameter alpha for the three symmetries and
+# gamma between 1.1 and 7.
+
 use strict;
 use warnings;
 use 5.006;
 
+our @EXPORT_OK = qw(
+  alpha_interpolate
+);
+
+use Exporter;
+our @ISA = qw(Exporter);
+
 use Carp;
 our $ralpha_table;
+
+use Blast::IPS::MathUtils qw(
+  polint
+  set_interpolation_points
+  _locate_2d
+);
 
 ##################################################################
 # ALPHA TABLE
@@ -628,5 +645,67 @@ BEGIN {
             [ 7,    0.02793122156, 1.39e-17 ],
         ],
     ];
+}
+
+sub alpha_interpolate {
+    my ( $sym, $gamma ) = @_;
+
+    # Given: a 1d symmetry (0, 1, or 2) and an ideal gas gamma
+    # return: parameter alpha for the similarity solution
+    # returns undef if out of bounds of table
+    # (currently gamma<1.1 || $gamma>7 )
+
+    # alpha is obtained by interpolating a table of pre-computed values.
+    # The estimated accuracy over most of the range of the table is about 1.e-6
+    # The table is spaced closely enough that cubic interpolation of the
+    # interpolated values have comparable accuracy.
+
+    return if ( $sym != 0 && $sym != 1 && $sym != 2 );
+
+    my $rtab = $ralpha_table->[$sym];
+    my $ntab = @{$rtab};
+    my ( $jl, $ju );
+    my $icol = 0;
+
+    # A small tolerance to avoid interpolations
+    my $eps = 1.e-6;
+
+    my $rhash = {
+        _jl     => $jl,
+        _ju     => $ju,
+        _rtable => $rtab,
+    };
+    ( $jl, $ju ) = _locate_2d( $rhash, $gamma, $icol );
+    my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
+    my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
+    if ( $jl < 0 ) {
+        return if ( $gamma + $eps < $gamma_min );
+        return $alpha_min;
+    }
+    if ( $ju >= $ntab ) {
+        return if ( $gamma - $eps > $gamma_max );
+        return $alpha_max;
+    }
+
+    # Define N consecutive lagrange interpolation points;
+    # Using 4 points gives sufficient accuracy
+    my $NLAG = 4;
+    my $rj_interp = set_interpolation_points( $jl, $ntab, $NLAG );
+
+    my ( $rx, $ry );
+
+    # alpha varies approximately as 1/{ (gamma-1)*sqrt(gamma+1) },
+    # so we can improve accuracy by interpolating the function
+    # alpha*(gamma-1)*sqrt(gamma+1)
+    foreach my $jj ( @{$rj_interp} ) {
+        my ( $xx, $yy ) = @{ $rtab->[$jj] };
+        push @{$rx}, $xx;
+        push @{$ry}, $yy * ( $xx - 1 ) * sqrt( $xx + 1 );
+    }
+
+    my $ff = polint( $gamma, $rx, $ry );
+    my $alpha = $ff / ( ( $gamma - 1 ) * sqrt( $gamma + 1 ) );
+
+    return ($alpha);
 }
 1;
