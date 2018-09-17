@@ -58,7 +58,7 @@ sub _setup {
       gamma
       symmetry
       E0
-      rho0
+      rho_amb
     );
     my %valid_input_keys;
     @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
@@ -89,7 +89,7 @@ sub _setup {
     else {
 
         # default to spherical table with gamma 1.4 if no arg given
-        $rinput_hash = { symmetry => 2, gamma => 1.4, E0=>1, rho0=>1.4 };
+        $rinput_hash = { symmetry => 2, gamma => 1.4, E0=>1, rho_amb=>1.4 };
     }
 
     # Validate input keys
@@ -99,15 +99,15 @@ sub _setup {
     my $gamma    = $rinput_hash->{gamma};
     my $symmetry = $rinput_hash->{symmetry};
     my $E0       = $rinput_hash->{E0};
-    my $rho0     = $rinput_hash->{rho0};
+    my $rho_amb     = $rinput_hash->{rho_amb};
 
     my $error = "";
     if ( !defined($E0) )       { $E0       = 1 }
     if ( !defined($gamma) )    { $gamma    = 1.4 }
-    if ( !defined($rho0) )     { $rho0     = 1 }
+    if ( !defined($rho_amb) )     { $rho_amb     = 1 }
     if ( !defined($symmetry) ) { $symmetry = 2 }
-    if ( !defined($rho0) || $rho0 <= 0 ) {
-        $error .= "Bad rho0='$rho0'\n";
+    if ( !defined($rho_amb) || $rho_amb <= 0 ) {
+        $error .= "Bad rho_amb='$rho_amb'\n";
     }
     if ( !defined($gamma) || $gamma <= 1.0 ) {
         $error .= "Bad gamma='$gamma'\n";
@@ -118,10 +118,10 @@ sub _setup {
     my $alpha = alpha_interpolate( $symmetry, $gamma );
 
     $self->{_E0}       = $E0;
-    $self->{_rho0}     = $rho0;
+    $self->{_rho_amb}     = $rho_amb;
     $self->{_gamma}    = $gamma;
     $self->{_symmetry} = $symmetry;
-    $self->{_Eoad}     = $E0 / ( $rho0 * $alpha );
+    $self->{_Eoad}     = $E0 / ( $rho_amb * $alpha );
     $self->{_alpha}    = $alpha;
     if ($error) { carp "$error" }
     return; 
@@ -166,22 +166,54 @@ sub get_Eoad { $_[0]->{_Eoad} }
 sub get_alpha { $_[0]->{_alpha} }
 sub get_error { $_[0]->{_error} }
 sub get_gamma { $_[0]->{_gamma} }
-sub get_rho0 { $_[0]->{_rho0} }
-sub get_rho_amb { $_[0]->{_rho0} }
+sub get_rho_amb { $_[0]->{_rho_amb} }
 sub get_E0 { $_[0]->{_E0} }
 
-sub shock_parameters {
-    my ( $self, $rinput_hash ) = @_;
+sub shock_front_values_as_hash {
+    my ( $self, @args ) = @_;
 
-    # Returns a hash of shock front values given any one of these parameters:
-    # D - shock speed
-    # P - shock pressure
-    # U - shock particle velocity
-    # R - shock radius
-    # T - time
+    # given any one of these parameters:
+    #  D - shock speed
+    #  R - shock radius
+    #  T - time
+    #  P - shock pressure
+    #  U - shock particle velocity
+
+    # Returns a hash of shock front values 
+
+    my $rinput_hash;
+    my $reftype;
+    if (@args) {
+        my $arg0    = $args[0];
+        my $reftype = ref($arg0);
+        if ( !$reftype ) {
+
+            if ( defined($arg0) ) {
+
+                # simple hash of named values
+                my %input_hash = @args;
+                $rinput_hash = \%input_hash;
+            }
+
+        }
+        elsif ( $reftype eq 'HASH' ) {
+            $rinput_hash = $arg0;
+        }
+        else {
+            carp "Unexpected ref type: $reftype\n";
+            return;
+        }
+    }
+    else {
+
+        # no default 
+        $rinput_hash = undef;
+    }
+
+    return unless defined($rinput_hash);
 
     my $Eoad     = $self->{_Eoad};
-    my $rho0     = $self->{_rho0};
+    my $rho_amb     = $self->{_rho_amb};
     my $gamma    = $self->{_gamma};
     my $symmetry = $self->{_symmetry};
 
@@ -192,7 +224,7 @@ sub shock_parameters {
     }
     elsif ( defined( $rinput_hash->{P} ) ) {
         my $P = $rinput_hash->{P};
-        $D = sqrt( ( $gamma + 1 ) / 2 * $P / $rho0 );
+        $D = sqrt( ( $gamma + 1 ) / 2 * $P / $rho_amb );
     }
     elsif ( defined( $rinput_hash->{U} ) ) {
         my $U = $rinput_hash->{U};
@@ -235,8 +267,8 @@ sub shock_parameters {
 
     # STEP 2: use the shock speed to determine the other parameters
     my $U   = 2 / ( $gamma + 1 ) * $D;
-    my $P   = $rho0 * $U * $D;
-    my $rho = ( $gamma + 1 ) / ( $gamma - 1 ) * $rho0;
+    my $P   = $rho_amb * $U * $D;
+    my $rho = ( $gamma + 1 ) / ( $gamma - 1 ) * $rho_amb;
     my $R   = 1.e99;
     my $T   = 1.e99;
     if ( $D > 0 ) {
@@ -256,6 +288,22 @@ sub shock_parameters {
     return \%return_hash;
 }
 
+sub shock_front_values {
+
+    # given any one of these parameters:
+    #  D - shock speed
+    #  R - shock radius
+    #  T - time
+    #  P - shock pressure
+    #  U - shock particle velocity
+
+    # Returns [R, T, P, U, rho]
+
+    my $rhash = shock_front_values_as_hash(@_);
+    return [$rhash->{R}, $rhash->{T}, $rhash->{P}, $rhash->{U}, $rhash->{RHO}];
+}
+
+
 sub get_normalized_profile {
     my ( $self, $rr ) = @_;
     my $symmetry = $self->{_symmetry};
@@ -268,9 +316,10 @@ sub get_normalized_profile {
 
     # Return:
     #  a list of the dimensionless profile of the point source similarity solution 
-    #  with variables [ r/rs, p/ps, u/us, rho/rhos ]
+    #  with variables [ r/rs, t/ts, p/ps, u/us, rho/rhos ]
     # where
     #  rs=shock radius, 
+    #  ts=time
     #  ps=shock pressure
     #  us=shock particle velocity
     #  rhos=shock density
@@ -363,7 +412,7 @@ sub get_normalized_profile {
             $urat = $rrat * $uovr;
             $rhorat = $G_to_rho->( $G, $rrat, $prat );
         }
-        unshift @{$rprofile}, [ $rrat, $prat, $urat, $rhorat ];
+        unshift @{$rprofile}, [ $rrat, 1, $prat, $urat, $rhorat ];
     }
 
     if ($is_reversed) {
@@ -371,7 +420,7 @@ sub get_normalized_profile {
         $rprofile = \@rev;
     }
 
-    my $hdr = "r/rs\tp/ps\tu/us\trho/rhos";
+    my $hdr = "r/rs\tt/ts\tp/ps\tu/us\trho/rhos";
     return wantarray ? ( $rprofile, $hdr ) : $rprofile;
 }
 
@@ -409,8 +458,8 @@ sub _lookup_theta {
             next;
         }
 
-        my $tolx  = 1.e-8 * $xhi;
-        my $tolr  = 1.e-8 * $rhi;
+        my $tolx  = 1.e-10 * abs($xhi-$xlo);
+        my $tolr  = 1.e-10 * abs($rhi-$rlo);
         my $bvec  = [];
         my $ff_lo = $rlo - $r;
         my $ff_hi = $rhi - $r;
@@ -427,15 +476,15 @@ sub _lookup_theta {
             $rrat = rrat( $xx, $gamma, $symmetry );
             $ff = $rrat - $r;
             ( $xx, $ifconv ) = nbrentx( $ff, $bvec );
-            if ( abs($ff) < $tolr ) {    #$ifconv != 0 ) {
-                ##print STDERR "ff=$ff, xx=$xx, flo=$ff_lo, fhi=$ff_hi, xxlo=$xlo, xhi=$xhi, ifconv=$ifconv, tol=$tol\n";
+            if ( abs($ff) < $tolr  && $ifconv != 0) {    #$ifconv != 0 ) {
+                #print STDERR "ff=$ff, xx=$xx, flo=$ff_lo, fhi=$ff_hi, xxlo=$xlo, xhi=$xhi, ifconv=$ifconv, tol=$tolr, iter=$iter\n";
                 last;
             }
         }
         if ( $iter >= $maxit ) {
 
             # no convergence after maxit iterations -- shouldn't happen
-            print STDERR "**warning-no convergence**; iter=$iter, ff=$ff\n";
+            print STDERR "**warning-no convergence in brent iteration**; iter=$iter, ff=$ff\n";
         }
         unshift @{$rgrid}, [ $xx, $r ];
         ##print STDERR "i=$i, r=$r, jhi=$jhi, rhi=$rhi, jlo=$jlo, rlo=$rlo x=$xx, rrat=$rrat, ff=$ff, it=$iter\n";
