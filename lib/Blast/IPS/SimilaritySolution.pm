@@ -29,8 +29,11 @@ use strict;
 use warnings;
 use 5.006;
 
+use Blast::IPS::Utils qw(
+  check_keys
+);
 use Blast::IPS::MathUtils qw(
-  _locate_2d
+  locate_2d
   multiseg_integral
   nbrenti
   nbrentx
@@ -93,7 +96,7 @@ sub _setup {
     }
 
     # Validate input keys
-    _check_keys( $rinput_hash, \%valid_input_keys,
+    check_keys( $rinput_hash, \%valid_input_keys,
         "Checking for valid input keys" );
 
     my $gamma    = $rinput_hash->{gamma};
@@ -126,42 +129,6 @@ sub _setup {
     if ($error) { carp "$error" }
     return; 
 }
-
-sub _check_keys {
-    my ( $rtest, $rvalid, $msg, $exact_match ) = @_;
-
-    # Check the keys of a hash for validity:
-    # $rtest  = ref to hash to test
-    # $rvalid = ref to has with valid keys
-
-    # $msg = a message to write in case of error
-    # $exact_match defines the type of check:
-    #     = false: test hash must not have unknown key
-    #     = true:  test hash must have exactly same keys as known hash
-    my @unknown_keys =
-      grep { $_ && !exists $rvalid->{$_} } keys %{$rtest};
-    my @missing_keys =
-      grep { !exists $rtest->{$_} } keys %{$rvalid};
-    my $error = @unknown_keys;
-    if ($exact_match) { $error ||= @missing_keys }
-    if ($error) {
-        local $" = ')(';
-        my @expected_keys = sort keys %{$rvalid};
-        @missing_keys = sort @missing_keys;
-        @unknown_keys = sort @unknown_keys;
-        croak(<<EOM);
-------------------------------------------------------------------------
-Blast::IPS::SimilaritySolution program error detected checking hash keys
-Message is: '$msg'
-Valid keys are: (@expected_keys)
-Keys not seen : (@missing_keys)
-Unknown key(s): (@unknown_keys)
-------------------------------------------------------------------------
-EOM
-    }
-    return;
-}
-
 sub get_Eoad { $_[0]->{_Eoad} }
 sub get_alpha { $_[0]->{_alpha} }
 sub get_error { $_[0]->{_error} }
@@ -258,7 +225,7 @@ sub shock_front_values_as_hash {
         my @input_keys = qw(D P U R T );
         my %valid_input_keys;
         @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
-        _check_keys( $rinput_hash, \%valid_input_keys,
+        check_keys( $rinput_hash, \%valid_input_keys,
             "Checking for valid input keys" );
 
         # shouldn't get here if keys okay
@@ -437,14 +404,28 @@ sub _lookup_theta {
     my $imax = @{$rr};
     my $jhi  = $jmax - 1;
     my $jlo  = $jmax - 2;
-    my $rgrid;
+    my ($rgrid, $xlast, $rlast);
     for ( my $i = $imax - 1 ; $i >= 0 ; $i-- ) {
         my $r = $rr->[$i];
         if ( $r > 1 || $r < 0) {
-            unshift @{$rgrid}, [ undef, $r ];
+	    $xlast = undef;
+	    $rlast = $r;
+            unshift @{$rgrid}, [ $xlast, $r ];
             next;
         }
         my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
+
+	# minor optimization: the previous computed point will form a better upper
+	# bound than the previous table value if we stay in the same table interval
+        if (   defined($xlast)
+            && defined($rlast)
+            && $rlast > $r
+            && $rlast < $rhi )
+        {
+            $xhi = $xlast;
+            $rhi = $rlast;
+        }
+
         my ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
         while ( $rlo > $r ) {
             if ( $jlo <= 0 ) { die "error in lookup\n" }
@@ -487,6 +468,9 @@ sub _lookup_theta {
             print STDERR "**warning-no convergence in brent iteration**; iter=$iter, ff=$ff\n";
         }
         unshift @{$rgrid}, [ $xx, $r ];
+	$xlast = $xx;
+	$rlast = $r;
+
         ##print STDERR "i=$i, r=$r, jhi=$jhi, rhi=$rhi, jlo=$jlo, rlo=$rlo x=$xx, rrat=$rrat, ff=$ff, it=$iter\n";
     }
     return $rgrid;
