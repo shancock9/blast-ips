@@ -68,6 +68,9 @@ use Blast::IPS::ShockUtils qw(shock_front_values);
 use Blast::IPS::EnergyTables;
 use Blast::IPS::TailShockTables;
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
+use Blast::IPS::Utils qw(
+  check_keys
+);
 use Blast::IPS::MathUtils qw(
   locate_2d
   polint
@@ -283,7 +286,7 @@ sub _setup {
     }
 
     # Validate input keys
-    _check_keys( $rinput_hash, \%valid_input_keys,
+    check_keys( $rinput_hash, \%valid_input_keys,
         "Checking for valid input keys" );
 
     # The following four quantities can be specified:
@@ -620,41 +623,6 @@ sub _gamma_lookup {
     $return_hash->{'rigam_6'}         = $rigam_6;
     $return_hash->{'loc_gamma_table'} = [ undef, $j2, $j3, $ntab, ];
     return ($return_hash);
-}
-
-sub _check_keys {
-    my ( $rtest, $rvalid, $msg, $exact_match ) = @_;
-
-    # Check the keys of a hash for validity:
-    # $rtest  = ref to hash to test
-    # $rvalid = ref to has with valid keys
-
-    # $msg = a message to write in case of error
-    # $exact_match defines the type of check:
-    #     = false: test hash must not have unknown key
-    #     = true:  test hash must have exactly same keys as known hash
-    my @unknown_keys =
-      grep { $_ && !exists $rvalid->{$_} } keys %{$rtest};
-    my @missing_keys =
-      grep { !exists $rtest->{$_} } keys %{$rvalid};
-    my $error = @unknown_keys;
-    if ($exact_match) { $error ||= @missing_keys }
-    if ($error) {
-        local $" = ')(';
-        my @expected_keys = sort keys %{$rvalid};
-        @missing_keys = sort @missing_keys;
-        @unknown_keys = sort @unknown_keys;
-        croak(<<EOM);
-------------------------------------------------------------------------
-Blast::IPS program error detected checking hash keys
-Message is: '$msg'
-Valid keys are: (@expected_keys)
-Keys not seen : (@missing_keys)
-Unknown key(s): (@unknown_keys)
-------------------------------------------------------------------------
-EOM
-    }
-    return;
 }
 
 sub get_builtin_tables {
@@ -1663,7 +1631,7 @@ sub wavefront {
     }
 
     # Validate input keys
-    _check_keys( $rinput_hash, \%valid_input_keys,
+    check_keys( $rinput_hash, \%valid_input_keys,
         "Checking for valid input keys" );
 
     # this interpolation flag is for debugging;
