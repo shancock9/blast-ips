@@ -71,11 +71,11 @@ sub eval_dimensionless {
         $symmetry = $blast_table->get_symmetry();
         $gamma    = $blast_table->get_gamma();
         print <<EOM;
-=========================
-Main Menu - Dimensionless
-=========================
+==============================================================
+Main Menu - Dimensionless.  Menu Commands are Case Insensitive
+==============================================================
 First check/set the geometry and atmosphere parameters...
-  A     - symmetry: $symmetry_name{$symmetry}
+  S     - Symmetry: $symmetry_name{$symmetry}
         - gamma: $gamma
 
 Then evaluate the model with these settings...
@@ -88,7 +88,7 @@ Use one of these to go back...
   Q     - Quit the program
 EOM
         my $ans = queryu(":");
-        if ( $ans eq 'A' ) {
+        if ( $ans eq 'S' ) {
 	    print <<EOM;
 
 =========================================================================
@@ -209,12 +209,16 @@ EOM
                 $alt_m = "?";
             }
             elsif ( $ans eq 'P' ) {
-                $p_amb = get_num( "Enter ambient pressure, Pa", $p_amb );
+                #$p_amb = get_num( "Enter ambient pressure, Pa", $p_amb );
+                $p_amb = request_dimensional_value( "Enter ambient pressure, Pa:",
+                    'P', $p_amb, 0 );
                 $alt_m = "?";
             }
             elsif ( $ans eq 'C' ) {
+                #$sspd_amb = get_num( "Enter ambient sound speed, m/s", $sspd_amb );
                 $sspd_amb =
-                  get_num( "Enter ambient sound speed, m/s", $sspd_amb );
+                  request_dimensional_value( "Enter ambient sound speed, m/s",
+                   'L/T', $sspd_amb, 0 );
                 $alt_m = "?";
             }
             elsif ( $ans eq 'Y' ) {
@@ -549,6 +553,10 @@ sub request_positive_value {
             return;
         }
 
+	# Flags to avoid overwriting user settings
+        my $user_set_E0;
+        my $user_set_range;
+
         my $ground_factor = ground_factor( $symmetry, $ground_plane );
         my $set_dscale = sub {
 
@@ -558,24 +566,65 @@ sub request_positive_value {
               ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
         };
         my $set_E_from_dscale = sub {
+	    my $E0_save=$E0;
             $E0 = $p_amb * $dscale**( $symmetry + 1 ) / $ground_factor;
+            if ($user_set_E0) {
+                my $E0_str     = format_E($E0, $symmetry); 
+                my $E0_save_str     = format_E($E0_save, $symmetry); 
+                if ( !ifyes(<<EOM) )
+This gives E0=$E0_str.  You previously entered E=$E0_save_str.
+Change E0 to be $E0_str? [Y/N]
+EOM
+                {
+                    $E0 = $E0_save;
+                    $set_dscale->();
+                }
+		else {
+                    $user_set_E0 = 0;
+		}
+            }
+        };
+        my $set_range_from_dscale = sub {
+            my ($x) = @_;
+            my $range_save = $range;
+            $range = $x * $dscale;
+            if ($user_set_range) {
+                my $range_str  = format_value($range, 'L'); 
+                my $range_save_str  = format_value($range_save, 'L'); 
+
+		# Range may be well known, so ask before changing.
+                if ( !ifyes(<<EOM) )
+This gives range=$range_str. You previously entered range=$range_save_str
+Change range to be $range_str? [Y/N]
+EOM
+                {
+                    $range = $range_save;
+                }
+                else {
+                    $user_set_range = 0;
+                }
+            }
         };
         my $ask_for_E0 = sub {
 	    if ($symmetry == 0) {
-            	$E0 = request_positive_value( "Enter energy E0, J/m^2:", $E0 );
+            	$E0 = request_dimensional_value( 
+                "Enter Energy E0, (J/m^2):", 'E/L^2',$E0,0);
 	    }
 	    elsif ($symmetry == 1) {
-            	$E0 = request_positive_value( "Enter energy E0, J/m:", $E0 );
+            	$E0 = request_dimensional_value( 
+                "Enter Energy E0, (J/m):", 'E/L',$E0,0);
 	    }
 	    else {
             	$E0 = request_dimensional_value( 
                 "Enter Energy E0, (J):", 'E',$E0,0);
             }
+            $user_set_E0=1;;
             $set_dscale->();
         };
         my $ask_for_range = sub {
             $range =
               request_dimensional_value( "Enter range, m:", 'L', $range, 0 );
+            $user_set_range=1;
         };
         my $ask_for_overpressure_ratio = sub {
 
@@ -613,9 +662,9 @@ sub request_positive_value {
             $ground_factor = ground_factor( $symmetry, $ground_plane );
 
             print <<EOM;
-====================
-Main Menu - SI units
-====================
+=========================================================
+Main Menu - SI units.  Menu Commands are Case Insensitive
+=========================================================
 1. Settings:
    S  symmetry.................... $symmetry_name{$symmetry}
    G  explosion on a ground plane? $ground_plane (g = $ground_factor)
@@ -627,13 +676,13 @@ Main Menu - SI units
       scale dist. (g*E0/P0)$pstr... $dscale_str m 
 
 2. Use these commands to estimate E and/or R from other known quantities
-   [use 'P' versions to enter overpressure, 'Y' for overpressure ratio]
    RI             (Range, Impulse)->Energy
-   RP or RY           (Range, OVP)->Energy        
+   RP or RY*          (Range, OVP)->Energy        
    RT                 (Range, TOA)->Energy
-   PI or YI         (OVP, Impulse)->Energy, Range 
-   EP or EY          (Energy, OVP)->Range         
+   PI or YI*        (OVP, Impulse)->Energy, Range 
+   EP or EY*         (Energy, OVP)->Range         
    ET                (Energy, TOA)->Range         
+   *use 'P' versions to enter overpressure, 'Y' for overpressure ratio
 
 3. When E and R are defined, evaluate the solution:
    C  Calculate blast parameters, given: R, E
@@ -645,6 +694,7 @@ EOM
 #  F files (read/write)...
 #  Q=Quit   CL=Clear  LG=List Gages LD=List Data
             my $ans = queryu(":");
+	    $ans =~ s/\*$//; # in case user took the asterisk literally
             if ( $ans eq 'S' ) {
                 ( $blast_table, $medium ) =
                   select_geometry( $blast_table, $medium );
@@ -694,7 +744,8 @@ EOM
             }
             elsif ( $ans eq 'RT' || $ans eq 'TR' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
-                my $t = get_num("Enter toa, s:");
+                my $t = request_dimensional_value( 
+                  "Enter toa, s:", 'T',undef,0);
                 next if ( $t <= 0 );
                 my $z = ( $range - $t * $sspd_amb );
                 if ( $z <= 0 ) {
@@ -724,8 +775,8 @@ EOM
                 my $impulse = $ask_for_impulse->();
                 next if ( !defined($impulse) || $impulse <= 0 );
                 $dscale = $impulse * $sspd_amb / ( $I_pos * $p_amb );
-                $range  = $x * $dscale;
                 $set_E_from_dscale->();
+		$set_range_from_dscale->($x);
             }
             elsif ( $ans eq 'RP' || $ans eq 'RY' ) {
                 if ( !defined($range) ) { $ask_for_range->(); }
@@ -748,11 +799,14 @@ EOM
                 my $X    = $ret->{X};
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
-                $range = $x * $dscale;
+		$set_range_from_dscale->($x);
+                ##$range = $x * $dscale;
             }
             elsif ( $ans eq 'ET' || $ans eq 'TE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
-                my $t = get_num("Enter toa, s:");
+                ##my $t = get_num("Enter toa, s:");
+                my $t = request_dimensional_value( 
+                  "Enter toa, s:", 'T',undef,0);
                 next if ( $t <= 0 );
                 my $T    = log( $t * $sspd_amb / $dscale );
                 my $ret  = $blast_table->wavefront( 'T' => $T );
@@ -761,7 +815,8 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $y    = exp($Y);
                 my $x    = exp($X);
-                $range = $x * $dscale;
+		$set_range_from_dscale->($x);
+                ##$range = $x * $dscale;
             }
             elsif ( $ans eq 'D' ) {
                 $return_selection = 'D';
@@ -1673,7 +1728,7 @@ EOM
 
 {   # i/o with units
 
-    my ( $kt_to_joules, $pa_to_psi, $m_to_ft, $rto_SI );
+    my ( $kt_to_joules, $pa_to_psi, $m_to_ft, $rto_SI, $rSI_name );
 
     BEGIN {
         $kt_to_joules = 4.184e12;
@@ -1694,6 +1749,10 @@ EOM
                 'm'  => 1,
                 'km' => 1000,
             },
+            'T' => {
+                's' => 1, 
+                'ms' => 0.001,
+            },
             'E' => {
                 'J'   => 1,
                 'kJ'  => 1000,
@@ -1704,18 +1763,47 @@ EOM
                 'lb'  => 0.001 * $kt_to_joules / 2000,
                 'klb' => $kt_to_joules / 2000,
             },
-            'L/T' => {
-                'm/s' => 1,
-                'mps' => 1,
-                'ft'  => 1 / $m_to_ft,
-                'fps' => 1 / $m_to_ft,
+            'E/L' => {
+                'J/m'   => 1,
+                'kJ/m'  => 1000,
+                'MJ/m'  => 1.e6,
+                't/m'   => 0.001 * $kt_to_joules,
+                'kt/m'  => $kt_to_joules,
+                'Mt/m'  => 1000 * $kt_to_joules,
+                'lb/m'  => 0.001 * $kt_to_joules / 2000,
+                'klb/m' => $kt_to_joules / 2000,
             },
+            'E/L^2' => {
+                'J/m^2'   => 1,
+                'kJ/m^2'  => 1000,
+                'MJ/m^2'  => 1.e6,
+                't/m^2'   => 0.001 * $kt_to_joules,
+                'kt/m^2'  => $kt_to_joules,
+                'Mt/m^2'  => 1000 * $kt_to_joules,
+                'lb/m^2'  => 0.001 * $kt_to_joules / 2000,
+                'klb/m^2' => $kt_to_joules / 2000,
+            },
+            'L/T' => {
+                'm/s'  => 1,
+                'km/s' => 1000,
+                'mps'  => 1,
+                'fps'  => 1 / $m_to_ft,
+                'kfps' => 1000 / $m_to_ft,
+              },
             'P*T' => {
                 'Pa-s'   => 1,
                 'psi-s'  => 1 / $pa_to_psi,
                 'psi-ms' => 0.001 / $pa_to_psi,
                 'fps'    => 1 / $m_to_ft,
             },
+        };
+        $rSI_name       = {
+            'P' => 'Pa',
+            'T' => 's',
+            'L' => 'm',
+            'E' => 'J',
+            'L/T' => 'm/s',
+            'P*T' => 'Pa-s',
         };
     }
 
@@ -1730,10 +1818,11 @@ EOM
 
         my @keys = sort ( keys %{$rconversion_factors} );
         if ( !defined($msg) ) { $msg=""; }
-	if (defined($default)) {$msg .= " (<cr>=$default):"}
+	if (defined($default)) {$msg .= "( (<cr>=$default):"}
+	my $SI_name = $rSI_name->{$unit_type};
 	$msg = <<EOM;
 ---
-  For other units, append any of: (@keys)
+Default unit is $SI_name; for other units, append any of: (@keys)
 $msg
 EOM
         my $unit = "";
@@ -1795,7 +1884,7 @@ EOM
                     my $val_ft = $val * $m_to_ft;
                     $val    = sprintf( "%0.6g", $val );
                     $val_ft = sprintf( "%0.6g", $val_ft );
-                    $str    = "$val  m = $val_ft ft";
+                    $str    = "$val m = $val_ft ft";
                 }
                 elsif ( $unit_type eq 'T' ) {
                     $val = sprintf( "%0.6g", $val );
