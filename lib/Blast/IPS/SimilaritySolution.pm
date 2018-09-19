@@ -32,6 +32,7 @@ use 5.006;
 use Blast::IPS::Utils qw(
   check_keys
 );
+
 use Blast::IPS::MathUtils qw(
   locate_2d
   multiseg_integral
@@ -120,12 +121,25 @@ sub _setup {
     }
     my $alpha = alpha_interpolate( $symmetry, $gamma );
 
+    # Make a reference table of [theta, r/rs] values.
+    # This will allow binary searches to be made over small intervals.
+    my $rtheta_table;
+    my $dtheta = 1.e-15;
+    my $geo    = 1.03;
+    for ( my $theta = 0 ; $theta < 1 ; $theta += $dtheta ) {
+        my $rrat = rrat( $theta, $gamma, $symmetry );
+        push @{$rtheta_table}, [ $theta, $rrat ];
+        $dtheta *= $geo;
+    }
+    push @{$rtheta_table}, [ 1, 1 ];
+
     $self->{_E0}       = $E0;
     $self->{_rho_amb}     = $rho_amb;
     $self->{_gamma}    = $gamma;
     $self->{_symmetry} = $symmetry;
     $self->{_Eoad}     = $E0 / ( $rho_amb * $alpha );
     $self->{_alpha}    = $alpha;
+    $self->{_rtheta_table} = $rtheta_table;
     if ($error) { carp "$error" }
     return; 
 }
@@ -139,14 +153,14 @@ sub get_E0 { $_[0]->{_E0} }
 sub shock_front_values_as_hash {
     my ( $self, @args ) = @_;
 
-    # given any one of these parameters:
+    # given any one of these shock front parameters:
     #  D - shock speed
     #  R - shock radius
     #  T - time
     #  P - shock pressure
     #  U - shock particle velocity
 
-    # Returns a hash of shock front values 
+    # Return a hash of shock front values 
 
     my $rinput_hash;
     my $reftype;
@@ -257,19 +271,27 @@ sub shock_front_values_as_hash {
 
 sub shock_front_values {
 
-    # given any one of these parameters:
+    # given any one of these shock front parameters:
     #  D - shock speed
     #  R - shock radius
     #  T - time
     #  P - shock pressure
     #  U - shock particle velocity
 
-    # Returns [R, T, P, U, rho]
+    # Return [R, T, P, U, rho]
 
     my $rhash = shock_front_values_as_hash(@_);
     return [$rhash->{R}, $rhash->{T}, $rhash->{P}, $rhash->{U}, $rhash->{RHO}];
 }
 
+sub get_normalized_point {
+    my ( $self, $r ) = @_;
+    my $rr;
+    push @{$rr}, $r;
+    my ($rarray, $hdr) = $self->get_normalized_profile($rr);
+    my $num=@{$rarray};
+    return wantarray ? ( $rarray->[0], $hdr ) : $rarray->[0];
+}
 
 sub get_normalized_profile {
     my ( $self, $rr ) = @_;
@@ -307,24 +329,36 @@ sub get_normalized_profile {
     # We will tweak gamma to avoid divides by zero
     if ( $gamma == 2 || $gamma == 7 && $symmetry == 2 ) { $gamma -= 1.e-10 }
 
-    # Start by making a reference table of [theta, r/rs] values
-    my $rxr;
-    my $dx  = 1.e-15;
-    my $geo = 1.03;
-    for ( my $x = 0 ; $x < 1 ; $x += $dx ) {
-        my $rrat = rrat( $x, $gamma, $symmetry );
-        push @{$rxr}, [ $x, $rrat ];
-        $dx *= $geo;
-    }
-    push @{$rxr}, [ 1, 1 ];
+    # Get the pre-made table of [theta, r]
+    my $rxr = $self->{_rtheta_table}; 
 
     #write_text_data( $rxr, "x\tr", "junk_table.txt" );
 
-    # Now find the value of theta for each desirred radius of interest
-    my $rgrid = _lookup_theta( $rr, $rxr, $symmetry, $gamma );
+    # Now find the value of theta for each desired radius of interest
+    my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
 
-    # Now fill in the other variables as functions of theta
+    my $rprofile = $self->_fill_profile($rgrid);
+
+    if ($is_reversed) {
+        my @rev = reverse( @{$rprofile} );
+        $rprofile = \@rev;
+    }
+
+    my $hdr = "r/rs\tt/ts\tp/ps\tu/us\trho/rhos";
+    return wantarray ? ( $rprofile, $hdr ) : $rprofile;
+}
+
+sub _fill_profile {
+    my ( $self, $rgrid ) = @_;
+
+    # Given an array of theta values [theta, r/rs], create a complete profile of normalized
+    # values
+    #     [ $rrat, 1, $prat, $urat, $rhorat ];
     # Special treatment is needed in the core where theta value will be undefined
+
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+
     my $rprofile;
     my $gpow = ( $symmetry + 1 ) * $gamma / ( $gamma - 1 );
     my ( $x, $rrat, $prat, $urat, $rhorat, $uovr, $G );
@@ -365,11 +399,11 @@ sub get_normalized_profile {
             $uovr   = $urat / $rrat;
             $G      = $rho_to_G->( $rhorat, $rrat, $prat );
         }
-	elsif ($rrat>1 || $rrat < 0) {
-            $prat = 0;
-            $urat = 0;
+        elsif ( $rrat > 1 || $rrat < 0 ) {
+            $prat   = 0;
+            $urat   = 0;
             $rhorat = 0;
-	}
+        }
         else {
 
             # Core region..
@@ -381,17 +415,10 @@ sub get_normalized_profile {
         }
         unshift @{$rprofile}, [ $rrat, 1, $prat, $urat, $rhorat ];
     }
-
-    if ($is_reversed) {
-        my @rev = reverse( @{$rprofile} );
-        $rprofile = \@rev;
-    }
-
-    my $hdr = "r/rs\tt/ts\tp/ps\tu/us\trho/rhos";
-    return wantarray ? ( $rprofile, $hdr ) : $rprofile;
+    return $rprofile;
 }
 
-sub _lookup_theta {
+sub _lookup_theta_profile {
     my ( $rr, $rxr, $symmetry, $gamma ) = @_;
 
     # given a list of dimensionless radius ratios, 0 to 1, return a list with
@@ -400,12 +427,17 @@ sub _lookup_theta {
     # Note: return theta undefined for r<rmin, where rmin=the first non-zero
     # radius in the reference table
 
-    my $jmax = @{$rxr};
-    my $imax = @{$rr};
-    my $jhi  = $jmax - 1;
-    my $jlo  = $jmax - 2;
+    my $jmax = @{$rxr} -1;
+    my $imax = @{$rr} -1;
+    my $jhi  = $jmax;
+    my $jlo  = $jmax - 1;
+
+    # Optimization for call with a single point: binary search down to the starting
+    # interval.
+    ($jlo, $jhi) = locate_2d($rr->[$imax], 1, $rxr, $jlo, $jhi);
+
     my ($rgrid, $xlast, $rlast);
-    for ( my $i = $imax - 1 ; $i >= 0 ; $i-- ) {
+    for ( my $i = $imax ; $i >= 0 ; $i-- ) {
         my $r = $rr->[$i];
         if ( $r > 1 || $r < 0) {
 	    $xlast = undef;
