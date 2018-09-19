@@ -1023,7 +1023,11 @@ sub get_impulse {
         $z_pose_rs = $z_pose_rs_b;
         $z_nege_rs = $z_nege_rs_b;
 
-        # We will use log extrapolation for these variables back to the origin:
+	# We will use log extrapolation for the following variables back to the
+	# origin.  Note, in spherical symmetry, the theoretical positive phase
+	# impulse varies like 1/sqrt(r) at r=0 (see charts in Sedov p321), but
+	# the range over which this applies is vanishingly small so it is not
+	# possible to make use of this.  
         $Disp_pos  = $Disp_pos_b;
         $Qint_pos  = $Qint_pos_b;
         $rpint_pos = $rpint_pos_b;
