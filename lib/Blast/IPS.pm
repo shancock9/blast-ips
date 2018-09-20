@@ -58,24 +58,22 @@ our $VERSION = 0.1.1;
 
 use Carp;
 
-use Blast::IPS::BlastInfo qw(get_blast_info);
-use Blast::IPS::ImpulseTables;
-use Blast::IPS::PzeroFit;
-use Blast::IPS::PzeroTail;
-use Blast::IPS::ShockTables;
-use Blast::IPS::ShockTablesIndex;
-use Blast::IPS::ShockUtils qw(shock_front_values);
-use Blast::IPS::EnergyTables;
-use Blast::IPS::TailShockTables;
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
-use Blast::IPS::Utils qw(
-  check_keys
-);
+use Blast::IPS::BlastInfo qw(get_blast_info);
+use Blast::IPS::EnergyTables;
+use Blast::IPS::ImpulseTables;
 use Blast::IPS::MathUtils qw(
   locate_2d
   polint
   set_interpolation_points
 );
+use Blast::IPS::Medium;
+use Blast::IPS::PzeroFit;
+use Blast::IPS::PzeroTail;
+use Blast::IPS::ShockTables;
+use Blast::IPS::ShockTablesIndex;
+use Blast::IPS::TailShockTables;
+use Blast::IPS::Utils qw( check_keys );
 
 my $rshock_tables_info = $Blast::IPS::ShockTablesIndex::rshock_tables_info;
 my $rshock_tables      = $Blast::IPS::ShockTables::rshock_tables;
@@ -419,6 +417,7 @@ EOM
     }
 
     my $rztables = _make_z_tables($rimpulse_table);
+    my $medium = Blast::IPS::Medium->new(symmetry=>$symmetry, gamma=>$gamma);
 
     $self->{_rtable}                  = $rtable;
     $self->{_rimpulse_table}          = $rimpulse_table;
@@ -435,6 +434,8 @@ EOM
     $self->{_jl2}                     = -1;
     $self->{_ju2}                     = undef;
     $self->{_error}                   = $error;
+    $self->{_medium}                  = $medium;
+
 
     if ($error) { carp "$error\n" }
     else {
@@ -1803,7 +1804,9 @@ sub wavefront {
 
     # add some shock front values
     #my $rsf_values= $self->shock_front_values( $X, $Y, $dYdX );
-    my $rsf_values = shock_front_values($symmetry, $gamma, $X, $Y, $dYdX );
+    #my $rsf_values = shock_front_values($symmetry, $gamma, $X, $Y, $dYdX );
+    my $medium=$self->{_medium};
+    my $rsf_values = $medium->shock_front_values($X, $Y, $dYdX );
     foreach my $key(keys %{$rsf_values}) {
 	$return_hash->{$key}=$rsf_values->{$key};
     }
