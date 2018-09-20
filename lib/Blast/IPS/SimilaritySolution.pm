@@ -121,6 +121,9 @@ sub _setup {
     }
     my $alpha = alpha_interpolate( $symmetry, $gamma );
 
+    ###################################################################
+    # FIXME: this works but would be better to use a binary search
+    # to get a better distribution.
     # Make a reference table of [theta, r/rs] values.
     # This will allow binary searches to be made over small intervals.
     my $rtheta_table;
@@ -128,10 +131,17 @@ sub _setup {
     my $geo    = 1.03;
     for ( my $theta = 0 ; $theta < 1 ; $theta += $dtheta ) {
         my $rrat = rrat( $theta, $gamma, $symmetry );
-        push @{$rtheta_table}, [ $theta, $rrat ];
+        my $prat = prat( $theta, $gamma, $symmetry );
+        my $urat = urat( $theta, $gamma, $symmetry );
+        my $rhorat = rhorat( $theta, $gamma, $symmetry );
+        push @{$rtheta_table}, [ $theta, $rrat, $prat, $urat, $rhorat ];
         $dtheta *= $geo;
     }
-    push @{$rtheta_table}, [ 1, 1 ];
+    push @{$rtheta_table}, [ 1, 1, 1, 1, 1 ];
+    ###################################################################
+  
+    ##use SlhLib;
+    ##write_text_data($rtheta_table,"x\tr\tp\tu\trho","junk.txt");
 
     $self->{_E0}       = $E0;
     $self->{_rho_amb}     = $rho_amb;
@@ -326,18 +336,33 @@ sub get_normalized_profile {
         $is_reversed = 1;
     }
 
-    # We will tweak gamma to avoid divides by zero
-    if ( $gamma == 2 || $gamma == 7 && $symmetry == 2 ) { $gamma -= 1.e-10 }
+    my $rprofile;
 
-    # Get the pre-made table of [theta, r]
-    my $rxr = $self->{_rtheta_table}; 
+    if ( $symmetry == 2 && $gamma == 7 ) {
+        foreach my $rrat ( @{$rr} ) {
+            my ( $trat, $prat, $urat, $rhorat ) = ( 1, 0, 0, 0 );
+            if ( $rrat > 0 && $rrat <= 1 ) {
+                $urat   = $rrat;
+                $rhorat = $rrat;
+                $prat   = $rrat**3;
+            }
+            unshift @{$rprofile}, [ $rrat, $trat, $prat, $urat, $rhorat ];
+        }
+    }
+    else {
 
-    #write_text_data( $rxr, "x\tr", "junk_table.txt" );
+        ##if ( $gamma == 2 ) { $gamma -= 1.e-10 }
 
-    # Now find the value of theta for each desired radius of interest
-    my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+        # Get the pre-made table of [theta, r]
+        my $rxr = $self->{_rtheta_table};
 
-    my $rprofile = $self->_fill_profile($rgrid);
+        #write_text_data( $rxr, "x\tr", "junk_table.txt" );
+
+        # Now find the value of theta for each desired radius of interest
+        my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+
+        $rprofile = $self->_fill_profile($rgrid);
+    }
 
     if ($is_reversed) {
         my @rev = reverse( @{$rprofile} );
@@ -432,11 +457,12 @@ sub _lookup_theta_profile {
     my $jhi  = $jmax;
     my $jlo  = $jmax - 1;
 
-    # Optimization for call with a single point: binary search down to the starting
-    # interval.
+    # Find the starting interval
     ($jlo, $jhi) = locate_2d($rr->[$imax], 1, $rxr, $jlo, $jhi);
 
     my ($rgrid, $xlast, $rlast);
+
+    # Loop over points to fill
     for ( my $i = $imax ; $i >= 0 ; $i-- ) {
         my $r = $rr->[$i];
         if ( $r > 1 || $r < 0) {
@@ -447,7 +473,7 @@ sub _lookup_theta_profile {
         }
         my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
 
-	# minor optimization: the previous computed point will form a better upper
+	# optimization: the previous computed point will form a better upper
 	# bound than the previous table value if we stay in the same table interval
         if (   defined($xlast)
             && defined($rlast)
@@ -459,7 +485,9 @@ sub _lookup_theta_profile {
         }
 
         my ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
+	my $count=0;
         while ( $rlo > $r ) {
+	    $count++;
             if ( $jlo <= 0 ) { die "error in lookup\n" }
             ( $jhi, $xhi, $rhi ) = ( $jlo, $xlo, $rlo );
             $jlo--;
@@ -588,6 +616,8 @@ sub coef {
 
 sub rhorat {
     my ( $x, $gamma, $N ) = @_;
+    if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
+
     my $t1 = $x; 
     my $p1 = ( $N + 1 ) / ( 2 * $gamma + $N - 1 );
     my $t2 = ( $x + $gamma ) / ( 1 + $gamma );
@@ -596,7 +626,7 @@ sub rhorat {
     my $t3_top = ( ( $N + 1 ) * ( 2 - $gamma ) * $x + 2 * $gamma + $N - 1 );
     my $t3_bot = ( ( 3 * $N + 1 ) - ( $N - 1 ) * $gamma );
 
-    # avoid divide by zero at symmetry=2 gamma=7
+    # shouldn't happen: avoid divide by zero at symmetry=2 gamma=7
     if ( $t3_bot == 0 ) {
         return 0;
     }
@@ -618,6 +648,7 @@ sub rhorat {
 
 sub prat {
     my ( $x, $gamma, $N ) = @_;
+    if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1 = ( $x + 1 ) / 2;
     my $p1 = 2 * ( $N + 1 ) / ( $N + 3 );
     my $t2 = ( $x + $gamma ) / ( 1 + $gamma );
@@ -626,7 +657,7 @@ sub prat {
     my $t3_top = ( ( $N + 1 ) * ( 2 - $gamma ) * $x + 2 * $gamma + $N - 1 );
     my $t3_bot = ( ( 3 * $N + 1 ) - ( $N - 1 ) * $gamma );
 
-    # avoid divide by zero at symmetry=2 gamma=7
+    # shouldn't happen: avoid divide by zero at symmetry=2 gamma=7
     if ( $t3_bot == 0 ) {
         return 0;
     }
@@ -648,6 +679,7 @@ sub prat {
 
 sub urat {
     my ( $x, $gamma, $N ) = @_;
+    if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1 = $x;
     my $p1 = ( $gamma - 1 ) / ( 2 * $gamma + $N - 1 );
     my $t2 = ( $x + 1 ) / 2;
@@ -664,7 +696,7 @@ sub urat {
     }
     my $t4 = $t4_top / $t4_bot;
 
-    # avoid divide by zero at gamma=2
+    # shouldn't happen: avoid divide by zero at gamma=2
     my $p4 = 1;
     if ( $t4 != 1 ) {
         $p4 =
@@ -682,6 +714,7 @@ sub urat {
 
 sub rrat {
     my ( $x, $gamma, $N ) = @_;
+    if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1 = $x;
     my $p1 = ( $gamma - 1 ) / ( 2 * $gamma + $N - 1 );
     my $t2 = ( $x + 1 ) / 2;
@@ -717,6 +750,7 @@ sub rrat {
 
 sub fofx {
     my ( $x, $gamma, $N ) = @_;
+    if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
 
     # integrate this from x=0 to x=1
     my $p1 = ( 3 * $N + 5 ) / ( $N + 3 );
@@ -728,14 +762,14 @@ sub fofx {
     my $t3_top = ( ( $N + 1 ) * ( 2 - $gamma ) * $x + 2 * $gamma + $N - 1 );
     my $t3_bot = ( ( 3 * $N + 1 ) - ( $N - 1 ) * $gamma );
 
-    # avoid divide by zero at symmetry=2 gamma=7
+    # shouldn't happen: avoid divide by zero at symmetry=2 gamma=7
     if ($t3_bot == 0) {
 	return 0;
     }
     my $t3 = $t3_top / $t3_bot;
 
 
-    # avoid divide by zero at gamma=2
+    # shouldn't happen: avoid divide by zero at gamma=2
     my $p3 = 1;
     if ( $t3 != 1 ) {
         $p3 =
