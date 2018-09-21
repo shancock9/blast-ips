@@ -311,7 +311,8 @@ sub make_reference_table {
     # to a point very close to the origin.  We can
     # fill in the solution between the origin and this point using analytical
     # equations.
-    my $tiny_theta = 1.e-30;
+    #my $tiny_theta = 1.e-30;
+    my $tiny_theta = 1.e-20;
 
     # The point array stores each point in the order created.
     my $rpoint_table;
@@ -476,7 +477,8 @@ sub get_normalized_profile {
         #write_text_data( $rxr, "x\tr", "junk_table.txt" );
 
         # Now find the value of theta for each desired radius of interest
-        my $rgrid = NEW_lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+        my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+        #my $rgrid = OLD_lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
 
         $rprofile = $self->_fill_profile($rgrid, $flag);
     }
@@ -570,7 +572,7 @@ sub _fill_profile {
     return $rprofile;
 }
 
-sub NEW_lookup_theta_profile {
+sub _lookup_theta_profile {
 
     my ( $rr, $rxr, $symmetry, $gamma ) = @_;
 
@@ -650,23 +652,24 @@ sub NEW_lookup_theta_profile {
 	    $DR = log($rlast/$r);
         }
 
-	# These tolerances are set pretty tight, so some non-convergence
+	# These tolerances should be set pretty tight. But some non-convergence
 	# messages may occur even when the root is found fairly accurately.
-        my $tolf = 1.e-10 * $dr;                  ##abs( $rhi - $rlo );
-        my $tolF = 1.e-10 * abs($DR);             ##abs( $FF_hi - $FF_lo );
+        my $tolf = 1.e-8 * $dr;                  ##abs( $rhi - $rlo );
+        my $tolF = 1.e-8 * abs($DR);             ##abs( $FF_hi - $FF_lo );
 
         my $tolx = 1.e-12 * abs( $xhi - $xlo );
         my $tolX = 1.e-12 * abs( $Xhi - $Xlo );
 
 	# This version has the option of either using log or linear searches
-        my $use_logs = 1; 
-        ##my $use_logs = ( $r < 0.95 );
+	# log searches seem best
+        my $use_log_search = 1; 
+        ##my $use_log_search = ( $r < 0.95 );
 
 	my $ifconv;
 	my $XX;
 	my $xx;
 
-        if ($use_logs) {
+        if ($use_log_search) {
             ( $XX, $ifconv ) =
               nbrenti( $Xlo, $FF_lo, $Xhi, $FF_hi, $tolX, $bvec );
 	    $xx=exp($XX);
@@ -686,7 +689,7 @@ sub NEW_lookup_theta_profile {
             $rrat = rrat( $xx, $gamma, $symmetry );
             $ff = $rrat - $r; 
 
-            if ($use_logs) {
+            if ($use_log_search) {
                 $FF = log( $rrat / $r );
                 ( $XX, $ifconv ) = nbrentx( $FF, $bvec );
                 $xx = exp($XX);
@@ -697,11 +700,11 @@ sub NEW_lookup_theta_profile {
 
             ##if ( abs($FF) < $tolF  && $ifconv != 0) {    #$ifconv != 0 ) {
             ##if ( abs($ff) < $tolf  && $ifconv != 0) {    #$ifconv != 0 ) {
-            #if ( abs($ff) < $tolf  ) {    #$ifconv != 0 ) {
 
 	    # It seems to work best to put a tight tolerance on x and
-	    # not try to also check for convergence of r.
-            if (   $ifconv != 0 ) {
+	    # a somewhat lower tolerance of f and then check both.
+            #if (   $ifconv != 0 ) {
+            if ( abs($ff) < $tolf  && $ifconv != 0 ) {
                 #print STDERR "ff=$ff, xx=$xx, flo=$ff_lo, fhi=$ff_hi, xxlo=$xlo, xhi=$xhi, ifconv=$ifconv, tol=$tolr, iter=$iter\n";
                 last;
             }
@@ -851,6 +854,7 @@ sub alpha_integral {
     for ( my $i = 0 ; $i <= $num ; $i++ ) {
         my $V = $V0 + ( 1 - $V0 ) * $i / $num;
         my $r = $V**(1/$pow );
+	if ($r>1) {$r=1}
         push @{$rlist}, $r;
     }
     my $rprofile = $self->get_normalized_profile( $rlist, 1 );
@@ -864,9 +868,14 @@ sub alpha_integral {
         my $r = $item->[0];
         my $x = $item->[-1];
         if ( !defined($x) ) {
-            if    ( $r == 1 ) { $x = 1 }
-            elsif ( $r == 0 ) { $x = 0 }
-            else { next }
+
+	    # Try to catch roundoff problems
+            if    ( abs( $r - 1 ) < 1.e-10 ) { $x = 1 }
+            elsif ( abs($r) < 1.e-10 )       { $x = 0 }
+            else {
+                print STDERR "Warning: theta not defined for r=$r; skipping\n";
+                next;
+            }
         }
         my $f = fofx( $x, $gamma, $symmetry );
         my $V = $r**$pow;
@@ -881,8 +890,8 @@ sub alpha_integral {
         $alpha = $coef * $rxy->[-1]->[1];
         $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
 
-        print "$it\t$alpha\t$err\n";
-        last if ( $err < $tol );
+        ##print "$it\t$alpha\t$err\n";
+        last if ( $it>=2 && $err < $tol );
 
         # refine...
         my $rVfx_fine;
