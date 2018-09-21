@@ -40,10 +40,10 @@ use Blast::IPS::MathUtils qw(
 # Settings..
 
 # itmax = max iterations; for testing use itmax=3 then increase
-my $itmax = 8;  # WARNING: Use small value (such as 2 or 3) for testing
+my $itmax = 8;    # WARNING: Use small value (such as 2 or 3) for testing
 
 # tol = stopping tolerance on absolute value of alpha
-my $tol   = 1.e-9;
+my $tol = 1.e-10;
 
 # output file
 my $ftable = "alpha_table_$itmax.txt";
@@ -55,17 +55,20 @@ $fh_table->print("\$ralpha_table=[\n");
 
 foreach my $symmetry ( 0, 1, 2 ) {
     $fh_table->print("    [\n");
-    my $igamma=110;
-    my $idel=1;
-    my $igamma_max=700;
-    for (my $igamma=101; $igamma<=700; $igamma+=$idel) {
-	if ($igamma>=200) {$idel=2}
-	if ($igamma>=300) {$idel=5}
-	if ($igamma>=400) {$idel=10}
-	my $gamma=$igamma/100;
-	if ($symmetry==2 && $gamma==7) {$gamma-=1.e-10}
-	my $obj=Blast::IPS::SimilaritySolution->new(symmetry=>$symmetry, gamma=>$gamma);
-        my ($alpha,$err,$it) = $obj->alpha_integral($tol,$itmax);
+    my $igamma     = 110;
+    my $idel       = 1;
+    my $igamma_max = 700;
+    for ( my $igamma = 101 ; $igamma <= 700 ; $igamma += $idel ) {
+        if ( $igamma >= 200 ) { $idel = 2 }
+        if ( $igamma >= 300 ) { $idel = 5 }
+        if ( $igamma >= 400 ) { $idel = 10 }
+        my $gamma = $igamma / 100;
+        if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= 1.e-10 }
+        my $obj = Blast::IPS::SimilaritySolution->new(
+            symmetry => $symmetry,
+            gamma    => $gamma
+        );
+        my ( $alpha, $err, $it ) = $obj->alpha_integral( $tol, $itmax );
 
         print "sym=$symmetry\tgamma=$gamma\talpha=$alpha\terr=$err\tit=$it\n";
         print STDERR "$symmetry\t$gamma\t$alpha\t$err\t$it\n";

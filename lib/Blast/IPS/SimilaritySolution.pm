@@ -476,7 +476,7 @@ sub get_normalized_profile {
         #write_text_data( $rxr, "x\tr", "junk_table.txt" );
 
         # Now find the value of theta for each desired radius of interest
-        my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+        my $rgrid = NEW_lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
 
         $rprofile = $self->_fill_profile($rgrid, $flag);
     }
@@ -493,12 +493,13 @@ sub get_normalized_profile {
 sub _fill_profile {
     my ( $self, $rgrid, $flag ) = @_;
 
-    # Given an array of theta values [theta, r/rs], create a complete profile of normalized
-    # values
+    # Given an array of theta values [theta, r/rs], create a complete profile
+    # of normalized values
     #     [ $rrat, 1, $prat, $urat, $rhorat ];  
     # or, if flag:
     #     [ $rrat, 1, $prat, $urat, $rhorat, $theta ];  
-    # Special treatment is needed in the core where theta value will be undefined
+    # Special treatment is needed in the core where theta value will be
+    # undefined
 
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
@@ -538,12 +539,16 @@ sub _fill_profile {
         ( $x, $rrat ) = @{ $rgrid->[$i] };
         if ( defined($x) ) {
             $prat = prat( $x, $gamma, $symmetry );
+
+	    # Note that we are re-defining rrat to be correct for the
+	    # given theta value
+            $rrat = rrat( $x, $gamma, $symmetry );
             $urat = urat( $x, $gamma, $symmetry );
             $rhorat = rhorat( $x, $gamma, $symmetry );
             $uovr   = $urat / $rrat;
             $G      = $rho_to_G->( $rhorat, $rrat, $prat );
         }
-        elsif ( $rrat > 1 || $rrat < 0 ) {
+        elsif ( $rrat > 1 || $rrat < 0) {
             $prat   = 0;
             $urat   = 0;
             $rhorat = 0;
@@ -565,8 +570,160 @@ sub _fill_profile {
     return $rprofile;
 }
 
-sub _lookup_theta_profile {
+sub NEW_lookup_theta_profile {
+
     my ( $rr, $rxr, $symmetry, $gamma ) = @_;
+
+    # given a list of dimensionless radius ratios, 0 to 1, return a list with
+    # [theta, radius] where theta is the implicit variable for that radius
+
+    # Note: return theta undefined for r<rmin, where rmin=the first non-zero
+    # radius in the reference table
+
+    my $jmax = @{$rxr} -1;
+    my $imax = @{$rr} -1;
+    my $jhi  = $jmax;
+    my $jlo  = $jmax - 1;
+
+    # Find the starting interval
+    ($jlo, $jhi) = locate_2d($rr->[$imax], 1, $rxr, $jlo, $jhi);
+
+    my ($rgrid, $xlast, $rlast);
+
+    # Loop over points to fill
+    my $r;
+    for ( my $i = $imax ; $i >= 0 ; $i-- ) {
+	my $rlast=$r;
+        $r = $rr->[$i];
+        if ( $r > 1 || $r < 0) {
+	    $xlast = undef;
+	    $rlast = $r;
+            unshift @{$rgrid}, [ $xlast, $r ];
+            next;
+        }
+
+        if ( $jhi >= @{$rxr} ) {
+            $jhi = $jlo;
+            $jlo = $jlo - 1;
+        }
+
+        my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
+
+	# optimization: the previous computed point will form a better upper
+	# bound than the previous table value if we stay in the same table interval
+        if (   defined($xlast)
+            && defined($rlast)
+            && $rlast > $r
+            && $rlast < $rhi )
+        {
+            $xhi = $xlast;
+            $rhi = $rlast;
+        }
+
+        my ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
+	my $count=0;
+        while ( $rlo > $r ) {
+	    $count++;
+            if ( $jlo <= 0 ) { die "error in lookup\n" }
+            ( $jhi, $xhi, $rhi ) = ( $jlo, $xlo, $rlo );
+            $jlo--;
+            ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
+        }
+
+        if ( $jlo <= 0 ) {
+            unshift @{$rgrid}, [ undef, $r ];
+            next;
+        }
+
+        my $bvec  = [];
+        my $ff_lo = $rlo - $r;
+        my $ff_hi = $rhi - $r;
+        my $FF_lo = log( $rlo / $r );
+        my $FF_hi = log( $rhi / $r );
+        my $Xlo   = log($xlo);
+        my $Xhi   = log($xhi);
+
+        my $dr = $rhi - $rlo;
+	my $DR = log($rhi/$rlo);
+        if ( defined($rlast) ) {
+            $dr = abs( $rlast - $r);
+	    $DR = log($rlast/$r);
+        }
+
+	# These tolerances are set pretty tight, so some non-convergence
+	# messages may occur even when the root is found fairly accurately.
+        my $tolf = 1.e-10 * $dr;                  ##abs( $rhi - $rlo );
+        my $tolF = 1.e-10 * abs($DR);             ##abs( $FF_hi - $FF_lo );
+
+        my $tolx = 1.e-12 * abs( $xhi - $xlo );
+        my $tolX = 1.e-12 * abs( $Xhi - $Xlo );
+
+	# This version has the option of either using log or linear searches
+        my $use_logs = 1; 
+        ##my $use_logs = ( $r < 0.95 );
+
+	my $ifconv;
+	my $XX;
+	my $xx;
+
+        if ($use_logs) {
+            ( $XX, $ifconv ) =
+              nbrenti( $Xlo, $FF_lo, $Xhi, $FF_hi, $tolX, $bvec );
+	    $xx=exp($XX);
+        }
+        else {
+            ( $xx, $ifconv ) =
+              nbrenti( $xlo, $ff_lo, $xhi, $ff_hi, $tolx, $bvec );
+        }
+
+        # loop over iterations
+        my $maxit = 100;
+        my $iter;
+        my $rrat;
+        my $FF;
+	my $ff;
+        for ( $iter = 1 ; $iter <= $maxit ; $iter += 1 ) {
+            $rrat = rrat( $xx, $gamma, $symmetry );
+            $ff = $rrat - $r; 
+
+            if ($use_logs) {
+                $FF = log( $rrat / $r );
+                ( $XX, $ifconv ) = nbrentx( $FF, $bvec );
+                $xx = exp($XX);
+            }
+	    else {
+                ( $xx, $ifconv ) = nbrentx( $ff, $bvec );
+	    }
+
+            ##if ( abs($FF) < $tolF  && $ifconv != 0) {    #$ifconv != 0 ) {
+            ##if ( abs($ff) < $tolf  && $ifconv != 0) {    #$ifconv != 0 ) {
+            #if ( abs($ff) < $tolf  ) {    #$ifconv != 0 ) {
+
+	    # It seems to work best to put a tight tolerance on x and
+	    # not try to also check for convergence of r.
+            if (   $ifconv != 0 ) {
+                #print STDERR "ff=$ff, xx=$xx, flo=$ff_lo, fhi=$ff_hi, xxlo=$xlo, xhi=$xhi, ifconv=$ifconv, tol=$tolr, iter=$iter\n";
+                last;
+            }
+        }
+        if ( $iter >= $maxit ) {
+
+            # no convergence after maxit iterations -- shouldn't happen
+            print STDERR "**warning-no convergence in brent iteration**; iter=$iter, for r=$r, last x=$xx, xlo=$xlo, xhi=$xhi, ff=$ff tolF=$tolF, tolX=$tolX, tolx=$tolx\n";
+        }
+        unshift @{$rgrid}, [ $xx, $r ];
+	$xlast = $xx;
+	$rlast = $r;
+
+        ##print STDERR "i=$i, r=$r, jhi=$jhi, rhi=$rhi, jlo=$jlo, rlo=$rlo x=$xx, rrat=$rrat, ff=$ff, it=$iter\n";
+    }
+    return $rgrid;
+}
+
+sub OLD_lookup_theta_profile {
+    my ( $rr, $rxr, $symmetry, $gamma ) = @_;
+
+    # This works; the new log version is more efficient
 
     # given a list of dimensionless radius ratios, 0 to 1, return a list with
     # [theta, radius] where theta is the implicit variable for that radius
