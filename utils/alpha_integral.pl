@@ -28,6 +28,14 @@ use warnings;
 # SOFTWARE.
 
 use Blast::IPS::SimilaritySolution;
+use Blast::IPS::MathUtils qw(
+  locate_2d
+  multiseg_integral
+  nbrenti
+  nbrentx
+  polint
+  set_interpolation_points
+);
 
 # Settings..
 
@@ -50,11 +58,12 @@ foreach my $symmetry ( 0, 1, 2 ) {
     my $igamma=110;
     my $idel=1;
     my $igamma_max=700;
-    for (my $igamma=110; $igamma<=700; $igamma+=$idel) {
+    for (my $igamma=101; $igamma<=700; $igamma+=$idel) {
 	if ($igamma>=200) {$idel=2}
 	if ($igamma>=300) {$idel=5}
 	if ($igamma>=400) {$idel=10}
 	my $gamma=$igamma/100;
+	if ($symmetry==2 && $gamma==7) {$gamma-=1.e-10}
 	my $obj=Blast::IPS::SimilaritySolution->new(symmetry=>$symmetry, gamma=>$gamma);
         my ($alpha,$err,$it) = $obj->alpha_integral($tol,$itmax);
 
@@ -77,3 +86,4 @@ foreach my $symmetry ( 0, 1, 2 ) {
 }
 $fh_table->print("];\n");
 $fh_table->close();
+

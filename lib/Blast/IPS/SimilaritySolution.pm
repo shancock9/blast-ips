@@ -121,35 +121,36 @@ sub _setup {
     }
     my $alpha = alpha_interpolate( $symmetry, $gamma );
 
-    ###################################################################
-    # FIXME: this works but would be better to use a binary search
-    # to get a better distribution.
-    # Make a reference table of [theta, r/rs] values.
-    # This will allow binary searches to be made over small intervals.
-    my $rtheta_table;
-    my $dtheta = 1.e-15;
-    my $geo    = 1.03;
-    for ( my $theta = 0 ; $theta < 1 ; $theta += $dtheta ) {
-        my $rrat = rrat( $theta, $gamma, $symmetry );
-        my $prat = prat( $theta, $gamma, $symmetry );
-        my $urat = urat( $theta, $gamma, $symmetry );
-        my $rhorat = rhorat( $theta, $gamma, $symmetry );
-        push @{$rtheta_table}, [ $theta, $rrat, $prat, $urat, $rhorat ];
-        $dtheta *= $geo;
-    }
-    push @{$rtheta_table}, [ 1, 1, 1, 1, 1 ];
-    ###################################################################
+#    ###################################################################
+#    # FIXME: this works but would be better to use a binary search
+#    # to get a better distribution.
+#    # Make a reference table of [theta, r/rs] values.
+#    # This will allow binary searches to be made over small intervals.
+#    my $rtheta_table;
+#    my $dtheta = 1.e-15;
+#    my $geo    = 1.03;
+#    for ( my $theta = 0 ; $theta < 1 ; $theta += $dtheta ) {
+#        my $rrat = rrat( $theta, $gamma, $symmetry );
+#        my $prat = prat( $theta, $gamma, $symmetry );
+#        my $urat = urat( $theta, $gamma, $symmetry );
+#        my $rhorat = rhorat( $theta, $gamma, $symmetry );
+#        push @{$rtheta_table}, [ $theta, $rrat, $prat, $urat, $rhorat ];
+#        $dtheta *= $geo;
+#    }
+#    push @{$rtheta_table}, [ 1, 1, 1, 1, 1 ];
+#    ###################################################################
   
     ##use SlhLib;
     ##write_text_data($rtheta_table,"x\tr\tp\tu\trho","junk.txt");
 
-    $self->{_E0}       = $E0;
-    $self->{_rho_amb}     = $rho_amb;
-    $self->{_gamma}    = $gamma;
-    $self->{_symmetry} = $symmetry;
-    $self->{_Eoad}     = $E0 / ( $rho_amb * $alpha );
-    $self->{_alpha}    = $alpha;
-    $self->{_rtheta_table} = $rtheta_table;
+    $alpha=1 unless ($alpha);
+    $self->{_E0}           = $E0;
+    $self->{_rho_amb}      = $rho_amb;
+    $self->{_gamma}        = $gamma;
+    $self->{_symmetry}     = $symmetry;
+    $self->{_Eoad}         = $E0 / ( $rho_amb * $alpha );
+    $self->{_alpha}        = $alpha;
+    $self->{_rtheta_table} = $self->make_reference_table(64);
     if ($error) { carp "$error" }
     return; 
 }
@@ -157,6 +158,7 @@ sub get_Eoad { $_[0]->{_Eoad} }
 sub get_alpha { $_[0]->{_alpha} }
 sub get_error { $_[0]->{_error} }
 sub get_gamma { $_[0]->{_gamma} }
+sub get_symmetry { $_[0]->{_symmetry} }
 sub get_rho_amb { $_[0]->{_rho_amb} }
 sub get_E0 { $_[0]->{_E0} }
 
@@ -294,17 +296,131 @@ sub shock_front_values {
     return [$rhash->{R}, $rhash->{T}, $rhash->{P}, $rhash->{U}, $rhash->{RHO}];
 }
 
+sub make_reference_table {
+
+    # Make a reference table of [theta, r/rs] values approximately uniformly spaced in r.
+    # This will allow binary searches to be made over small intervals.
+
+    my ($obj, $max_count)=@_;
+    my $gamma = $obj->get_gamma();
+    my $symmetry = $obj->get_symmetry();
+    my $count=0;
+    my ($jl, $ju);
+
+    # We only search down to a very small value of theta>0.  This corresponds
+    # to a point very close to the origin.  We can
+    # fill in the solution between the origin and this point using analytical
+    # equations.
+    my $tiny_theta = 1.e-30;
+
+    # The point array stores each point in the order created.
+    my $rpoint_table;
+    my $store_point = sub {
+	my ($rpoint)=@_;
+	push @{$rpoint_table}, $rpoint;
+        my $k = @{$rpoint_table}-1;
+	return ($k);
+    };
+	
+    # The segment table stores segments between points sorted by segment size
+    my $rseg_table;
+    my $insert_segment = sub {
+	my ($km, $kp)=@_;
+
+        # store the data for the segment between points k and km
+        my $dr = $rpoint_table->[$km]->[1] - $rpoint_table->[$kp]->[1];
+        if ( $dr < 0 ) { $dr = -$dr; ( $km, $kp ) = ( $kp, $km ) }
+        my $item = [ $dr, $km, $kp ];
+
+	if (!defined($rseg_table) || @{$rseg_table}<=0) {
+	     push @{$rseg_table}, $item;
+	}
+        elsif ( @{$rseg_table} == 1 ) {
+
+	    # we cannot call locate_2d with just one point
+            if ( $dr < $rseg_table->[0]->[0] ) {
+                unshift @{$rseg_table}, $item;
+            }
+            else {
+                push @{$rseg_table}, $item;
+            }
+        }
+	else { 
+            ($jl, $ju) = locate_2d($dr, 0, $rseg_table, $jl, $ju);
+            if ( !defined($jl) || $jl < 0 ) {
+                unshift @{$rseg_table}, $item;
+            }
+	    elsif (!defined($ju) || $ju>@{$rseg_table}) {
+		push @{$rseg_table}, $item;
+	    }
+	    else {
+	       splice @{$rseg_table}, $ju, 0, $item;
+            }
+	}
+    };
+
+    my $get_values = sub {
+
+	# get the profile values at a specific theta
+	my ($theta)=@_;
+        my $rrat = rrat( $theta, $gamma, $symmetry );
+        my $prat = prat( $theta, $gamma, $symmetry );
+        my $urat = urat( $theta, $gamma, $symmetry );
+        my $rhorat = rhorat( $theta, $gamma, $symmetry );
+        return [ $theta, $rrat, $prat, $urat, $rhorat ];
+    };
+
+    # Start the point table
+    my $kz = $store_point->($get_values->(0));
+    my $km = $store_point->($get_values->($tiny_theta));
+    my $kp = $store_point->($get_values->(1));
+
+    # Start the segment table. Note that we are ignoring the segment between
+    # theta=0 and theta = tiny_theta on purpose.
+    $insert_segment->( $km, $kp );
+
+    # loop to keep splitting the largest segment until we have enough points
+    while(1) {
+
+        my $big=pop @{$rseg_table};
+	my ($dr, $kl, $ku)=@{$big};
+
+	# Split interval between kl and ku ..
+	my ($tl, $rl) = @{$rpoint_table->[$kl]};
+	my ($tu, $ru) = @{$rpoint_table->[$ku]};
+
+	# use logarithmic interpolation to find the theta which gives the mid
+	# point in r
+        my $rmid = 0.5 * ( $rl + $ru );
+        my $slope = log( $tu / $tl ) / log( $ru / $rl );
+        my $theta = $tl * exp( $slope * log( $rmid / $rl ) );
+
+        my $kk = $store_point->($get_values->($theta));
+
+	# Stop if enough points
+	$count++;
+	last if ($count>=$max_count);
+
+	# push the two new segments on the dr table 
+	$insert_segment->($kl, $kk);
+	$insert_segment->($kk, $ku);
+    }
+    
+    my @sorted=sort {$a->[1] <=> $b->[1]} @{$rpoint_table};
+    return \@sorted;
+}
+
 sub get_normalized_point {
-    my ( $self, $r ) = @_;
+    my ( $self, $r, $flag ) = @_;
     my $rr;
     push @{$rr}, $r;
-    my ($rarray, $hdr) = $self->get_normalized_profile($rr);
+    my ($rarray, $hdr) = $self->get_normalized_profile($rr, $flag);
     my $num=@{$rarray};
     return wantarray ? ( $rarray->[0], $hdr ) : $rarray->[0];
 }
 
 sub get_normalized_profile {
-    my ( $self, $rr ) = @_;
+    my ( $self, $rr, $flag ) = @_;
     my $symmetry = $self->{_symmetry};
     my $gamma = $self->{_gamma};
 
@@ -312,6 +428,7 @@ sub get_normalized_profile {
     #  $symmetry=0,1,2 for plane, cylindrical, spherical
     #  $gamma=ideal gas gamma
     #  $rr = a list of r/rs radial coordinates (0 to 1)
+    #  $flag = 1 to include theta as an additional variable
 
     # Return:
     #  a list of the dimensionless profile of the point source similarity solution 
@@ -361,7 +478,7 @@ sub get_normalized_profile {
         # Now find the value of theta for each desired radius of interest
         my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
 
-        $rprofile = $self->_fill_profile($rgrid);
+        $rprofile = $self->_fill_profile($rgrid, $flag);
     }
 
     if ($is_reversed) {
@@ -374,11 +491,13 @@ sub get_normalized_profile {
 }
 
 sub _fill_profile {
-    my ( $self, $rgrid ) = @_;
+    my ( $self, $rgrid, $flag ) = @_;
 
     # Given an array of theta values [theta, r/rs], create a complete profile of normalized
     # values
-    #     [ $rrat, 1, $prat, $urat, $rhorat ];
+    #     [ $rrat, 1, $prat, $urat, $rhorat ];  
+    # or, if flag:
+    #     [ $rrat, 1, $prat, $urat, $rhorat, $theta ];  
     # Special treatment is needed in the core where theta value will be undefined
 
     my $symmetry = $self->{_symmetry};
@@ -438,7 +557,10 @@ sub _fill_profile {
             $urat = $rrat * $uovr;
             $rhorat = $G_to_rho->( $G, $rrat, $prat );
         }
-        unshift @{$rprofile}, [ $rrat, 1, $prat, $urat, $rhorat ];
+	my $item;
+        if ($flag) { $item= [ $rrat, 1, $prat, $urat, $rhorat, $x ] }
+        else { $item= [ $rrat, 1, $prat, $urat, $rhorat ] }
+        unshift @{$rprofile}, $item;
     }
     return $rprofile;
 }
@@ -471,6 +593,12 @@ sub _lookup_theta_profile {
             unshift @{$rgrid}, [ $xlast, $r ];
             next;
         }
+
+        if ( $jhi >= @{$rxr} ) {
+            $jhi = $jlo;
+            $jlo = $jlo - 1;
+        }
+
         my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
 
 	# optimization: the previous computed point will form a better upper
@@ -537,6 +665,103 @@ sub _lookup_theta_profile {
 }
 
 sub alpha_integral {
+
+    # This version is fast and accurate.  Accuracy is achieved by uniformly
+    # refining a grid which is approximately uniform in the volume coordinate.
+    # My attempts to integrate in the parameter coordinate worked but were very
+    # slow to converge.
+    my ( $self, $tol, $itmax ) = @_;
+    my $symmetry     = $self->{_symmetry};
+    my $gamma        = $self->{_gamma};
+    my $rtheta_table = $self->{_rtheta_table};
+    my ( $alpha, $err );
+    my $it;
+
+    # Patch to get a value for gamma=7 spherical symmetry
+    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
+
+    # Patch for gamma=2
+    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
+
+    my $num = 100;
+    my ( $theta0, $r0 ) = @{ $rtheta_table->[1] };  # Allow some margin
+
+    # Allow some margin at the start of the grid
+    $r0 *=1.1;
+    my $pow = $symmetry + 1;
+    my $V0  = $r0**$pow;
+    my $rlist;
+    for ( my $i = 0 ; $i <= $num ; $i++ ) {
+        my $V = $V0 + ( 1 - $V0 ) * $i / $num;
+        my $r = $V**(1/$pow );
+        push @{$rlist}, $r;
+    }
+    my $rprofile = $self->get_normalized_profile( $rlist, 1 );
+
+    my $rVfx;
+    my $V=0;
+    my $x=0;
+    my $f = fofx( $x, $gamma, $symmetry );
+    push @{$rVfx}, [ $V, $f, $x ];
+    foreach my $item ( @{$rprofile} ) {
+        my $r = $item->[0];
+        my $x = $item->[-1];
+        if ( !defined($x) ) {
+            if    ( $r == 1 ) { $x = 1 }
+            elsif ( $r == 0 ) { $x = 0 }
+            else { next }
+        }
+        my $f = fofx( $x, $gamma, $symmetry );
+        my $V = $r**$pow;
+        push @{$rVfx}, [ $V, $f, $x ];
+    }
+    my $coef = coef( $gamma, $symmetry );
+
+    # Iterate by continually doubling the number of integration points
+    for ( $it = 0 ; $it <= $itmax ; $it++ ) {
+        my $alpha_last = $alpha;
+        my $rxy        = multiseg_integral($rVfx);
+        $alpha = $coef * $rxy->[-1]->[1];
+        $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
+
+        print "$it\t$alpha\t$err\n";
+        last if ( $err < $tol );
+
+        # refine...
+        my $rVfx_fine;
+        $rVfx_fine->[0] = $rVfx->[0];
+        for ( my $i = 1 ; $i < @{$rVfx}-1 ; $i++ ) {
+            push @{$rVfx_fine}, $rVfx->[$i];
+
+	    # Find the theta at the approximate midpoint in volume space.
+	    # It doesn't have to be exact.
+            my ( $Vl, $fl, $xl ) = @{ $rVfx->[$i] };
+            my ( $Vu, $fu, $xu ) = @{ $rVfx->[ $i + 1 ] };
+            my $V     = 0.5 * ( $Vl + $Vu );
+            my $slope = log( $xu / $xl ) / log( $Vu / $Vl );
+            my $x     = $xl * exp( $slope * log( $V / $Vl ) );
+
+	    # Lookup the actual radius and integrand there
+            my $r     = rrat( $x, $gamma, $symmetry );
+            my $f     = fofx( $x, $gamma, $symmetry );
+            $V = $r**$pow;
+            push @{$rVfx_fine}, [ $V, $f, $x ];
+        }
+        push @{$rVfx_fine}, $rVfx->[-1];
+        $rVfx = $rVfx_fine;
+    }
+
+    # Correct for plane symmetry
+    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 }
+
+    return wantarray ? ( $alpha, $err, $it ) : $alpha;
+}
+
+sub OLD_alpha_integral {
+
+    # To be DELETED
+    # This worked but was very slow; the new version is much faster and more accurate
+
     my ( $self, $tol, $itmax ) = @_;
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
