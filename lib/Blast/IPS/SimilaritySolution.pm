@@ -56,7 +56,7 @@ sub new {
 }
 
 sub _setup {
-    my ( $self, @args)=@_;
+    my ( $self, @args ) = @_;
 
     my @input_keys = qw(
       gamma
@@ -93,7 +93,7 @@ sub _setup {
     else {
 
         # default to spherical table with gamma 1.4 if no arg given
-        $rinput_hash = { symmetry => 2, gamma => 1.4, E0=>1, rho_amb=>1.4 };
+        $rinput_hash = { symmetry => 2, gamma => 1.4, E0 => 1, rho_amb => 1.4 };
     }
 
     # Validate input keys
@@ -103,12 +103,12 @@ sub _setup {
     my $gamma    = $rinput_hash->{gamma};
     my $symmetry = $rinput_hash->{symmetry};
     my $E0       = $rinput_hash->{E0};
-    my $rho_amb     = $rinput_hash->{rho_amb};
+    my $rho_amb  = $rinput_hash->{rho_amb};
 
     my $error = "";
     if ( !defined($E0) )       { $E0       = 1 }
     if ( !defined($gamma) )    { $gamma    = 1.4 }
-    if ( !defined($rho_amb) )     { $rho_amb     = 1 }
+    if ( !defined($rho_amb) )  { $rho_amb  = 1 }
     if ( !defined($symmetry) ) { $symmetry = 2 }
     if ( !defined($rho_amb) || $rho_amb <= 0 ) {
         $error .= "Bad rho_amb='$rho_amb'\n";
@@ -119,31 +119,10 @@ sub _setup {
     if ( !defined($symmetry) || $symmetry !~ /^[012]$/ ) {
         $error .= "Bad symmetry='$symmetry'\n";
     }
+
     my $alpha = alpha_interpolate( $symmetry, $gamma );
+    $alpha = 1 unless ($alpha);
 
-#    ###################################################################
-#    # FIXME: this works but would be better to use a binary search
-#    # to get a better distribution.
-#    # Make a reference table of [theta, r/rs] values.
-#    # This will allow binary searches to be made over small intervals.
-#    my $rtheta_table;
-#    my $dtheta = 1.e-15;
-#    my $geo    = 1.03;
-#    for ( my $theta = 0 ; $theta < 1 ; $theta += $dtheta ) {
-#        my $rrat = rrat( $theta, $gamma, $symmetry );
-#        my $prat = prat( $theta, $gamma, $symmetry );
-#        my $urat = urat( $theta, $gamma, $symmetry );
-#        my $rhorat = rhorat( $theta, $gamma, $symmetry );
-#        push @{$rtheta_table}, [ $theta, $rrat, $prat, $urat, $rhorat ];
-#        $dtheta *= $geo;
-#    }
-#    push @{$rtheta_table}, [ 1, 1, 1, 1, 1 ];
-#    ###################################################################
-  
-    ##use SlhLib;
-    ##write_text_data($rtheta_table,"x\tr\tp\tu\trho","junk.txt");
-
-    $alpha=1 unless ($alpha);
     $self->{_E0}           = $E0;
     $self->{_rho_amb}      = $rho_amb;
     $self->{_gamma}        = $gamma;
@@ -152,7 +131,7 @@ sub _setup {
     $self->{_alpha}        = $alpha;
     $self->{_rtheta_table} = $self->make_reference_table(64);
     if ($error) { carp "$error" }
-    return; 
+    return;
 }
 sub get_Eoad { $_[0]->{_Eoad} }
 sub get_alpha { $_[0]->{_alpha} }
@@ -298,20 +277,19 @@ sub shock_front_values {
 
 sub make_reference_table {
 
-    # Make a reference table of [theta, r/rs] values approximately uniformly spaced in r.
-    # This will allow binary searches to be made over small intervals.
+    # Make a reference table of [theta, r/rs] values approximately uniformly
+    # spaced in r.  This will allow binary searches to be made over small
+    # intervals.  
 
-    my ($obj, $max_count)=@_;
-    my $gamma = $obj->get_gamma();
+    my ( $obj, $max_count ) = @_;
+    my $gamma    = $obj->get_gamma();
     my $symmetry = $obj->get_symmetry();
-    my $count=0;
-    my ($jl, $ju);
+    my $count    = 0;
+    my ( $jl, $ju );
 
     # We only search down to a very small value of theta>0.  This corresponds
-    # to a point very close to the origin.  We can
-    # fill in the solution between the origin and this point using analytical
-    # equations.
-    #my $tiny_theta = 1.e-30;
+    # to a point very close to the origin.  We can fill in the solution between
+    # the origin and this point using analytical equations.
     my $tiny_theta = 1.e-20;
 
     # The point array stores each point in the order created.
@@ -371,43 +349,49 @@ sub make_reference_table {
         return [ $theta, $rrat, $prat, $urat, $rhorat ];
     };
 
-    # Start the point table
+    # Start the point table 
     my $kz = $store_point->($get_values->(0));
     my $km = $store_point->($get_values->($tiny_theta));
     my $kp = $store_point->($get_values->(1));
 
     # Start the segment table. Note that we are ignoring the segment between
-    # theta=0 and theta = tiny_theta on purpose.
+    # theta=0 and theta = tiny_theta on purpose.  
     $insert_segment->( $km, $kp );
 
-    # loop to keep splitting the largest segment until we have enough points
+    # loop to keep splitting the largest segment until we have enough points.
+    # This uses a very fast, clean algorithm, with one array and one stack.
     while(1) {
 
+	# Get the largest segment. It runs from index kl to ku.
         my $big=pop @{$rseg_table};
 	my ($dr, $kl, $ku)=@{$big};
 
-	# Split interval between kl and ku ..
+	# pull out the two points
 	my ($tl, $rl) = @{$rpoint_table->[$kl]};
 	my ($tu, $ru) = @{$rpoint_table->[$ku]};
 
 	# use logarithmic interpolation to find the theta which gives the mid
-	# point in r
+	# point in r. This approximation gets increasingly better as points
+        # are added.
         my $rmid = 0.5 * ( $rl + $ru );
         my $slope = log( $tu / $tl ) / log( $ru / $rl );
         my $theta = $tl * exp( $slope * log( $rmid / $rl ) );
 
+	# make and store the new point
         my $kk = $store_point->($get_values->($theta));
 
 	# Stop if enough points
 	$count++;
 	last if ($count>=$max_count);
 
-	# push the two new segments on the dr table 
+	# put the two new segments into the dr stack and keep going
 	$insert_segment->($kl, $kk);
 	$insert_segment->($kk, $ku);
     }
     
+    # Since the points are stored in the order found, we have to sort them
     my @sorted=sort {$a->[1] <=> $b->[1]} @{$rpoint_table};
+
     return \@sorted;
 }
 
@@ -456,6 +440,7 @@ sub get_normalized_profile {
 
     my $rprofile;
 
+    # handle special case
     if ( $symmetry == 2 && $gamma == 7 ) {
         foreach my $rrat ( @{$rr} ) {
             my ( $trat, $prat, $urat, $rhorat ) = ( 1, 0, 0, 0 );
@@ -469,16 +454,8 @@ sub get_normalized_profile {
     }
     else {
 
-        ##if ( $gamma == 2 ) { $gamma -= 1.e-10 }
-
-        # Get the pre-made table of [theta, r]
-        my $rxr = $self->{_rtheta_table};
-
-        #write_text_data( $rxr, "x\tr", "junk_table.txt" );
-
-        # Now find the value of theta for each desired radius of interest
-        my $rgrid = _lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
-        #my $rgrid = OLD_lookup_theta_profile( $rr, $rxr, $symmetry, $gamma );
+        # find the value of theta for each desired radius of interest
+        my $rgrid = $self->_lookup_theta_profile( $rr); 
 
         $rprofile = $self->_fill_profile($rgrid, $flag);
     }
@@ -503,8 +480,9 @@ sub _fill_profile {
     # Special treatment is needed in the core where theta value will be
     # undefined
 
-    my $symmetry = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
+    my $symmetry       = $self->{_symmetry};
+    my $gamma          = $self->{_gamma};
+    my $rtheta_table   = $self->{_rtheta_table};
 
     my $rprofile;
     my $gpow = ( $symmetry + 1 ) * $gamma / ( $gamma - 1 );
@@ -547,7 +525,7 @@ sub _fill_profile {
             $rrat = rrat( $x, $gamma, $symmetry );
             $urat = urat( $x, $gamma, $symmetry );
             $rhorat = rhorat( $x, $gamma, $symmetry );
-            $uovr   = $urat / $rrat;
+            $uovr   = $urat / $rrat if ($rrat>0);
             $G      = $rho_to_G->( $rhorat, $rrat, $prat );
         }
         elsif ( $rrat > 1 || $rrat < 0) {
@@ -557,7 +535,7 @@ sub _fill_profile {
         }
         else {
 
-            # Core region..
+            # Backup logic for Core region..in case theta is not set
             # prat is uniform in r at center
             # urat is linear in r
             # density goes to zero
@@ -574,14 +552,29 @@ sub _fill_profile {
 
 sub _lookup_theta_profile {
 
-    my ( $rr, $rxr, $symmetry, $gamma ) = @_;
+    my ( $self, $rr) = @_; #, $rxr, $symmetry, $gamma ) = @_;
+    my $symmetry       = $self->{_symmetry};
+    my $gamma          = $self->{_gamma};
+    my $rxr            = $self->{_rtheta_table};
 
     # given a list of dimensionless radius ratios, 0 to 1, return a list with
     # [theta, radius] where theta is the implicit variable for that radius
 
+    # Experimental: Setup for center slopes to find center theta values
+    # This will allow us to define theta in the core region
+    my ($dlnt_dlnr, $lntu, $lnru);
+    if ( @{$rxr} > 2 ) {
+        my ( $tl, $rl) = @{ $rxr->[1] };
+        my ( $tu, $ru) = @{ $rxr->[2] };
+        my $lntl = log($tl);
+        my $lnrl = log($rl);
+        $lnru = log($ru);
+        $lntu = log($tu);
+        $dlnt_dlnr = ( $lntu - $lntl ) / ( $lnru - $lnrl );
+    }
+
     # Note: return theta undefined for r<rmin, where rmin=the first non-zero
     # radius in the reference table
-
     my $jmax = @{$rxr} -1;
     my $imax = @{$rr} -1;
     my $jhi  = $jmax;
@@ -612,7 +605,8 @@ sub _lookup_theta_profile {
         my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
 
 	# optimization: the previous computed point will form a better upper
-	# bound than the previous table value if we stay in the same table interval
+	# bound than the previous table value if we stay in the same table
+	# interval
         if (   defined($xlast)
             && defined($rlast)
             && $rlast > $r
@@ -633,7 +627,18 @@ sub _lookup_theta_profile {
         }
 
         if ( $jlo <= 0 ) {
-            unshift @{$rgrid}, [ undef, $r ];
+
+	    # We are in the core, before the first table point.  Try to
+	    # define theta using the slope set above.
+	    my $theta;
+
+            if ( $r <= 0 ) { $theta = 0 }
+            elsif ($dlnt_dlnr) {
+                my $lnr = log($r);
+                my $lnt = $lntu + ( $lnr - $lnru ) * $dlnt_dlnr;
+                $theta = exp($lnt);
+            }
+            unshift @{$rgrid}, [ $theta, $r ];
             next;
         }
 
