@@ -1,5 +1,9 @@
 package Blast::IPS::SimilaritySolution;
 
+# This is a collection of software related to the very high pressure region of
+# an ideal point source explosion where it may be described with the similarity
+# solution.
+
 # MIT License
 # Copyright (c) 2018 Steven Hancock
 #
@@ -20,10 +24,6 @@ package Blast::IPS::SimilaritySolution;
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-# This is a collection of software related to the very high pressure region of
-# an ideal point source explosion where it may be described with the similarity
-# solution.
 
 use strict;
 use warnings;
@@ -104,6 +104,9 @@ sub _setup {
     my $symmetry = $rinput_hash->{symmetry};
     my $E0       = $rinput_hash->{E0};
     my $rho_amb  = $rinput_hash->{rho_amb};
+
+    # PATCH until coding revised to avoid the divide by gamma-2
+    if ($gamma==2) {$gamma-=1.e-10}
 
     my $error = "";
     if ( !defined($E0) )       { $E0       = 1 }
@@ -416,8 +419,8 @@ sub get_normalized_profile {
     #  $flag = 1 to include theta as an additional variable
 
     # Return:
-    #  a list of the dimensionless profile of the point source similarity solution 
-    #  with variables [ r/rs, t/ts, p/ps, u/us, rho/rhos ]
+    #  a list of the dimensionless profile of the point source similarity
+    #  solution with variables [ r/rs, t/ts, p/ps, u/us, rho/rhos ]
     # where
     #  rs=shock radius, 
     #  ts=time
@@ -728,107 +731,6 @@ sub _lookup_theta_profile {
     return $rgrid;
 }
 
-sub OLD_lookup_theta_profile {
-    my ( $rr, $rxr, $symmetry, $gamma ) = @_;
-
-    # This works; the new log version is more efficient
-
-    # given a list of dimensionless radius ratios, 0 to 1, return a list with
-    # [theta, radius] where theta is the implicit variable for that radius
-
-    # Note: return theta undefined for r<rmin, where rmin=the first non-zero
-    # radius in the reference table
-
-    my $jmax = @{$rxr} -1;
-    my $imax = @{$rr} -1;
-    my $jhi  = $jmax;
-    my $jlo  = $jmax - 1;
-
-    # Find the starting interval
-    ($jlo, $jhi) = locate_2d($rr->[$imax], 1, $rxr, $jlo, $jhi);
-
-    my ($rgrid, $xlast, $rlast);
-
-    # Loop over points to fill
-    for ( my $i = $imax ; $i >= 0 ; $i-- ) {
-        my $r = $rr->[$i];
-        if ( $r > 1 || $r < 0) {
-	    $xlast = undef;
-	    $rlast = $r;
-            unshift @{$rgrid}, [ $xlast, $r ];
-            next;
-        }
-
-        if ( $jhi >= @{$rxr} ) {
-            $jhi = $jlo;
-            $jlo = $jlo - 1;
-        }
-
-        my ( $xhi, $rhi ) = @{ $rxr->[$jhi] };
-
-	# optimization: the previous computed point will form a better upper
-	# bound than the previous table value if we stay in the same table interval
-        if (   defined($xlast)
-            && defined($rlast)
-            && $rlast > $r
-            && $rlast < $rhi )
-        {
-            $xhi = $xlast;
-            $rhi = $rlast;
-        }
-
-        my ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
-	my $count=0;
-        while ( $rlo > $r ) {
-	    $count++;
-            if ( $jlo <= 0 ) { die "error in lookup\n" }
-            ( $jhi, $xhi, $rhi ) = ( $jlo, $xlo, $rlo );
-            $jlo--;
-            ( $xlo, $rlo ) = @{ $rxr->[$jlo] };
-        }
-
-        if ( $jlo <= 0 ) {
-            unshift @{$rgrid}, [ undef, $r ];
-            next;
-        }
-
-        my $tolx  = 1.e-10 * abs($xhi-$xlo);
-        my $tolr  = 1.e-10 * abs($rhi-$rlo);
-        my $bvec  = [];
-        my $ff_lo = $rlo - $r;
-        my $ff_hi = $rhi - $r;
-        my $ifconv;
-        my $xx;
-        ( $xx, $ifconv ) = nbrenti( $xlo, $ff_lo, $xhi, $ff_hi, $tolx, $bvec );
-
-        # loop over iterations
-        my $maxit = 100;
-        my $iter;
-        my $rrat;
-        my $ff;
-        for ( $iter = 1 ; $iter <= $maxit ; $iter += 1 ) {
-            $rrat = rrat( $xx, $gamma, $symmetry );
-            $ff = $rrat - $r;
-            ( $xx, $ifconv ) = nbrentx( $ff, $bvec );
-            if ( abs($ff) < $tolr  && $ifconv != 0) {    #$ifconv != 0 ) {
-                #print STDERR "ff=$ff, xx=$xx, flo=$ff_lo, fhi=$ff_hi, xxlo=$xlo, xhi=$xhi, ifconv=$ifconv, tol=$tolr, iter=$iter\n";
-                last;
-            }
-        }
-        if ( $iter >= $maxit ) {
-
-            # no convergence after maxit iterations -- shouldn't happen
-            print STDERR "**warning-no convergence in brent iteration**; iter=$iter, ff=$ff\n";
-        }
-        unshift @{$rgrid}, [ $xx, $r ];
-	$xlast = $xx;
-	$rlast = $r;
-
-        ##print STDERR "i=$i, r=$r, jhi=$jhi, rhi=$rhi, jlo=$jlo, rlo=$rlo x=$xx, rrat=$rrat, ff=$ff, it=$iter\n";
-    }
-    return $rgrid;
-}
-
 sub alpha_integral {
 
     # This version is fast and accurate.  Accuracy is achieved by uniformly
@@ -920,58 +822,6 @@ sub alpha_integral {
         }
         push @{$rVfx_fine}, $rVfx->[-1];
         $rVfx = $rVfx_fine;
-    }
-
-    # Correct for plane symmetry
-    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 }
-
-    return wantarray ? ( $alpha, $err, $it ) : $alpha;
-}
-
-sub OLD_alpha_integral {
-
-    # To be DELETED
-    # This worked but was very slow; the new version is much faster and more accurate
-
-    my ( $self, $tol, $itmax ) = @_;
-    my $symmetry = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
-    my $num      = 10000;
-    my ( $alpha, $err );
-    my $it;
-
-    # Patch for gamma=7 spherical symmetry
-    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
-
-    # Patch for gamma=2
-    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
-
-    for ( $it = 0 ; $it <= $itmax ; $it++ ) {
-        my $alpha_last = $alpha;
-        $num *= 2;
-        my $dx = 1 / $num;
-        my $coef = coef( $gamma, $symmetry );
-        my $rxf;
-        my $rxr;
-
-        for ( my $i = 0 ; $i <= $num ; $i++ ) {
-            my $x    = $i * $dx;
-            my $f    = fofx( $x, $gamma, $symmetry );
-            my $rrat = rrat( $x, $gamma, $symmetry );
-
-            #push @{$rxr}, [$x, $rrat];
-            push @{$rxf}, [ $rrat**( $symmetry + 1 ), $f ];
-        }
-
-        #write_text_data( $rxf, "rrat**N, f", "junkrxf.txt" );
-        my $rxy = multiseg_integral($rxf);
-        $alpha = $coef * $rxy->[-1]->[1];
-        $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
-
-        #print "$num\t$alpha\t$err\n";
-        last if ( $err < $tol );
-
-        #write_text_data( $rxy, "x,alpha", "junk1.txt" );
     }
 
     # Correct for plane symmetry

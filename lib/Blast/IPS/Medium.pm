@@ -248,8 +248,6 @@ sub ushock_from_pabs {
         $rhoshock = ( $gamma + 1 ) / ( $gamma - 1 ) * $rho_amb;
     }
     return ( $ushock, $upshock, $ushockx, $dup_dovp, $rhoshock );
-
-    #croak "SORRY: Blast::Medium not programmed for p_amb=0";
 }
 
 sub strong_shock_from_pabs {

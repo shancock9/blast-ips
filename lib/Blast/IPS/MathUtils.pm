@@ -1,5 +1,7 @@
 package Blast::IPS::MathUtils;
 
+# Some math utilities for Blast::IPS
+
 # MIT License
 # Copyright (c) 2018 Steven Hancock
 #
@@ -20,8 +22,6 @@ package Blast::IPS::MathUtils;
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-# Math utilities for Blast::IPS
 
 use strict;
 use warnings;
