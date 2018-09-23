@@ -731,7 +731,84 @@ sub _lookup_theta_profile {
     return $rgrid;
 }
 
-sub alpha_integral {
+sub my_alpha_integral {
+
+    # Evaluate the energy integral to obtain the parameter alpha
+    # to arbitrary accuracy. This is a simplified version which
+    # works equally well as the older version.
+    my ( $self, $tol, $itmax ) = @_;
+    my $symmetry     = $self->{_symmetry};
+    my $gamma        = $self->{_gamma};
+    my $rtheta_table = $self->{_rtheta_table};
+    my ( $alpha, $err );
+    my $it;
+
+    # Patch for gamma=7 spherical symmetry
+    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
+
+    # Patch for gamma=2
+    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
+
+    my $pow        = $symmetry + 1;
+
+    my $get_values = sub {
+
+        # get the volume and integrand at a specific theta
+        my ($x) = @_;
+        my $r = rrat( $x, $gamma, $symmetry );
+        my $V = $r**$pow;
+        if ( $V > 1 ) { $V = 1 }
+        my $f = fofx( $x, $gamma, $symmetry );
+        return [ $V, $f, $x ];
+    };
+
+    my $rVfx;
+    my $tiny_theta = 1.e-20;
+
+    # Start with 3 points
+    push @{$rVfx}, $get_values->(0);
+    push @{$rVfx}, $get_values->($tiny_theta);
+    push @{$rVfx}, $get_values->(1);
+
+    my $coef = coef( $gamma, $symmetry );
+
+    # Loop to keep dividing by two until the error is small enough
+    my $alpha = 0;
+    for ( $it = 0 ; $it <= $itmax ; $it++ ) {
+        my $alpha_last = $alpha;
+        my $rxy        = multiseg_integral($rVfx);
+        $alpha = $coef * $rxy->[-1]->[1];
+        $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
+
+        print "$it\t$alpha\t$err\n";
+        last if ( $err < $tol );
+
+	# Double the number of integration points and continue...
+	# Divide each segment into approximately equal volumes 
+        my $rVfx_fine;
+        $rVfx_fine->[0] = $rVfx->[0];
+        for ( my $i = 1 ; $i < @{$rVfx} - 1 ; $i++ ) {
+            push @{$rVfx_fine}, $rVfx->[$i];
+            my ( $Vl, $fl, $xl ) = @{ $rVfx->[$i] };
+            my ( $Vu, $fu, $xu ) = @{ $rVfx->[ $i + 1 ] };
+            my $V     = 0.5 * ( $Vl + $Vu );
+            my $slope = log( $xu / $xl ) / log( $Vu / $Vl );
+            my $x     = $xl * exp( $slope * log( $V / $Vl ) );
+            push @{$rVfx_fine}, $get_values->($x);
+        }
+        push @{$rVfx_fine}, $rVfx->[-1];
+        $rVfx = $rVfx_fine;
+    }
+
+    # Correct for plane symmetry
+    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 }
+
+    return wantarray ? ( $alpha, $err, $it ) : $alpha;
+}
+
+sub OLD_alpha_integral {
+
+    # Works fine; save for reference.  The new version is even simpler.
 
     # This version is fast and accurate.  Accuracy is achieved by uniformly
     # refining a grid which is approximately uniform in the volume coordinate.
