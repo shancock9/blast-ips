@@ -21,8 +21,9 @@ INIT {
 }
 
 # For flexibility I split the checks into two groups with two tolerances, one
-# for gamma<gamma_low and the other for gamma>=$gamma_low.  But I am now using
-# the same tolerance for both regions.
+# for gamma<gamma_low and the other for gamma>=$gamma_low.  But I am using
+# the same tolerance for both regions.  The current maximum interpolation
+# errors are about 7.7e-7.
 my $gamma_low = 1.1;
 my $tol1      = 1.e-6; 
 my $tol2      = 1.e-6; 
