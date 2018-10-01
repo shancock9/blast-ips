@@ -30,8 +30,10 @@ our @EXPORT_OK = qw(
   multiseg_integral
   nbrenti
   nbrentx
+  parabolic_integral
   polint
   set_interpolation_points
+  trapezoidal_integral
 );
 use Exporter;
 our @ISA = qw(Exporter);
