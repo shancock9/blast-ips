@@ -23,10 +23,10 @@ INIT {
 # For flexibility I split the checks into two groups with two tolerances, one
 # for gamma<gamma_low and the other for gamma>=$gamma_low.  But I am using
 # the same tolerance for both regions.  The current maximum interpolation
-# errors are about 7.7e-7.
+# errors are about 2.1e-7.
 my $gamma_low = 1.1;
-my $tol1      = 1.e-6; 
-my $tol2      = 1.e-6; 
+my $tol1      = 3.e-7; 
+my $tol2      = 3.e-7; 
 
 my ( $count_bad1, $err_max1, $sym_max1, $gam_max1 ) = ( 0, 0, 0, 0 );
 my ( $count_bad2, $err_max2, $sym_max2, $gam_max2 ) = ( 0, 0, 0, 0 );
@@ -40,7 +40,7 @@ foreach my $sym ( 0, 1, 2 ) {
         # Define N consecutive lagrange interpolation points: We set it up for
         # 5 lagrange points but we will exclude this point itself so we will
         # actually be doing 4 point lagrange interpolations.
-        my $NLAG = 5;
+        my $NLAG = 7; #5;
         my $rj_interp = set_interpolation_points( $i, $ntab, $NLAG );
 
         my ( $rx, $ry );

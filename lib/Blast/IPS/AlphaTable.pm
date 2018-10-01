@@ -62,6 +62,7 @@ BEGIN {
     #   symmetry = 0,1,2 for plane, cylindrical, spherical
     #   err = the estimated integration error in the value of alpha
     #         the table is printed with up to 12 decimal digits
+    #         (i.e. uncertainty in value of alpha; not relative error)
 
     $ralpha_table = [
         [
@@ -737,8 +738,10 @@ sub alpha_interpolate {
     }
 
     # Define N consecutive lagrange interpolation points;
-    # Using 4 points gives sufficient accuracy
-    my $NLAG = 4;
+    # Results of alpha_missing_point_test.t:
+    # 4 interpolation points give max alpha error of 7.e-7
+    # 6 interpolation points give max alpha error of 2.e-7
+    my $NLAG = 6; #4;
     my $rj_interp = set_interpolation_points( $jl, $ntab, $NLAG );
 
     my ( $rx, $ry );

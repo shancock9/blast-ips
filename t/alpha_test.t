@@ -25,7 +25,7 @@ BEGIN {
     plan tests => $ntests;
 }
 
-my $VERBOSE = 0;
+my $VERBOSE = $ARGV[0];
 
 # In most cases the differences are below 1.e-6. The current maximum error is
 # 5.75-06 for plane symmetry, gamma = 1.1.  So we set the acceptable tolerance
