@@ -36,6 +36,8 @@ use Blast::IPS::Utils qw(
 use Blast::IPS::MathUtils qw(
   locate_2d
   multiseg_integral
+  trapezoidal_integral
+  parabolic_integral
   nbrenti
   nbrentx
   polint
@@ -731,12 +733,26 @@ sub _lookup_theta_profile {
     return $rgrid;
 }
 
-sub my_alpha_integral {
+sub alpha_integral {
 
     # Evaluate the energy integral to obtain the parameter alpha
-    # to arbitrary accuracy. This is a simplified version which
-    # works equally well as the older version.
-    my ( $self, $tol, $itmax ) = @_;
+    my ( $self, $tol, $itmax, $tiny_theta ) = @_;
+
+    # tol = stopping tolerance on absolute value of alpha
+    $tol = 1.e-13;
+
+    # itmax = max iterations in case the tolerance is not reached; 
+    $itmax = 15 unless defined($itmax);
+
+    # We are integrating the von Neumann solution from theta=0 to 1
+    # We split the integral into two parts, 
+    #  Part 1: from theta=0 to tiny_theta
+    #  Part 2: from theta=tiny_theta to 1
+
+    # tiny_theta should be a very small value of theta. The recommended value
+    # is 1.e-40.  A value 1.e-40 worked well for gamma down to 1.001.
+    $tiny_theta = 1.e-40 unless defined($tiny_theta);
+
     my $symmetry     = $self->{_symmetry};
     my $gamma        = $self->{_gamma};
     my $rtheta_table = $self->{_rtheta_table};
@@ -744,12 +760,17 @@ sub my_alpha_integral {
     my $it;
 
     # Patch for gamma=7 spherical symmetry
+    # We cannot evaluate at gamma exactly 7, so we reduce gamma slightly
     if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
 
-    # Patch for gamma=2
+    # Patch for gamma=2:
+    # Until the functions can handle gamma=2, we reduce gamma slightly
     if ( $gamma == 2 ) { $gamma -= $tol / 100 }
 
     my $pow        = $symmetry + 1;
+
+    # Get the leading coefficient
+    my $coef = coef( $gamma, $symmetry );
 
     my $get_values = sub {
 
@@ -763,148 +784,83 @@ sub my_alpha_integral {
     };
 
     my $rVfx;
-    my $tiny_theta = 1.e-20;
 
-    # Start with 3 points
-    push @{$rVfx}, $get_values->(0);
-    push @{$rVfx}, $get_values->($tiny_theta);
+    #########################
+    # Do the Part 1 integral:
+    #########################
+    # Use the trapezoidal rule to integrate over the first tiny segment
+    # I0 = integral from theta=0 to tiny_theta
+    # dI0 = estimated error of this integral
+    my $rVfx0 = $get_values->(0);
+    my $rVfx1 = $get_values->($tiny_theta);
+    my ( $V0, $f0, $x0 ) = @{$rVfx0};
+    my ( $V1, $f1, $x1 ) = @{$rVfx1};
+    my $dV = $V1 - $V0;
+    my $I0 = 0.5 * ( $f0 + $f1 ) * $dV;
+
+    # The error is estimated by taking the difference of the integral made with
+    # either endpoint as f.  That is:
+    #   dI0 = $f1*$dV - $f2*$dV, so
+    my $err0 = $coef * ( $f1 - $f0 ) * $dV;
+
+    #########################
+    # Do the Part 2 integral:
+    #########################
+
+    # Start with 2 points
+    push @{$rVfx}, $rVfx1;
     push @{$rVfx}, $get_values->(1);
 
-    my $coef = coef( $gamma, $symmetry );
-
     # Loop to keep dividing by two until the error is small enough
-    my $alpha = 0;
+    $alpha = 0;
     for ( $it = 0 ; $it <= $itmax ; $it++ ) {
         my $alpha_last = $alpha;
-        my $rxy        = multiseg_integral($rVfx);
+        my $rxy        = parabolic_integral($rVfx, $I0);
         $alpha = $coef * $rxy->[-1]->[1];
         $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
 
         print "$it\t$alpha\t$err\n";
+
         last if ( $err < $tol );
 
 	# Double the number of integration points and continue...
-	# Divide each segment into approximately equal volumes 
+	# Divide each segment into approximately equal energy increments 
         my $rVfx_fine;
-        $rVfx_fine->[0] = $rVfx->[0];
-        for ( my $i = 1 ; $i < @{$rVfx} - 1 ; $i++ ) {
+        for ( my $i = 0 ; $i < @{$rVfx} - 1 ; $i++ ) {
             push @{$rVfx_fine}, $rVfx->[$i];
             my ( $Vl, $fl, $xl ) = @{ $rVfx->[$i] };
+	    my $Il = $rxy->[$i]->[1];
             my ( $Vu, $fu, $xu ) = @{ $rVfx->[ $i + 1 ] };
-            my $V     = 0.5 * ( $Vl + $Vu );
-            my $slope = log( $xu / $xl ) / log( $Vu / $Vl );
-            my $x     = $xl * exp( $slope * log( $V / $Vl ) );
+	    my $Iu = $rxy->[$i+1]->[1];
+            my $I     = 0.5 * ( $Il + $Iu );
+            my $slope = log( $xu / $xl ) / log( $Iu / $Il );
+            my $x     = $xl * exp( $slope * log( $I / $Il ) );
             push @{$rVfx_fine}, $get_values->($x);
         }
         push @{$rVfx_fine}, $rVfx->[-1];
         $rVfx = $rVfx_fine;
     }
 
-    # Correct for plane symmetry
-    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 }
+    # include the starting error
+    $err += $err0;
 
-    return wantarray ? ( $alpha, $err, $it ) : $alpha;
-}
-
-sub OLD_alpha_integral {
-
-    # Works fine; save for reference.  The new version is even simpler.
-
-    # This version is fast and accurate.  Accuracy is achieved by uniformly
-    # refining a grid which is approximately uniform in the volume coordinate.
-    # My attempts to integrate in the parameter coordinate worked but were very
-    # slow to converge.
-    my ( $self, $tol, $itmax ) = @_;
-    my $symmetry     = $self->{_symmetry};
-    my $gamma        = $self->{_gamma};
-    my $rtheta_table = $self->{_rtheta_table};
-    my ( $alpha, $err );
-    my $it;
-
-    # Patch to get a value for gamma=7 spherical symmetry
-    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
-
-    # Patch for gamma=2
-    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
-
-    my $num = 100;
-    my ( $theta0, $r0 ) = @{ $rtheta_table->[1] };  # Allow some margin
-
-    # Allow some margin at the start of the grid
-    $r0 *=1.1;
-    my $pow = $symmetry + 1;
-    my $V0  = $r0**$pow;
-    my $rlist;
-    for ( my $i = 0 ; $i <= $num ; $i++ ) {
-        my $V = $V0 + ( 1 - $V0 ) * $i / $num;
-        my $r = $V**(1/$pow );
-	if ($r>1) {$r=1}
-        push @{$rlist}, $r;
-    }
-    my $rprofile = $self->get_normalized_profile( $rlist, 1 );
-
-    my $rVfx;
-    my $V=0;
-    my $x=0;
-    my $f = fofx( $x, $gamma, $symmetry );
-    push @{$rVfx}, [ $V, $f, $x ];
-    foreach my $item ( @{$rprofile} ) {
-        my $r = $item->[0];
-        my $x = $item->[-1];
-        if ( !defined($x) ) {
-
-	    # Try to catch roundoff problems
-            if    ( abs( $r - 1 ) < 1.e-10 ) { $x = 1 }
-            elsif ( abs($r) < 1.e-10 )       { $x = 0 }
-            else {
-                print STDERR "Warning: theta not defined for r=$r; skipping\n";
-                next;
-            }
-        }
-        my $f = fofx( $x, $gamma, $symmetry );
-        my $V = $r**$pow;
-        push @{$rVfx}, [ $V, $f, $x ];
-    }
-    my $coef = coef( $gamma, $symmetry );
-
-    # Iterate by continually doubling the number of integration points
-    for ( $it = 0 ; $it <= $itmax ; $it++ ) {
-        my $alpha_last = $alpha;
-        my $rxy        = multiseg_integral($rVfx);
-        $alpha = $coef * $rxy->[-1]->[1];
-        $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 10 * $tol;
-
-        ##print "$it\t$alpha\t$err\n";
-        last if ( $it>=2 && $err < $tol );
-
-        # refine...
-        my $rVfx_fine;
-        $rVfx_fine->[0] = $rVfx->[0];
-        for ( my $i = 1 ; $i < @{$rVfx}-1 ; $i++ ) {
-            push @{$rVfx_fine}, $rVfx->[$i];
-
-	    # Find the theta at the approximate midpoint in volume space.
-	    # It doesn't have to be exact.
-            my ( $Vl, $fl, $xl ) = @{ $rVfx->[$i] };
-            my ( $Vu, $fu, $xu ) = @{ $rVfx->[ $i + 1 ] };
-            my $V     = 0.5 * ( $Vl + $Vu );
-            my $slope = log( $xu / $xl ) / log( $Vu / $Vl );
-            my $x     = $xl * exp( $slope * log( $V / $Vl ) );
-
-	    # Lookup the actual radius and integrand there
-            my $r     = rrat( $x, $gamma, $symmetry );
-            my $f     = fofx( $x, $gamma, $symmetry );
-            $V = $r**$pow;
-            push @{$rVfx_fine}, [ $V, $f, $x ];
-        }
-        push @{$rVfx_fine}, $rVfx->[-1];
-        $rVfx = $rVfx_fine;
-    }
+    # Use the trapezoidal method to get another estimate
+    # this can be used to give an upper bound estimate of the error
+    my $rxy_trap = trapezoidal_integral( $rVfx, $I0 );
+    my $alpha_trap = $coef * $rxy_trap->[-1]->[1];
 
     # Correct for plane symmetry
-    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 }
+    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 ; $alpha_trap/=2}
 
-    return wantarray ? ( $alpha, $err, $it ) : $alpha;
+    # Return values:
+    #  $alpha = the best estimate of alpha (using simpsons method)
+    #  $err   = the best error estimate (difference in last two iterations
+    #           using simpsons method
+    #  $it    = number of iterations
+    #  $alpha_trap = the value of alpha computed with trapezoidal integration
+    #  $err0  = the error in the first of two parts (this is included in $err
+    #           but also returned separately so that it can be checked)
+    return wantarray ? ( $alpha, $err, $it, $alpha_trap, $err0 ) : $alpha;
 }
 
 ##########################################

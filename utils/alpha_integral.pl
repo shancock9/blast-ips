@@ -28,22 +28,14 @@ use warnings;
 # SOFTWARE.
 
 use Blast::IPS::SimilaritySolution;
-use Blast::IPS::MathUtils qw(
-  locate_2d
-  multiseg_integral
-  nbrenti
-  nbrentx
-  polint
-  set_interpolation_points
-);
 
 # Settings..
 
-# itmax = max iterations; for testing use itmax=3 then increase
-my $itmax = 8;    # WARNING: Use small value (such as 2 or 3) for testing
+# itmax = max iterations in case the tolerance is not reached; 
+my $itmax = 15;
 
 # tol = stopping tolerance on absolute value of alpha
-my $tol = 1.e-10;
+my $tol = 1.e-13;
 
 # output file
 my $ftable = "alpha_table_$itmax.txt";
@@ -55,27 +47,35 @@ $fh_table->print("\$ralpha_table=[\n");
 
 foreach my $symmetry ( 0, 1, 2 ) {
     $fh_table->print("    [\n");
-    my $igamma     = 110;
+
     my $idel       = 1;
-    my $igamma_max = 700;
-    for ( my $igamma = 101 ; $igamma <= 700 ; $igamma += $idel ) {
-        if ( $igamma >= 200 ) { $idel = 2 }
-        if ( $igamma >= 300 ) { $idel = 5 }
-        if ( $igamma >= 400 ) { $idel = 10 }
-        my $gamma = $igamma / 100;
+    my $igamma_max = 7000;
+    for ( my $igamma = 1001 ; $igamma <= $igamma_max ; $igamma += $idel ) {
+        if ( $igamma >= 1010 ) { $idel = 10 }
+        if ( $igamma >= 2000 ) { $idel = 20 }
+        if ( $igamma >= 3000 ) { $idel = 50 }
+        if ( $igamma >= 4000 ) { $idel = 100 }
+        my $gamma = $igamma / 1000;
+
         if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= 1.e-10 }
+
         my $obj = Blast::IPS::SimilaritySolution->new(
             symmetry => $symmetry,
             gamma    => $gamma
         );
-        my ( $alpha, $err, $it ) = $obj->alpha_integral( $tol, $itmax );
 
-        print "sym=$symmetry\tgamma=$gamma\talpha=$alpha\terr=$err\tit=$it\n";
-        print STDERR "$symmetry\t$gamma\t$alpha\t$err\t$it\n";
+        my ( $alpha, $err, $it, $alpha_trap, $err0 ) =
+          $obj->alpha_integral( $tol, $itmax );
+        my $dalp = abs( $alpha - $alpha_trap );
+
+        print "sym=$symmetry\tgamma=$gamma\talpha=$alpha\tdalp=$dalp\terr=$err\tit=$it\tI0=$err0\n";
+        print STDERR "$symmetry\t$gamma\t$alpha\t$alpha_trap\t$dalp\t$err\t$it\t$err0\n";
 
         $err = sprintf( "%0.3g", $err );
+        $dalp = sprintf( "%0.3g", $dalp );
         my $n =
-            $err < 5.e-11 ? 11
+            $err < 5.e-12 ? 12
+          : $err < 5.e-11 ? 11
           : $err < 5.e-10 ? 10
           : $err < 5.e-9  ? 9
           :                 8;
@@ -83,10 +83,9 @@ foreach my $symmetry ( 0, 1, 2 ) {
         #$err< 5.e-8 ? 7 : 6
         my $format = "%0.$n" . "f";
         $alpha = sprintf( $format, $alpha );
-        $fh_table->print("[$gamma, $alpha, $err],\n");
+        $fh_table->print("[$gamma, $alpha, $err, $dalp],\n");
     }
     $fh_table->print("   ],\n");
 }
 $fh_table->print("];\n");
 $fh_table->close();
-
