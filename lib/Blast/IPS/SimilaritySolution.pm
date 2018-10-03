@@ -35,13 +35,14 @@ use Blast::IPS::Utils qw(
 
 use Blast::IPS::MathUtils qw(
   locate_2d
+  macheps
   multiseg_integral
-  trapezoidal_integral
-  parabolic_integral
   nbrenti
   nbrentx
+  parabolic_integral
   polint
   set_interpolation_points
+  trapezoidal_integral
 );
 
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
@@ -106,9 +107,6 @@ sub _setup {
     my $symmetry = $rinput_hash->{symmetry};
     my $E0       = $rinput_hash->{E0};
     my $rho_amb  = $rinput_hash->{rho_amb};
-
-    # PATCH until coding revised to avoid the divide by gamma-2
-    if ($gamma==2) {$gamma-=1.e-10}
 
     my $error = "";
     if ( !defined($E0) )       { $E0       = 1 }
@@ -733,7 +731,7 @@ sub _lookup_theta_profile {
     return $rgrid;
 }
 
-sub alpha_integral {
+sub OLD_alpha_integral {
 
     # Evaluate the energy integral to obtain the parameter alpha
     my ( $self, $tol, $itmax, $tiny_theta ) = @_;
@@ -837,6 +835,221 @@ sub alpha_integral {
             my $x     = $xl * exp( $slope * log( $I / $Il ) );
             push @{$rVfx_fine}, $get_values->($x);
         }
+        push @{$rVfx_fine}, $rVfx->[-1];
+        $rVfx = $rVfx_fine;
+    }
+
+    # include the starting error
+    $err += $err0;
+
+    # Use the trapezoidal method to get another estimate
+    # this can be used to give an upper bound estimate of the error
+    my $rxy_trap = trapezoidal_integral( $rVfx, $I0 );
+    my $alpha_trap = $coef * $rxy_trap->[-1]->[1];
+
+    # Correct for plane symmetry
+    if ( $symmetry == 0 ) { $alpha /= 2; $err /= 2 ; $alpha_trap/=2}
+
+    # Return values:
+    #  $alpha = the best estimate of alpha (using simpsons method)
+    #  $err   = the best error estimate (difference in last two iterations
+    #           using simpsons method
+    #  $it    = number of iterations
+    #  $alpha_trap = the value of alpha computed with trapezoidal integration
+    #  $err0  = the error in the first of two parts (this is included in $err
+    #           but also returned separately so that it can be checked)
+    return wantarray ? ( $alpha, $err, $it, $alpha_trap, $err0 ) : $alpha;
+}
+
+sub alpha_integral {
+
+    # Evaluate the energy integral to obtain the parameter alpha
+    my ( $self, $tol, $itmax, $tiny_theta ) = @_;
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+
+    # handle gamma==2 specially until the underlying routines are able to do it
+    # 'correctly'. Average the result for gamma+-delta, where delta is small.
+    if ( $gamma == 2 ) {
+        my $delta    = 1.e-8;
+        my $gamma_lo = $gamma - $delta;
+        my @ret_lo =
+          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta );
+        my $gamma_hi = $gamma + $delta;
+        my @ret_hi =
+          alpha_integral_raw( $symmetry, $gamma_hi, $tol, $itmax, $tiny_theta );
+        my ( $alpha_lo, $err_lo, $it_lo, $alpha_trap_lo, $err0_lo ) = @ret_lo;
+        my ( $alpha_hi, $err_hi, $it_hi, $alpha_trap_hi, $err0_hi ) = @ret_hi;
+        my $alpha      = ( $alpha_lo + $alpha_hi ) / 2;
+        my $err        = $err_lo;
+        my $alpha_trap = ( $alpha_trap_lo + $alpha_trap_hi ) / 2;
+        my $err0       = $err0_lo;
+        return
+          wantarray
+          ? ( $alpha, $err_lo, $it_lo, $alpha_trap, $err0_lo )
+          : $alpha;
+    }
+    elsif ( $symmetry == 2 && $gamma == 7) {
+
+        my $delta    = 1.e-10;
+        my $gamma_lo = $gamma - $delta; 
+        my @ret_lo =
+          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta );
+        my ( $alpha_lo, $err_lo, $it_lo, $alpha_trap_lo, $err0_lo ) = @ret_lo;
+	
+ 	# use the following correlation to correct for the shift:
+	#    alpha*(gamma-1)*sqrt(gamma+1) = about constant
+        my $factor =
+          ( $gamma_lo - 1 ) /
+          ( $gamma - 1 ) *
+          sqrt( ( $gamma_lo + 1 ) / ( $gamma + 1 ) );
+        my $alpha = $alpha_lo * $factor;
+        my $alpha_trap = $alpha_trap_lo * $factor;
+        return
+          wantarray
+          ? ( $alpha, $err_lo, $it_lo, $alpha_trap, $err0_lo )
+          : $alpha;
+    }
+    else {
+
+        return alpha_integral_raw( $symmetry, $gamma, $tol, $itmax,
+            $tiny_theta );
+    }
+}
+
+sub alpha_integral_raw {
+
+    # Evaluate the energy integral to obtain the parameter alpha
+    my ( $symmetry, $gamma, $tol, $itmax, $tiny_theta ) = @_;
+
+    # tol = stopping tolerance on absolute value of alpha
+    $tol = 1.e-13;
+
+    # itmax = max iterations in case the tolerance is not reached; 
+    $itmax = 15 unless defined($itmax);
+
+    # We are integrating the von Neumann solution from theta=0 to 1
+    # We split the integral into two parts, 
+    #  Part 1: from theta=0 to tiny_theta
+    #  Part 2: from theta=tiny_theta to 1
+
+    # tiny_theta should be a very small value of theta. 
+    $tiny_theta = 1.e-20 unless defined($tiny_theta);
+
+    # Stop if integration steps get so small that roundoff becomes a problem
+    my $macheps      = macheps();
+    my $eps_roundoff = 1.e6 * $macheps;
+
+    #my $symmetry     = $self->{_symmetry};
+    #my $gamma        = $self->{_gamma};
+    my ( $alpha, $err );
+    my $it;
+
+    # Patch for gamma=7 spherical symmetry
+    # We cannot evaluate at gamma exactly 7, so we reduce gamma slightly
+    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
+
+    # Patch for gamma=2:
+    # in case the functions cannot handle gamma=2, we reduce gamma slightly
+    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
+
+    my $pow        = $symmetry + 1;
+
+    # Get the leading coefficient
+    my $coef = coef( $gamma, $symmetry );
+
+    my $get_values = sub {
+
+        # get the volume and integrand at a specific theta
+        my ($x) = @_;
+        my $r = rrat( $x, $gamma, $symmetry );
+        my $V = $r**$pow;
+        if ( $V > 1 ) { $V = 1 }
+        my $f = fofx( $x, $gamma, $symmetry );
+        return [ $V, $f, $x ];
+    };
+
+    my $rVfx;
+
+    #########################
+    # Do the Part 1 integral:
+    #########################
+    # Use the trapezoidal rule to integrate over the first tiny segment
+    # I0 = integral from theta=0 to tiny_theta
+    # dI0 = estimated error of this integral
+    my $rVfx0 = $get_values->(0);
+    my $rVfx1 = $get_values->($tiny_theta);
+    my ( $V0, $f0, $x0 ) = @{$rVfx0};
+    my ( $V1, $f1, $x1 ) = @{$rVfx1};
+    my $dV = $V1 - $V0;
+    my $I0 = 0.5 * ( $f0 + $f1 ) * $dV;
+
+    # The error is estimated by taking the difference of the integral made with
+    # either endpoint as f.  That is:
+    #   dI0 = $f1*$dV - $f2*$dV, so
+    my $err0 = $coef * ( $f1 - $f0 ) * $dV;
+
+    #########################
+    # Do the Part 2 integral:
+    #########################
+
+    # Start with 2 points
+    push @{$rVfx}, $rVfx1;
+    push @{$rVfx}, $get_values->(1);
+
+    # Loop to keep dividing by two until the error is small enough
+    $alpha = 0;
+    for ( $it = 0 ; $it <= $itmax ; $it++ ) {
+        my $alpha_last = $alpha;
+        my $rxy = parabolic_integral( $rVfx, $I0 );
+        $alpha = $coef * $rxy->[-1]->[1];
+
+        $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 0;
+        print "$it\t$alpha\t$err\n";
+        last if ( $it > 1 && $err < $tol * $alpha );
+
+        # Double the number of integration points and continue...
+        # Divide each segment into approximately equal energy increments
+        my $rVfx_fine;
+        my $step_size_limit;
+        for ( my $i = 0 ; $i < @{$rVfx} - 1 ; $i++ ) {
+            push @{$rVfx_fine}, $rVfx->[$i];
+            my ( $Vl, $fl, $xl ) = @{ $rVfx->[$i] };
+            my $Il = $rxy->[$i]->[1];
+            my ( $Vu, $fu, $xu ) = @{ $rVfx->[ $i + 1 ] };
+            my $Iu    = $rxy->[ $i + 1 ]->[1];
+            my $I     = 0.5 * ( $Il + $Iu );
+            my $slope = log( $xu / $xl ) / log( $Iu / $Il );
+            my $x     = $xl * exp( $slope * log( $I / $Il ) );
+
+            my $dx = $xu - $xl;
+            if ( $dx < $eps_roundoff * $xu ) {
+                print STDERR "step size limit reached\n";
+                $step_size_limit++;
+                last;
+            }
+
+#	    # Avoid extreme spacing changes
+#            my $fmin = 0.01;
+#            if ( $x - $xl < $fmin * $dx ) { $x = $xl + $fmin * $dx }
+#            if ( $xu - $x < $fmin * $dx ) { $x = $xu - $fmin * $dx }
+
+#            # Do not subdivide divide if step size is very small
+#            my $xll = $xl * ( 1 + $eps_roundoff );
+#            my $xuu = $xu * ( 1 - $eps_roundoff );
+#            if ( $xll > $xuu ) {
+#                print STDERR "step size reached\n";
+#                $step_size_limit++;
+#                last;
+#            }
+#
+#            # Do not place the point too close to a neighbor
+#            if ( $x < $xll ) { $x = $xll; print STDERR "x reset to $xll\n"; }
+#            if ( $x > $xuu ) { $x = $xuu; print STDERR "x reset to $xuu\n" }
+
+            push @{$rVfx_fine}, $get_values->($x);
+        }
+        last if ($step_size_limit);
         push @{$rVfx_fine}, $rVfx->[-1];
         $rVfx = $rVfx_fine;
     }

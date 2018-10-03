@@ -4,6 +4,7 @@ use strict;
 
 # This is a driver to illustrate usage of Blast::IPS.
 use Blast::IPS;
+use Blast::IPS::Medium;
 
 my $audit_string = "";
 
@@ -54,6 +55,7 @@ sub eval_dimensionless {
 
     my $symmetry = $blast_table->get_symmetry();
     my $gamma    = $blast_table->get_gamma();
+=pod
     my $medium   = {
         _gamma        => $gamma,
         _sspd_amb     => 1,
@@ -63,6 +65,16 @@ sub eval_dimensionless {
         _E0           => 1,
         _ground_plane => $ground_plane
     };
+=cut
+    my $medium   = Blast::IPS::Medium->new(
+        gamma        => $gamma,
+        sspd_amb     => 1,
+        p_amb        => 1,
+        symmetry     => $symmetry,
+        rho_amb      => $gamma,
+        E0           => 1,
+        ground_plane => $ground_plane
+    );
 
     # main loop
     my $return_selection;
@@ -842,12 +854,14 @@ EOM
 
 sub display_result_SI {
     my ( $range, $medium, $blast_table ) = @_;
+
     my $gamma         = $medium->{_gamma};
     my $symmetry      = $medium->{_symmetry};
     my $p_amb         = $medium->{_p_amb};
     my $sspd_amb      = $medium->{_sspd_amb};
     my $ground_plane  = $medium->{_ground_plane};
     my $E0            = $medium->{_E0};
+
     my $ground_factor = ground_factor( $symmetry, $ground_plane );
     my $dscale =
       ( $ground_factor * $E0 / $p_amb )**( 1 / ( $symmetry + 1 ) );
