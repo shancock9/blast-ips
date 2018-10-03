@@ -57,8 +57,6 @@ foreach my $symmetry ( 0, 1, 2 ) {
         if ( $igamma >= 4000 ) { $idel = 100 }
         my $gamma = $igamma / 1000;
 
-        if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= 1.e-10 }
-
         my $obj = Blast::IPS::SimilaritySolution->new(
             symmetry => $symmetry,
             gamma    => $gamma
