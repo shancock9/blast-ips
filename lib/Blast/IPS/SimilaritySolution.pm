@@ -671,7 +671,6 @@ sub _lookup_theta_profile {
 	# This version has the option of either using log or linear searches
 	# log searches seem best
         my $use_log_search = 1; 
-        ##my $use_log_search = ( $r < 0.95 );
 
 	my $ifconv;
 	my $XX;
@@ -810,8 +809,6 @@ sub alpha_integral_raw {
     my $macheps      = macheps();
     my $eps_roundoff = 1.e6 * $macheps;
 
-    #my $symmetry     = $self->{_symmetry};
-    #my $gamma        = $self->{_gamma};
     my ( $alpha, $err );
     my $it;
 
