@@ -4,54 +4,52 @@ use Test;
 use Blast::IPS::SimilaritySolution;
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
 
+my $rtest_conditions;
 my $rtest_profiles;
 
-BEGIN {
+INIT {
 
 =pod
 
-In this test we compare detailed wave profiles with reference profiles computed
-by the program sedov3 for each of the three symmetries for gamma=1.4 for
-these conditions:
-
- gamma=1.4
- E0=alpha 
- rho0=1  
- time=1
-
-The reference profiles have about 100 points uniformly spaced.  
+In this test we compare several wave profiles with reference profiles computed
+by the program 'sedov3.f'.  The profiles are at the end of this script.
 
 Reference:
 http://www.cococubed.com/code_pages/sedov.shtml
 
 =cut
 
-    plan tests => 3;
+    my $ntests = @{$rtest_conditions};
+    plan tests => $ntests;
 }
 
 my $VERBOSE = $ARGV[0];
 
-# Relative tolerances for radius, pressure, velocity, and density.
-# Some of the reference values are only output to about 8 decimal places so we
-# cannot expect much greater accuracy than 1.e-8.  Some of the reference
-# density values are printed with even less accuracy because of their wide
-# range.
+# Set relative tolerances for radius, pressure, velocity, and density.  
+# We can expect a relative accuracy of around 1.e-7 to 1.e-8 in all but the
+# radius.  Some of the factors are:
+# 1. The alpha values used by 'sedov3.f' have a typical accuracy of about 1.e-7
+# to 1.e-8 provided gamma is above about 1.13. Its accuracy falls rapidly for
+# lower gamma vaules.
+# 2. Some of the reference values are only output to about 8 decimal places so
+# we cannot expect much greater accuracy than 1.e-8.
+# 3. Some of the reference density values are output with even less accuracy
+# because of their wide range.
 
-# The difference in radii is entirely due to the iteration tolerance
-# that is used so it can be much tighter.
+# On the other hand, the difference in radii is entirely due to the iteration
+# tolerance that is used so it can be much tighter.
 
-my $rtol   = 1.e-11;
-my $ptol   = 1.e-8;
-my $utol   = 1.e-8;
-my $rhotol = 2.e-8;
+my $alphatol = 5.e-8;
+my $ptol     = $alphatol;
+my $utol     = $alphatol;
+my $rhotol   = $alphatol;
+my $rtol     = 1.e-11;
 
-my $gamma = 1.4;
-foreach my $symmetry ( 0 .. 2 ) {
+for ( my $icase = 0 ; $icase < @{$rtest_conditions} ; $icase++ ) {
+    my $case = $rtest_conditions->[$icase];
+    my ( $symmetry, $gamma, $alpha, $E0, $rho_amb, $time ) = @{$case};
 
-    # Note that we have to get alpha first so that we can set E0
-    my $alpha          = alpha_interpolate( $symmetry, $gamma );
-    my $rho_amb        = 1;
-    my $E0             = $alpha;
+    # Create an object for this condition
     my $similarity_obj = Blast::IPS::SimilaritySolution->new(
         E0       => $E0,
         rho_amb  => $rho_amb,
@@ -59,17 +57,22 @@ foreach my $symmetry ( 0 .. 2 ) {
         symmetry => $symmetry
     );
 
+    # Compare alpha values
+    my $alpha_obj = $similarity_obj->get_alpha();
+    my $alpha_err = abs( $alpha - $alpha_obj ) / $alpha;
+
     # Transfer the reference coordinates to an array and get its profile
     my $rxi;
-    foreach my $item ( @{ $rtest_profiles->[$symmetry] } ) {
+    my $rtest_profile = $rtest_profiles->[$icase];
+    foreach my $item ( @{$rtest_profile} ) {
         push @{$rxi}, $item->[0];
     }
     my ($rprofile_norm) = $similarity_obj->get_normalized_profile($rxi);
 
-    # Get the shock at time=1
-    my $rfront_e = $similarity_obj->shock_front_values( 'T' => 1 );
+    # Get the shock front values at time=1
+    my $rfront_e = $similarity_obj->shock_front_values( 'T' => $time );
 
-    # Scale the profile for this front
+    # Scale the normalized profile for this front
     my $rwave_e = unscale_wave( $rprofile_norm, $rfront_e );
 
     # Now compare each computed value with the reference value
@@ -77,7 +80,7 @@ foreach my $symmetry ( 0 .. 2 ) {
     for ( my $i = 0 ; $i < @{$rwave_e} ; $i++ ) {
         my ( $r_e, $p_e, $u_e, $rho_e ) = @{ $rwave_e->[$i] };
         my ( $r_t, $p_t, $u_t, $rho_t ) =
-          @{ $rtest_profiles->[$symmetry]->[$i] };
+          @{ $rtest_profile->[$i] };
         my $rerr   = abs( $r_e - $r_t ) / $r_t;
         my $perr   = abs( $p_e - $p_t ) / $p_t;
         my $uerr   = abs( $u_e - $u_t ) / $u_t;
@@ -102,19 +105,14 @@ foreach my $symmetry ( 0 .. 2 ) {
               && $perr_max < $ptol
               && $uerr_max < $utol
               && $rhoerr_max < $rhotol
+              && $alpha_err < $alphatol
         )
         || $VERBOSE
       )
     {
         print STDERR
-          "sym=$symmetry\t$rerr_max\t$perr_max\t$uerr_max\t$rhoerr_max\n";
+"sym=$symmetry\tgamma=$gamma\t$alpha_err\t$rerr_max\t$perr_max\t$uerr_max\t$rhoerr_max\n";
     }
-
-# Here are the relative errors as of 2 Oct 2018:
-# sym=0	5.38024486074207e-12	3.49540374746028e-09	4.49114529482938e-09	4.55701236505637e-09
-# sym=1	1.88373622256321e-12	3.24045477168242e-09	3.39282171612836e-09	3.83933749598039e-09
-# sym=2	1.08582124772975e-12	5.05330347694911e-09	4.44199857950473e-09	1.21672152556999e-08
-
 }
 
 sub unscale_wave {
@@ -129,6 +127,25 @@ sub unscale_wave {
 }
 
 BEGIN {
+
+    # These profiles were computed with the program sedov3.f, obtained at
+    # http://www.cococubed.com/code_pages/sedov.shtml
+
+    # For these test profiles, the value of E0 was set equal to the value of
+    # the similarity parameter alpha computed by sedov3.f, and the time and
+    # ambient densities are 1.
+
+    # The following table format allows for any number of additional cases.
+    # Currently we are testing with just three symmetries and two gammas.
+
+    # [symmetry, gamma, $alpha, E0, rho0, time]]
+    $rtest_conditions = [
+        [ 0, 1.4,   0.53874280,  0.53874280,  1, 1 ],
+        [ 1, 1.4,   0.984074056, 0.984074056, 1, 1 ],
+        [ 2, 1.4,   0.85107188,  0.85107188,  1, 1 ],
+        [ 2, 1.667, 0.493319042, 0.493319042, 1, 1 ],
+    ];
+
     $rtest_profiles = [
         [
 
@@ -443,5 +460,110 @@ BEGIN {
             [ 0.985, 0.114270307,  0.322795276,   4.45983933 ],
             [ 0.995, 0.126285684,  0.329754784,   5.41643833 ],
         ],
+        [
+            # spherical, gamma=1.667
+            #[x,pres,vel,den],
+            [ 0.005, 0.0367311191, 0.00119976005, 6.13283442E-11 ],
+            [ 0.015, 0.0367311191, 0.00359928014, 8.58289697E-09 ],
+            [ 0.025, 0.0367311191, 0.00599880024, 8.53993101E-08 ],
+            [ 0.035, 0.0367311191, 0.00839832034, 3.8788403E-07 ],
+            [ 0.045, 0.0367311191, 0.0107978404,  1.20117576E-06 ],
+            [ 0.055, 0.0367311193, 0.0131973606,  2.96200892E-06 ],
+            [ 0.065, 0.0367311198, 0.0155968807,  6.27915512E-06 ],
+            [ 0.075, 0.0367311209, 0.017996401,   1.19516273E-05 ],
+            [ 0.085, 0.0367311233, 0.0203959215,  2.09852575E-05 ],
+            [ 0.095, 0.0367311278, 0.0227954424,  3.46080219E-05 ],
+            [ 0.105, 0.0367311358, 0.0251949642,  5.42843615E-05 ],
+            [ 0.115, 0.0367311494, 0.0275944873,  8.17286757E-05 ],
+            [ 0.125, 0.0367311712, 0.0299940129,  0.000118918119 ],
+            [ 0.135, 0.036731205,  0.0323935421,  0.000168104801 ],
+            [ 0.145, 0.0367312559, 0.0347930769,  0.000231827477 ],
+            [ 0.155, 0.0367313301, 0.03719262,    0.00031292278 ],
+            [ 0.165, 0.0367314358, 0.039592175,   0.000414536074 ],
+            [ 0.175, 0.0367315833, 0.041991747,   0.000540131958 ],
+            [ 0.185, 0.0367317852, 0.0443913422,  0.000693504478 ],
+            [ 0.195, 0.0367320569, 0.0467909689,  0.000878787087 ],
+            [ 0.205, 0.0367324171, 0.0491906378,  0.0011004624 ],
+            [ 0.215, 0.0367328879, 0.0515903621,  0.00136337181 ],
+            [ 0.225, 0.0367334958, 0.0539901584,  0.0016727249 ],
+            [ 0.235, 0.0367342719, 0.0563900471,  0.00203410895 ],
+            [ 0.245, 0.0367352525, 0.0587900531,  0.00245349828 ],
+            [ 0.255, 0.0367364797, 0.0611902066,  0.00293726372 ],
+            [ 0.265, 0.0367380021, 0.0635905438,  0.00349218226 ],
+            [ 0.275, 0.0367398754, 0.065991108,   0.00412544678 ],
+            [ 0.285, 0.0367421633, 0.0683919502,  0.00484467623 ],
+            [ 0.295, 0.0367449381, 0.0707931308,  0.00565792608 ],
+            [ 0.305, 0.0367482815, 0.0731947204,  0.00657369946 ],
+            [ 0.315, 0.0367522857, 0.0755968012,  0.00760095882 ],
+            [ 0.325, 0.036757054,  0.0779994684,  0.00874913852 ],
+            [ 0.335, 0.036762702,  0.0804028318,  0.0100281584 ],
+            [ 0.345, 0.0367693587, 0.0828070176,  0.0114484386 ],
+            [ 0.355, 0.0367771673, 0.0852121701,  0.0130209159 ],
+            [ 0.365, 0.0367862865, 0.0876184535,  0.0147570613 ],
+            [ 0.375, 0.0367968919, 0.0900260545,  0.0166689006 ],
+            [ 0.385, 0.036809177,  0.092435184,   0.0187690365 ],
+            [ 0.395, 0.0368233548, 0.0948460799,  0.0210706736 ],
+            [ 0.405, 0.0368396591, 0.0972590094,  0.0235876467 ],
+            [ 0.415, 0.0368583464, 0.0996742723,  0.0263344533 ],
+            [ 0.425, 0.0368796969, 0.102092203,   0.029326289 ],
+            [ 0.435, 0.0369040172, 0.104513175,   0.0325790893 ],
+            [ 0.445, 0.0369316413, 0.106937603,   0.0361095756 ],
+            [ 0.455, 0.0369629333, 0.109365947,   0.0399353087 ],
+            [ 0.465, 0.0369982896, 0.111798716,   0.0440747484 ],
+            [ 0.475, 0.0370381409, 0.114236471,   0.0485473225 ],
+            [ 0.485, 0.0370829551, 0.116679832,   0.0533735039 ],
+            [ 0.495, 0.0371332403, 0.119129478,   0.0585748997 ],
+            [ 0.505, 0.0371895475, 0.121586158,   0.0641743513 ],
+            [ 0.515, 0.0372524747, 0.124050687,   0.0701960488 ],
+            [ 0.525, 0.0373226698, 0.126523961,   0.0766656611 ],
+            [ 0.535, 0.0374008356, 0.129006954,   0.0836104833 ],
+            [ 0.545, 0.0374877339, 0.13150073,    0.0910596052 ],
+            [ 0.555, 0.0375841909, 0.134006444,   0.0990441022 ],
+            [ 0.565, 0.0376911025, 0.136525351,   0.107597253 ],
+            [ 0.575, 0.0378094412, 0.139058812,   0.116754786 ],
+            [ 0.585, 0.0379402629, 0.1416083,     0.126555163 ],
+            [ 0.595, 0.038084715,  0.144175409,   0.1370399 ],
+            [ 0.605, 0.0382440452, 0.146761855,   0.148253932 ],
+            [ 0.615, 0.038419612,  0.149369492,   0.160246032 ],
+            [ 0.625, 0.0386128957, 0.152000312,   0.17306929 ],
+            [ 0.635, 0.0388255117, 0.154656457,   0.18678166 ],
+            [ 0.645, 0.0390592247, 0.157340223,   0.201446584 ],
+            [ 0.655, 0.039315966,  0.160054072,   0.217133715 ],
+            [ 0.665, 0.0395978517, 0.162800632,   0.233919737 ],
+            [ 0.675, 0.0399072045, 0.165582713,   0.251889321 ],
+            [ 0.685, 0.0402465786, 0.168403305,   0.271136217 ],
+            [ 0.695, 0.040618787,  0.171265589,   0.291764521 ],
+            [ 0.705, 0.0410269341, 0.174172941,   0.313890139 ],
+            [ 0.715, 0.0414744521, 0.177128931,   0.337642482 ],
+            [ 0.725, 0.0419651434, 0.180137334,   0.363166441 ],
+            [ 0.735, 0.0425032285, 0.183202118,   0.390624677 ],
+            [ 0.745, 0.0430934018, 0.186327453,   0.420200302 ],
+            [ 0.755, 0.0437408953, 0.189517697,   0.452100005 ],
+            [ 0.765, 0.0444515529, 0.192777389,   0.486557715 ],
+            [ 0.775, 0.0452319147, 0.196111237,   0.523838906 ],
+            [ 0.785, 0.046089316,  0.199524095,   0.564245661 ],
+            [ 0.795, 0.0470320011, 0.203020942,   0.608122637 ],
+            [ 0.805, 0.0480692553, 0.206606844,   0.655864125 ],
+            [ 0.815, 0.0492115587, 0.21028692,    0.707922419 ],
+            [ 0.825, 0.050470765,  0.214066293,   0.764817741 ],
+            [ 0.835, 0.0518603098, 0.21795003,    0.827150084 ],
+            [ 0.845, 0.0533954549, 0.221943077,   0.895613342 ],
+            [ 0.855, 0.0550935744, 0.226050187,   0.97101224 ],
+            [ 0.865, 0.0569744909, 0.230275837,   1.05428267 ],
+            [ 0.875, 0.0590608734, 0.234624133,   1.14651623 ],
+            [ 0.885, 0.0613787072, 0.239098721,   1.24898983 ],
+            [ 0.895, 0.0639578541, 0.243702689,   1.36320178 ],
+            [ 0.905, 0.0668327208, 0.248438467,   1.49091564 ],
+            [ 0.915, 0.0700430622, 0.253307741,   1.63421395 ],
+            [ 0.925, 0.0736349489, 0.258311371,   1.79556444 ],
+            [ 0.935, 0.0776619421, 0.263449322,   1.97790162 ],
+            [ 0.945, 0.0821865241, 0.268720621,   2.18472837 ],
+            [ 0.955, 0.0872818523, 0.274123325,   2.42024269 ],
+            [ 0.965, 0.0930339193, 0.279654531,   2.68949686 ],
+            [ 0.975, 0.0995442288, 0.285310396,   2.99859853 ],
+            [ 0.985, 0.106933128,  0.291086198,   3.35496626 ],
+            [ 0.995, 0.115343981,  0.296976413,   3.76765614 ],
+        ],
+
     ];
 }
