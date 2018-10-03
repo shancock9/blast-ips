@@ -27,6 +27,7 @@ use strict;
 use warnings;
 our @EXPORT_OK = qw(
   locate_2d
+  macheps
   multiseg_integral
   nbrenti
   nbrentx
@@ -37,6 +38,22 @@ our @EXPORT_OK = qw(
 );
 use Exporter;
 our @ISA = qw(Exporter);
+
+{
+    my $macheps;
+
+    BEGIN {
+        $macheps = 1;
+
+        # approxomate machine epsilon
+        for ( my $i = 0 ; $i < 1000 ; $i++ ) {
+            my $diff = 1 - $macheps;
+            last if ( $diff eq 1 );
+            $macheps /= 2;
+        }
+    }
+    sub macheps { return $macheps }
+}
 
 sub multiseg_integral {
 
