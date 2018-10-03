@@ -161,6 +161,9 @@ EOM
     $self->{_ground_plane} = $ground_plane;
     $self->{_E0}           = $E0;
 
+    ##################################################
+    # FIXME: To be deleted.  Need to compute on the fly because
+    # any of p, rho, gamma can change after creating the object
     my $A_amb = $p_amb / $rho_amb**$gamma;
     $self->{_A_amb} = $A_amb;
 
@@ -170,14 +173,90 @@ EOM
     my $A_ref    = $A_amb;
     if ($A_ref<=0) { $A_ref    = 1 }
     $self->{_A_ref} = $A_ref;
+    ##################################################
 
     return $self;
 }
 
+sub get_A_parameters {
+    my ($self)  = @_;
+    my $p_amb   = $self->{_p_amb};
+    my $rho_amb = $self->{_rho_amb};
+    my $gamma   = $self->{_gamma};
+    my $A_amb   = $p_amb / $rho_amb**$gamma;
+
+    # Define a reference value for A which is the ambient value if positive and
+    # is 1 if A_amb is zero. This allows a reference value to be used
+    # for all types of runs.
+    my $A_ref = $A_amb;
+    if ( $A_ref <= 0 ) { $A_ref = 1 }
+    return ( $A_amb, $A_ref );
+}
+
 # Special get_ and set_ methods go here
+sub get_symmetry {
+    my ($self) = @_;
+    return $self->{_symmetry};
+}
 sub get_gamma {
     my ($self) = @_;
     return $self->{_gamma};
+}
+sub get_p_amb {
+    my ($self) = @_;
+    return $self->{_p_amb};
+}
+sub get_rho_amb {
+    my ($self) = @_;
+    return $self->{_rho_amb};
+}
+sub get_sspd_amb {
+    my ($self) = @_;
+    return $self->{_sspd_amb};
+}
+sub get_E0{
+    my ($self) = @_;
+    return $self->{_E0};
+}
+sub get_ground_plane{
+    my ($self) = @_;
+    return $self->{_ground_plane};
+}
+
+sub set_symmetry {
+    my ($self, $val) = @_;
+    $self->{_symmetry} = $val;
+    return
+}
+sub set_gamma {
+    my ($self, $val) = @_;
+    $self->{_gamma} = $val;
+    return;
+}
+sub set_p_amb {
+    my ($self, $val) = @_;
+    $self->{_p_amb}=$val;
+    return;
+}
+sub set_rho_amb {
+    my ($self, $val) = @_;
+    $self->{_rho_amb} = $val;
+    return
+}
+sub set_sspd_amb {
+    my ($self, $val) = @_;
+    $self->{_sspd_amb} = $val;
+    return
+}
+sub set_E0{
+    my ($self, $val) = @_;
+    $self->{_E0} = $val;
+    return
+}
+sub set_ground_plane{
+    my ($self, $val) = @_;
+    $self->{_ground_plane}=$val;
+    return;
 }
 
 sub get_kk {
