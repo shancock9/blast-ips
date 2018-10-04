@@ -760,24 +760,29 @@ sub alpha_integral {
     }
     elsif ( $symmetry == 2 && $gamma == 7) {
 
-        my $delta    = 1.e-10;
-        my $gamma_lo = $gamma - $delta; 
-        my @ret_lo =
-          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta );
-        my ( $alpha_lo, $err_lo, $it_lo, $alpha_trap_lo, $err0_lo ) = @ret_lo;
-	
- 	# use the following correlation to correct for the shift:
-	#    alpha*(gamma-1)*sqrt(gamma+1) = about constant
-        my $factor =
-          ( $gamma_lo - 1 ) /
-          ( $gamma - 1 ) *
-          sqrt( ( $gamma_lo + 1 ) / ( $gamma + 1 ) );
-        my $alpha = $alpha_lo * $factor;
-        my $alpha_trap = $alpha_trap_lo * $factor;
-        return
-          wantarray
-          ? ( $alpha, $err_lo, $it_lo, $alpha_trap, $err0_lo )
-          : $alpha;
+        # use the exact result for this case
+        my $coef = coef( $gamma, $symmetry );
+        my $alpha = 0.5 * $coef;
+        return wantarray ? ( $alpha, 0, 0, $alpha, 0 ) : $alpha;
+## OLD METHOD; to be deleted
+##        my $delta    = 1.e-10;
+##        my $gamma_lo = $gamma - $delta; 
+##        my @ret_lo =
+##          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta );
+##        my ( $alpha_lo, $err_lo, $it_lo, $alpha_trap_lo, $err0_lo ) = @ret_lo;
+##	
+## 	# use the following correlation to correct for the shift:
+##	#    alpha*(gamma-1)*sqrt(gamma+1) = about constant
+##        my $factor =
+##          ( $gamma_lo - 1 ) /
+##          ( $gamma - 1 ) *
+##          sqrt( ( $gamma_lo + 1 ) / ( $gamma + 1 ) );
+##        my $alpha = $alpha_lo * $factor;
+##        my $alpha_trap = $alpha_trap_lo * $factor;
+##        return
+##          wantarray
+##          ? ( $alpha, $err_lo, $it_lo, $alpha_trap, $err0_lo )
+##          : $alpha;
     }
     else {
 

@@ -23,7 +23,7 @@ package Blast::IPS::AlphaTable;
 
 # This module provides a routine 'alpha_interpolate' which returns an accurate
 # value of the similarity parameter alpha for the three symmetries and
-# gamma between 1.1 and 7.
+# gamma up to 7.
 
 use strict;
 use warnings;
@@ -699,7 +699,8 @@ BEGIN {
             [ 6.7,          0.030158700569,  9.47e-16, 6.74e-12 ],
             [ 6.8,          0.029382330740,  9.3e-16,  5.15e-12 ],
             [ 6.9,          0.028638382976,  1.01e-15, 8.29e-13 ],
-            [ 7,            0.027925268033,  4.68e-16, 0 ],
+            ##[ 7,            0.027925268033,  4.68e-16, 0 ],
+            [ 7,            0.02792526803190925, 0, 0],
         ],
     ];
 
