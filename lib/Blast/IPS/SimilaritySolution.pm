@@ -661,10 +661,11 @@ sub _lookup_theta_profile {
             $DR = log( $rlast / $r );
         }
 
-        # These tolerances should be set pretty tight. But some non-convergence
-        # messages may occur even when the root is found fairly accurately.
-        my $tolf = 1.e-8 * $dr;         ##abs( $rhi - $rlo );
-        my $tolF = 1.e-8 * abs($DR);    ##abs( $FF_hi - $FF_lo );
+	# These tolerances should be set pretty tight. But some
+	# non-convergence messages may occur even when the root is found
+	# fairly accurately.
+        my $tolf = 1.e-8 * $dr;
+        my $tolF = 1.e-8 * abs($DR);
 
         my $tolx = 1.e-12 * abs( $xhi - $xlo );
         my $tolX = 1.e-12 * abs( $Xhi - $Xlo );
@@ -735,8 +736,11 @@ sub _lookup_theta_profile {
 
 sub alpha_integral {
 
-    # Evaluate the energy integral to obtain the parameter alpha
-    my ( $self, $tol, $itmax, $tiny_theta ) = @_;
+    # Evaluate the energy integral to obtain the parameter alpha.
+    # Normally the best way to get alpha is to interpolate from the
+    # table of values in AlphaTable.pm.  But this routine can
+    # get alpha by direct integration.
+    my ( $self, $tol, $itmax, $tiny_theta, $verbose ) = @_;
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
 
@@ -746,10 +750,12 @@ sub alpha_integral {
         my $delta    = 1.e-8;
         my $gamma_lo = $gamma - $delta;
         my @ret_lo =
-          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta );
+          alpha_integral_raw( $symmetry, $gamma_lo, $tol, $itmax, $tiny_theta,
+            $verbose );
         my $gamma_hi = $gamma + $delta;
         my @ret_hi =
-          alpha_integral_raw( $symmetry, $gamma_hi, $tol, $itmax, $tiny_theta );
+          alpha_integral_raw( $symmetry, $gamma_hi, $tol, $itmax, $tiny_theta,
+            $verbose );
         my ( $alpha_lo, $err_lo, $it_lo, $alpha_trap_lo, $err0_lo ) = @ret_lo;
         my ( $alpha_hi, $err_hi, $it_hi, $alpha_trap_hi, $err0_hi ) = @ret_hi;
         my $alpha      = ( $alpha_lo + $alpha_hi ) / 2;
@@ -770,14 +776,14 @@ sub alpha_integral {
     else {
 
         return alpha_integral_raw( $symmetry, $gamma, $tol, $itmax,
-            $tiny_theta );
+            $tiny_theta, $verbose );
     }
 }
 
 sub alpha_integral_raw {
 
     # Evaluate the energy integral to obtain the parameter alpha
-    my ( $symmetry, $gamma, $tol, $itmax, $tiny_theta ) = @_;
+    my ( $symmetry, $gamma, $tol, $itmax, $tiny_theta, $verbose ) = @_;
 
     # tol = stopping tolerance on absolute value of alpha
     $tol = 1.e-13;
@@ -800,14 +806,6 @@ sub alpha_integral_raw {
     my ( $alpha, $err );
     my $it;
 
-    # Patch for gamma=7 spherical symmetry
-    # We cannot evaluate at gamma exactly 7, so we reduce gamma slightly
-    if ( $symmetry == 2 && $gamma == 7 ) { $gamma -= $tol / 100 }
-
-    # Patch for gamma=2:
-    # in case the functions cannot handle gamma=2, we reduce gamma slightly
-    if ( $gamma == 2 ) { $gamma -= $tol / 100 }
-
     my $pow = $symmetry + 1;
 
     # Get the leading coefficient
@@ -819,10 +817,8 @@ sub alpha_integral_raw {
         my ($x) = @_;
         my ( $r, $prat, $urat, $rhorat, $f ) =
               vn_funcs( $x, $gamma, $symmetry );
-        #my $r = rrat( $x, $gamma, $symmetry );
         my $V = $r**$pow;
         if ( $V > 1 ) { $V = 1 }
-        #my $f = fofx( $x, $gamma, $symmetry );
         return [ $V, $f, $x, 0 ];
     };
 
@@ -862,7 +858,7 @@ sub alpha_integral_raw {
         $alpha = $coef * $rxy->[-1]->[1];
 
         $err = ( $it > 0 ) ? abs( $alpha - $alpha_last ) : 0;
-        print "$it\t$alpha\t$err\n";
+        print "$it\t$alpha\t$err\n" if ($verbose);
         last if ( $it > 1 && $err < $tol * $alpha );
 
         # Double the number of integration points and continue...
