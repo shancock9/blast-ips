@@ -766,7 +766,7 @@ sub alpha_integral {
     elsif ( $symmetry == 2 && $gamma == 7 ) {
 
         # use the exact result for this case
-        my $coef = coef( $gamma, $symmetry );
+        my $coef = vn_coef( $gamma, $symmetry );
         my $alpha = 0.5 * $coef;
         return wantarray ? ( $alpha, 0, 0, $alpha, 0 ) : $alpha;
     }
@@ -806,7 +806,7 @@ sub alpha_integral_raw {
     my $pow = $symmetry + 1;
 
     # Get the leading coefficient
-    my $coef = coef( $gamma, $symmetry );
+    my $coef = vn_coef( $gamma, $symmetry );
 
     my $get_values = sub {
 
@@ -949,7 +949,7 @@ sub alpha_integral_raw {
 # term with other similar terms, or by comparison with ref 1 for the
 # special case of spherical symmetry.
 
-sub coef {
+sub vn_coef {
 
     # Leading coefficient for the integral of f(x)
     my ( $gamma, $N ) = @_;
