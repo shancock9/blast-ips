@@ -346,10 +346,6 @@ sub make_reference_table {
 
         # get the profile values at a specific theta
         my ($theta) = @_;
-#        my $rrat = rrat( $theta, $gamma, $symmetry );
-#        my $prat = prat( $theta, $gamma, $symmetry );
-#        my $urat = urat( $theta, $gamma, $symmetry );
-#        my $rhorat = rhorat( $theta, $gamma, $symmetry );
         my ( $rrat, $prat, $urat, $rhorat, $fofx ) =
               vn_funcs( $theta, $gamma, $symmetry );
         return [ $theta, $rrat, $prat, $urat, $rhorat ];
@@ -949,7 +945,7 @@ sub alpha_integral_raw {
 
 sub coef {
 
-    # Leading coefficient
+    # Leading coefficient for the integral of f(x)
     my ( $gamma, $N ) = @_;
     my $pi = 4 * atan2( 1, 1 );
     my $c =
@@ -961,6 +957,14 @@ sub coef {
 sub vn_funcs {
 
     my ( $x, $gamma, $N ) = @_;
+
+    # Evaluate the functions needed for the wave profile for the
+    # von Neuman similarity solution.  They have many common factors,
+    # and usually we want them all, so it is efficient to evaluate them
+    # simultaneously.
+
+    # Safety check; avoid divide by zero. These should be caught and
+    # handled at a higher level.
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
 
     # Begin common factors
@@ -1052,6 +1056,15 @@ sub vn_funcs {
         fofx   => $fofx
       };
 }
+
+sub rrat {
+    my $rhash = vn_funcs(@_);
+    return $rhash->{rrat};
+}
+
+1;
+
+__END__
 
 ###################################################################
 # Old Versions follow; switch to calling the combined function routine
