@@ -970,7 +970,10 @@ sub vn_funcs {
     # together.
 
     # $x = von Neumann theta parameter
-    # $gamma = ideal gas gamma
+    # $gamma = ideal gas gamma 
+    #          gamma > 1 
+    #          gamma < 7 for spherical symmetry (N=2)
+    #          (The void case gamma>=7 is not handled by this routine)
     # $N = symmetry (0,1, or 2)
     # $want defines which variables to return:
     #  'r'  or 'R' - just return normalized radius
@@ -981,30 +984,39 @@ sub vn_funcs {
     #  undef or '*' - return (r,p,u,rho) or ref to a hash (see below)
     #          (for calls to get the whole profile)
 
-    # Safety check; avoid divide by zero. These should be caught and
+    return if ( $gamma <= 1 );
+    return unless ( $N == 0 || $N == 1 || $N == 2 );
+
+    # Safety check to avoid divide by zero. These should be caught and
     # handled at a higher level.
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
 
     if (!defined($want)) {$want = '*'}
     else {$want = uc $want}
 
-    # Begin common factors
-
+    # Beginning of common factors
+    my $Nm1       = $N - 1;
+    my $Np1       = $N + 1;
     my $Np3       = $N + 3;
-    my $pcom5     = 2 * $gamma + $N - 1;
-    my $tcom1_top = ( ( $N + 1 ) * ( 2 - $gamma ) * $x + $pcom5 );
-    my $tcom1_bot = ( ( 3 * $N + 1 ) - ( $N - 1 ) * $gamma );
+    my $gammap1   = $gamma + 1;
+    my $gammam1   = $gamma - 1;
+    my $pcom5     = 2 * $gamma + $Nm1;
+    my $tcom1_top = ( $Np1* ( 2 - $gamma ) * $x + $pcom5 );
+    my $tcom1_bot = ( ( 3 * $N + 1 ) - $Nm1  * $gamma );
 
-    # shouldn't happen: avoid divide by zero at symmetry=2 gamma=7
-    if ( $tcom1_bot == 0 ) { return; }
+    if ( $tcom1_bot == 0 ) { 
+       # shouldn't happen: avoid divide by zero at symmetry=2 gamma=7
+       return; 
+    }
+
     my $tcom1 = $tcom1_top / $tcom1_bot;
-    my $tcom2 = ( $x + $gamma ) / ( 1 + $gamma );
+    my $tcom2 = ( $x + $gamma ) / $gammap1; 
     my $tcom3 = ( $x + 1 ) / 2;
-    my $pcom4 = ( $N + 1 ) * $gamma - $N + 1;
+    my $pcom4 = $Np1* $gamma - $Nm1; 
 
-    my $pcom1a = 1;    # density
-    my $pcom1b = 1;    # p and f
-    my $pcom1c = 1;    # r and u
+    my $pcom1a = 1;    # for density
+    my $pcom1b = 1;    # for p and f
+    my $pcom1c = 1;    # for r and u
     if ( $tcom1 != 1 ) {
         my $top =
           ( ( $N**2 + 2 * $N + 5 ) * $gamma**2 -
@@ -1015,59 +1027,38 @@ sub vn_funcs {
         $pcom1c = $top / ( $Np3 * $pcom5 * $pcom4 );
     }
 
-    # End common factors
+    # End of common factors
 
-    # rrat
-    my $t1d  = $x;
-    my $p1d  = ( $gamma - 1 ) / $pcom5;
-    my $t2d  = $tcom3;
+    # radius, r
+    my $p1d  = $gammam1 / $pcom5;
     my $p2d  = -2 / $Np3;
-    my $t3d  = $tcom2;
-    my $p3d  = ( $gamma + 1 ) / $pcom4;
-    my $t4d  = $tcom1;
+    my $p3d  = $gammap1 / $pcom4;
     my $p4d  = -$pcom1c;
-    my $rrat = $t1d**$p1d * $t2d**$p2d * $t3d**$p3d * $t4d**$p4d;
+    my $rrat = $x**$p1d * $tcom3**$p2d * $tcom2**$p3d * $tcom1**$p4d;
     if ( $want eq 'R' ) { return $rrat }
 
-    # fofx
-    # integrate this from x=0 to x=1
+    # f(x) : integrate this from x=0 to x=1 to get the energy factor
     my $p1e  = ( 3 * $N + 5 ) / $Np3;
-    my $t1e  = $tcom3;
     my $p2e  = ( -2 * $N * $gamma ) / $pcom4;
-    my $t2e  = $tcom2;
-    my $t3e  = $tcom1;
-    my $p3e  = $pcom1b;
-    my $fofx = $t1e**$p1e * $t2e**$p2e * $t3e**$p3e;
+    my $fofx = $tcom3**$p1e * $tcom2**$p2e * $tcom1**$pcom1b;
     if ( $want eq 'RF' ) { return ( $rrat, $fofx ) }
 
-    # rhorat
-    my $t1a    = $x;
-    my $p1a    = ( $N + 1 ) / $pcom5;
-    my $t2a    = $tcom2;
+    # density, rho
+    my $p1a    = $Np1/ $pcom5;
     my $p2a    = ( -2 * $N ) / $pcom4;
-    my $t3a    = $tcom1;
-    my $p3a    = $pcom1a;
-    my $rhorat = $t1a**$p1a * $t2a**$p2a * $t3a**$p3a;
+    my $rhorat = $x**$p1a * $tcom2**$p2a * $tcom1**$pcom1a;
 
-    # prat
-    my $t1b  = $tcom3;
-    my $p1b  = 2 * ( $N + 1 ) / $Np3;
-    my $t2b  = $tcom2;
+    # pressure, p
+    my $p1b  = 2 * $Np1/ $Np3;
     my $p2b  = ( -2 * $N * $gamma ) / $pcom4;
-    my $t3b  = $tcom1;
-    my $p3b  = $pcom1b;
-    my $prat = $t1b**$p1b * $t2b**$p2b * $t3b**$p3b;
+    my $prat = $tcom3**$p1b * $tcom2**$p2b * $tcom1**$pcom1b;
 
-    # urat
-    my $t1c  = $x;
-    my $p1c  = ( $gamma - 1 ) / $pcom5;
-    my $t2c  = $tcom3;
-    my $p2c  = ( $N + 1 ) / $Np3;
-    my $t3c  = $tcom2;
-    my $p3c  = -$N * ( $gamma - 1 ) / $pcom4;
-    my $t4c  = $tcom1;
+    # velocity, u
+    my $p1c  = $gammam1 / $pcom5;
+    my $p2c  = $Np1/ $Np3;
+    my $p3c  = -$N * $gammam1 / $pcom4;
     my $p4c  = -$pcom1c;
-    my $urat = $t1c**$p1c * $t2c**$p2c * $t3c**$p3c * $t4c**$p4c;
+    my $urat = $x**$p1c * $tcom3**$p2c * $tcom2**$p3c * $tcom1**$p4c;
 
     return wantarray
       ? ( $rrat, $prat, $urat, $rhorat )
@@ -1090,7 +1081,7 @@ sub rrat {
 __END__
 
 ###################################################################
-# Old Versions follow; switch to calling the combined function routine
+# Old Versions follow for reference
 ###################################################################
 
 sub OLD_rhorat {
