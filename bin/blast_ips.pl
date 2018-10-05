@@ -677,7 +677,7 @@ EOM
 =========================================================
 Main Menu - SI units.  Menu Commands are Case Insensitive
 =========================================================
-1. Settings:
+1. Basic Settings:
    S  symmetry.................... $symmetry_name{$symmetry}
    G  explosion on a ground plane? $ground_plane (g = $ground_factor)
    A  atmospheric Pressure, Pa.... $p_amb_str
@@ -687,18 +687,21 @@ Main Menu - SI units.  Menu Commands are Case Insensitive
    R  Range....................... $range_str
       scale dist. (g*E0/P0)$pstr... $dscale_str m 
 
-2. Use these commands to estimate E and/or R from other known quantities
-   RI             (Range, Impulse)->Energy
-   RP or RY*          (Range, OVP)->Energy        
-   RT                 (Range, TOA)->Energy
-   PI or YI*        (OVP, Impulse)->Energy, Range 
-   EP or EY*         (Energy, OVP)->Range         
-   ET                (Energy, TOA)->Range         
-   *use 'P' versions to enter overpressure, 'Y' for overpressure ratio
+2. Commands to estimate E and/or R from two quantities:
+   RI         (Range, Impulse)->Energy
+   RP             (Range, OVP)->Energy 
+   RY       (Range, OVP ratio)->Energy 
+   RT             (Range, TOA)->Energy
+   PI           (OVP, Impulse)->(Energy, Range)
+   YI     (OVP ratio, Impulse)->(Energy, Range)
+   EP            (Energy, OVP)->Range         
+   EY      (Energy, OVP ratio)->Range         
+   ET            (Energy, TOA)->Range         
 
-3. When E and R are defined, evaluate the solution:
-   C  Calculate blast parameters, given: R, E
+3. Other Operations: 
+   C Calculate blast parameters for the current value of Energy
    I show global Information 
+   F Files (read/write) ...
    Q exit program    D switch to dimensionless mode
 EOM
 #  Z Zoom  - view latest results, 1 screen per channel
@@ -713,6 +716,9 @@ EOM
 		$symmetry=$medium->{_symmetry};
                 $ground_plane = ask_ground_plane();
                 $medium->{_ground_plane}=$ground_plane;
+            }
+            elsif ( $ans eq 'F' ) {
+                query("Sorry, incomplete");
             }
             elsif ( $ans eq 'E' ) {
                 $ask_for_E0->();
@@ -812,11 +818,9 @@ EOM
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
 		$set_range_from_dscale->($x);
-                ##$range = $x * $dscale;
             }
             elsif ( $ans eq 'ET' || $ans eq 'TE' ) {
                 if ( !defined($E0) ) { $ask_for_E0->(); }
-                ##my $t = get_num("Enter toa, s:");
                 my $t = request_dimensional_value( 
                   "Enter toa, s:", 'T',undef,0);
                 next if ( $t <= 0 );
@@ -828,7 +832,6 @@ EOM
                 my $y    = exp($Y);
                 my $x    = exp($X);
 		$set_range_from_dscale->($x);
-                ##$range = $x * $dscale;
             }
             elsif ( $ans eq 'D' ) {
                 $return_selection = 'D';
