@@ -346,7 +346,7 @@ sub make_reference_table {
 
         # get the profile values at a specific theta
         my ($theta) = @_;
-        my ( $rrat, $prat, $urat, $rhorat, $fofx ) =
+        my ( $rrat, $prat, $urat, $rhorat ) =
               vn_funcs( $theta, $gamma, $symmetry );
         return [ $theta, $rrat, $prat, $urat, $rhorat ];
     };
@@ -523,7 +523,7 @@ sub _fill_profile {
 
             # Note that we are re-defining rrat to be correct for the
             # given theta value
-            ( $rrat, $prat, $urat, $rhorat, my $fofx ) =
+            ( $rrat, $prat, $urat, $rhorat, ) =
               vn_funcs( $x, $gamma, $symmetry );
             $uovr = $urat / $rrat if ( $rrat > 0 );
             $G = $rho_to_G->( $rhorat, $rrat, $prat );
@@ -691,7 +691,8 @@ sub _lookup_theta_profile {
         my $FF;
         my $ff;
         for ( $iter = 1 ; $iter <= $maxit ; $iter += 1 ) {
-            $rrat = rrat( $xx, $gamma, $symmetry );
+            #$rrat = rrat( $xx, $gamma, $symmetry );
+            $rrat = vn_funcs( $xx, $gamma, $symmetry,'R' );
             $ff = $rrat - $r;
 
             if ($use_log_search) {
@@ -811,8 +812,8 @@ sub alpha_integral_raw {
 
         # get the volume and integrand at a specific theta
         my ($x) = @_;
-        my ( $r, $prat, $urat, $rhorat, $f ) =
-              vn_funcs( $x, $gamma, $symmetry );
+        ##my ( $r, $prat, $urat, $rhorat, $f ) =
+        my ( $r, $f ) = vn_funcs( $x, $gamma, $symmetry, 'RF' );
         my $V = $r**$pow;
         if ( $V > 1 ) { $V = 1 }
         return [ $V, $f, $x, 0 ];
@@ -943,6 +944,11 @@ sub alpha_integral_raw {
 # Aerospace Studies, University of Toronto. Has the Von Neumann solution
 # extended to cylindrical and plane symmetry - but note a typo.
 
+# NOTE There is a typo in this report in the enregy function;
+# where '-N+1' should have been '+N-1'.  It can be found by comparing this
+# term with other similar terms, or by comparison with ref 1 for the
+# special case of spherical symmetry.
+
 sub coef {
 
     # Leading coefficient for the integral of f(x)
@@ -956,16 +962,31 @@ sub coef {
 
 sub vn_funcs {
 
-    my ( $x, $gamma, $N ) = @_;
+    my ( $x, $gamma, $N, $want ) = @_;
 
     # Evaluate the functions needed for the wave profile for the
     # von Neuman similarity solution.  They have many common factors,
-    # and usually we want them all, so it is efficient to evaluate them
-    # simultaneously.
+    # and often we want them all, so it is efficient to evaluate them
+    # together.
+
+    # $x = von Neumann theta parameter
+    # $gamma = ideal gas gamma
+    # $N = symmetry (0,1, or 2)
+    # $want defines which variables to return:
+    #  'r'  or 'R' - just return normalized radius
+    #          (for calls to setup grids)
+    #  'rf' or 'RF' - return (r, f) 
+    #          where r=normalized radius and f is the energy function 
+    #          (for calls during integration)
+    #  undef or '*' - return (r,p,u,rho) or ref to a hash (see below)
+    #          (for calls to get the whole profile)
 
     # Safety check; avoid divide by zero. These should be caught and
     # handled at a higher level.
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
+
+    if (!defined($want)) {$want = '*'}
+    else {$want = uc $want}
 
     # Begin common factors
 
@@ -996,6 +1017,29 @@ sub vn_funcs {
 
     # End common factors
 
+    # rrat
+    my $t1d  = $x;
+    my $p1d  = ( $gamma - 1 ) / $pcom5;
+    my $t2d  = $tcom3;
+    my $p2d  = -2 / $Np3;
+    my $t3d  = $tcom2;
+    my $p3d  = ( $gamma + 1 ) / $pcom4;
+    my $t4d  = $tcom1;
+    my $p4d  = -$pcom1c;
+    my $rrat = $t1d**$p1d * $t2d**$p2d * $t3d**$p3d * $t4d**$p4d;
+    if ( $want eq 'R' ) { return $rrat }
+
+    # fofx
+    # integrate this from x=0 to x=1
+    my $p1e  = ( 3 * $N + 5 ) / $Np3;
+    my $t1e  = $tcom3;
+    my $p2e  = ( -2 * $N * $gamma ) / $pcom4;
+    my $t2e  = $tcom2;
+    my $t3e  = $tcom1;
+    my $p3e  = $pcom1b;
+    my $fofx = $t1e**$p1e * $t2e**$p2e * $t3e**$p3e;
+    if ( $want eq 'RF' ) { return ( $rrat, $fofx ) }
+
     # rhorat
     my $t1a    = $x;
     my $p1a    = ( $N + 1 ) / $pcom5;
@@ -1025,41 +1069,20 @@ sub vn_funcs {
     my $p4c  = -$pcom1c;
     my $urat = $t1c**$p1c * $t2c**$p2c * $t3c**$p3c * $t4c**$p4c;
 
-    # rrat
-    my $t1d  = $x;
-    my $p1d  = ( $gamma - 1 ) / $pcom5;
-    my $t2d  = $tcom3;
-    my $p2d  = -2 / $Np3;
-    my $t3d  = $tcom2;
-    my $p3d  = ( $gamma + 1 ) / $pcom4;
-    my $t4d  = $tcom1;
-    my $p4d  = -$pcom1c;
-    my $rrat = $t1d**$p1d * $t2d**$p2d * $t3d**$p3d * $t4d**$p4d;
-
-    # fofx
-    # integrate this from x=0 to x=1
-    my $p1e  = ( 3 * $N + 5 ) / $Np3;
-    my $t1e  = $tcom3;
-    my $p2e  = ( -2 * $N * $gamma ) / $pcom4;
-    my $t2e  = $tcom2;
-    my $t3e  = $tcom1;
-    my $p3e  = $pcom1b;
-    my $fofx = $t1e**$p1e * $t2e**$p2e * $t3e**$p3e;
-
     return wantarray
-      ? ( $rrat, $prat, $urat, $rhorat, $fofx )
+      ? ( $rrat, $prat, $urat, $rhorat )
       : {
-        rrat   => $rrat,
-        prat   => $prat,
-        urat   => $urat,
-        rhorat => $rhorat,
-        fofx   => $fofx
+        r   => $rrat,
+        p   => $prat,
+        u   => $urat,
+        rho => $rhorat,
+        f   => $fofx
       };
 }
 
 sub rrat {
-    my $rhash = vn_funcs(@_);
-    return $rhash->{rrat};
+    # To be removed: for compatability with older calls
+    return vn_funcs(@_,'r');
 }
 
 1;
@@ -1070,7 +1093,7 @@ __END__
 # Old Versions follow; switch to calling the combined function routine
 ###################################################################
 
-sub rhorat {
+sub OLD_rhorat {
     my ( $x, $gamma, $N ) = @_;
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
 
@@ -1102,7 +1125,7 @@ sub rhorat {
     return $rhorat;
 }
 
-sub prat {
+sub OLD_prat {
     my ( $x, $gamma, $N ) = @_;
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1b = ( $x + 1 ) / 2;
@@ -1131,7 +1154,7 @@ sub prat {
     return $prat;
 }
 
-sub urat {
+sub OLD_urat {
     my ( $x, $gamma, $N ) = @_;
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1c = $x;
@@ -1166,7 +1189,7 @@ sub urat {
     return $urat;
 }
 
-sub rrat {
+sub OLD_rrat {
     my ( $x, $gamma, $N ) = @_;
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
     my $t1d = $x;
@@ -1202,7 +1225,7 @@ sub rrat {
     return $rrat;
 }
 
-sub fofx {
+sub OLD_fofx {
     my ( $x, $gamma, $N ) = @_;
     if ( $gamma == 2 || $gamma == 7 && $N == 2 ) { $gamma -= 1.e-10 }
 
