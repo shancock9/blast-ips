@@ -160,21 +160,6 @@ EOM
     $self->{_rho_amb}      = $rho_amb;
     $self->{_ground_plane} = $ground_plane;
     $self->{_E0}           = $E0;
-
-    ##################################################
-    # FIXME: To be deleted.  Need to compute on the fly because
-    # any of p, rho, gamma can change after creating the object
-    my $A_amb = $p_amb / $rho_amb**$gamma;
-    $self->{_A_amb} = $A_amb;
-
-    # Define a reference value for A which is the ambient value if positive and
-    # is 1 if A_amb is zero. This allows a reference value to be used
-    # for all types of runs.  
-    my $A_ref    = $A_amb;
-    if ($A_ref<=0) { $A_ref    = 1 }
-    $self->{_A_ref} = $A_ref;
-    ##################################################
-
     return $self;
 }
 
@@ -183,11 +168,15 @@ sub get_A_parameters {
     my $p_amb   = $self->{_p_amb};
     my $rho_amb = $self->{_rho_amb};
     my $gamma   = $self->{_gamma};
+
+
+    # This has to be computed when needed because the user could change
+    # one of the dependent values at any time
     my $A_amb   = $p_amb / $rho_amb**$gamma;
 
-    # Define a reference value for A which is the ambient value if positive and
-    # is 1 if A_amb is zero. This allows a reference value to be used
-    # for all types of runs.
+    # Define a reference value for A which is the ambient value if positive
+    # and is 1 if A_amb is zero. This allows a reference value to be used 
+    # even for zero ambient pressure.
     my $A_ref = $A_amb;
     if ( $A_ref <= 0 ) { $A_ref = 1 }
     return ( $A_amb, $A_ref );
@@ -317,11 +306,6 @@ sub ushock_from_pabs {
         }
         $ushockx = $ushock;
 
-  	# OLD:WRONG
-        # my $dpdu=($gamma+1)*$rho_b*$upshock;
-        # But dovp_du=dpdu/p_amb=infinity so du/dovp=0
-        # $dup_dovp = 0;
-
         $dup_dovp =
           ( 1 + ( $sspd_amb / $ushock )**2 ) / ( 2 * $rho_amb * $ushock );
         $rhoshock = ( $gamma + 1 ) / ( $gamma - 1 ) * $rho_amb;
@@ -406,8 +390,7 @@ sub pdc_from_sigma {
     my $sspd_amb = $self->{_sspd_amb};
     my $rho_amb  = $self->{_rho_amb};
     my $p_amb    = $self->{_p_amb};
-    my $A_amb    = $self->{_A_amb};
-    my $A_ref    = $self->{_A_ref};
+    my ( $A_amb, $A_ref)=$self->get_A_parameters();
 
     # We have
     #  sspd=$sspd_amb+$sspdx
@@ -473,7 +456,7 @@ sub lnArat_from_shock_ovp {
     my $sspd_amb = $self->{_sspd_amb};
     my $rho_amb  = $self->{_rho_amb};
     my $p_amb    = $self->{_p_amb};
-    my $A_ref    = $self->{_A_ref};
+    my ( $A_amb, $A_ref)=$self->get_A_parameters();
 
     my $pabs    = $ovp + $p_amb;
     my $top     = ( $gamma + 1 ) * $pabs + ( $gamma - 1 ) * $p_amb;
@@ -501,7 +484,7 @@ sub sigma_from_ovp {
     my $gamma    = $self->{_gamma};
     my $sspd_amb = $self->{_sspd_amb};
     my $p_amb = $self->{_p_amb};
-    my $A_ref    = $self->{_A_ref};
+    my ( $A_amb, $A_ref)=$self->get_A_parameters();
     my $pabs     = $ovp + $p_amb;
     my $A        = $A_ref * exp($lnArat);
     my $rho = ( $pabs / $A )**( 1 / $gamma );
@@ -621,15 +604,11 @@ sub odrat_from_sigma {
     return ($odrat);
 }
 
-## TO BE DELETED
 sub Alim_from_Hmax {
     my ( $self, $HH_max ) = @_;
     my $gamma    = $self->{_gamma};
     my $rho_amb  = $self->{_rho_amb};
     my $sspd_amb = $self->{_sspd_amb};
-
-    # FIXME: I also found this equation: which is right????
-    #my $Alim = sqrt( 4 * $HH_max / ( $sspd_amb * ( $gamma + 1 ) ) );
 
     # Miles writes I+=($k+1)/2 * A * A * rho * sspd * Rd**2 / R
     # where Rd=(E0/P0)^1/3 and k=gamma-1)/2 -> k+1=(gamma+1)/2
@@ -641,14 +620,11 @@ sub Alim_from_Hmax {
     # I+ R =($gamma+1)/4 * A * A * rho * sspd * Rd**2 = Hmax rho
     # A**2 = ( 4* Hmax / (sspd * Rd**2 * (gamma+1))
 
-    #my $Alim = sqrt( 4 * $HH_max * $gamma / ( $rho_amb * ( $gamma + 1 ) ) );
-    # FIXME: I also found this equation: which is right????
-    # This is for Rd=1
     my $Alim=1.1111111111;
     if ( $sspd_amb > 0 ) {
         $Alim = 4 * $HH_max / ( $sspd_amb * ( $gamma + 1 ) );
         if ( $Alim < 0 ) { $Alim = 0 }
-        else { $Alim = sqrt( 4 * $HH_max / ( $sspd_amb * ( $gamma + 1 ) ) ); }
+        else { $Alim = sqrt($Alim) }
     }
     return ($Alim);
 }
@@ -666,28 +642,131 @@ sub miles_AB {
     return ( $A, $B );
 }
 
-sub sadek_dlnp_dlnr_from_dpdr {
-    my ( $medium, $lambda, $ovp, $slope ) = @_;
-    return $medium->sadek_dlnp_dlnr_from_slope( $lambda, $ovp, $slope, 0,
-        0 );
-}
-sub sadek_dlnp_dlnr_from_dudr {
-    my ( $medium, $lambda, $ovp, $slope ) = @_;
-    return $medium->sadek_dlnp_dlnr_from_slope( $lambda, $ovp, $slope, 1,
-        0 );
-}
-sub sadek_dlnp_dlnr_from_dpdt {
-    my ( $medium, $lambda, $ovp, $slope ) = @_;
-    return $medium->sadek_dlnp_dlnr_from_slope( $lambda, $ovp, $slope, 0,
-        1 );
-}
-sub sadek_dlnp_dlnr_from_dudt {
-    my ( $medium, $lambda, $ovp, $slope ) = @_;
-    return $medium->sadek_dlnp_dlnr_from_slope( $lambda, $ovp, $slope, 1,
-        1 );
+
+#############################
+# Shock front slope functions
+#############################
+
+sub shock_front_values_from_ovp {
+
+    # This will become the main method for calculating shock front vaules
+
+    my ( $self, $ovp ) = @_;
+
+    # Given:
+    #   ovp = overpressure
+    #
+    # Compute some shock front values and return in a hash ref
+    #
+    # FIXME: some of these expressions would still benefit from Taylor series
+    # expansions for small ovp
+
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $p_amb    = $self->{_p_amb};
+    my $sspd_amb = $self->{_sspd_amb};
+    my $rho_amb  = $self->{_rho_amb};
+
+    my $pabs = $ovp + $p_amb;
+    if ( $pabs < 0 ) {
+        print STDERR "Negative abs p in shock front values\n";
+        return;
+    }
+
+    # Compute some shock front properties ...
+
+    # D = Shock speed D
+    # D_minus_c0 = D - c0
+    my ( $D, $D_minus_c0 ) = ( 0, 0 );
+
+    if ( $p_amb > 0 ) {
+
+        my $ovprat = $ovp / $p_amb;
+        my $term   = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
+        my $mshock = sqrt( 1 + $term );
+        $D          = $sspd_amb * $mshock;
+        $D_minus_c0 = $D - $sspd_amb;
+
+        # Taylor series expansion of the square root for small overpressures
+        # Switch at a point which keeps error < about 1.e-17
+        if ( $term < 1.e-4 ) {
+            $D_minus_c0 = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
+        }
+    }
+    else {
+
+        # since p_amb=0 we have a strong shock
+        my $gg = 2 / ( $gamma + 1 );
+        if ( $pabs > 0 && $rho_amb > 0 ) {
+            $D = sqrt( $pabs / ( $gg * $rho_amb ) );
+            ##$up = $gg * $D;
+        }
+    }
+
+    # up = shock particle velocity
+    my $up = $ovp / ( $rho_amb * $D );
+
+    # dup/dovp along shock front
+    my $dudp_sf =
+      $sspd_amb *
+      $sspd_amb / $gamma / $D *
+      ( 1 - ( $gamma + 1 ) / 4 * $up / $D );
+
+    # density ratio and density
+    my $top = ( $gamma + 1 ) * $pabs + ( $gamma - 1 ) * $p_amb;
+    my $bot = ( $gamma - 1 ) * $pabs + ( $gamma + 1 ) * $p_amb;
+    my $rhorat = ( $bot > 0 ) ? $top / $bot : 1;
+    my $rho = $rho_amb * $rhorat;
+
+    # Sound speed
+    my $rhocsq  = $gamma * $pabs;
+    my $sspd_sq = $rhocsq / $rho;
+    if ( $sspd_sq < 0 ) { $sspd_sq = 0 }
+    my $aa = sqrt($sspd_sq);
+
+    my $sspdx = ( $aa - $sspd_amb );
+    my $sigma = ( 2 / ( $gamma - 1 ) ) * $sspdx;
+
+    my $rhash = {
+        up            => $up,
+	rho           => $rho,
+        rhorat        => $rhorat,
+        ushock        => $D,
+        ushockx       => $D_minus_c0,
+        sspd          => $aa,
+        sigma         => $sigma,
+	ovp           => $ovp,
+        dudp_sf       => $dudp_sf,
+    };
+
+    return $rhash;
 }
 
-sub sadek_dlnp_dlnr_from_slope {
+sub dYdX_from_dpdr {
+    my ( $medium, $lambda, $ovp, $slope ) = @_;
+    return $medium->dYdX_from_profile_slopes( $lambda, $ovp,
+        $slope, 0, 0 );
+}
+
+sub dYdX_from_dudr {
+    my ( $medium, $lambda, $ovp, $slope ) = @_;
+    return $medium->dYdX_from_profile_slopes( $lambda, $ovp,
+        $slope, 1, 0 );
+}
+
+sub dYdX_from_dpdt {
+    my ( $medium, $lambda, $ovp, $slope ) = @_;
+    return $medium->dYdX_from_profile_slopes( $lambda, $ovp,
+        $slope, 0, 1 );
+}
+
+sub dYdX_from_dudt {
+    my ( $medium, $lambda, $ovp, $slope ) = @_;
+    return $medium->dYdX_from_profile_slopes( $lambda, $ovp,
+        $slope, 1, 1 );
+}
+
+sub dYdX_from_profile_slopes {
 
     my ( $medium, $lambda, $ovp, $slope, $ipu, $irt ) = @_;
 
@@ -823,7 +902,9 @@ sub sadek_dlnp_dlnr_from_slope {
     return ($dlnp_dlnr_sf);
 }
 
-sub sadek_slopes_from_dlnp_dlnr {
+sub OLD_sadek_slopes_from_dlnp_dlnr {
+
+    # NOTE: This is being replaced with 'shock_front_values_from_dYdX' 
 
     my ( $medium, $lambda, $ovp, $dlnp_dlnr_sf ) = @_;
 
@@ -928,15 +1009,15 @@ sub sadek_slopes_from_dlnp_dlnr {
     return wantarray ? ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) : $dpdr_t;
 }
 
-sub shock_front_values {
+sub profile_slopes_from_dYdX {
 
-    my ( $self, $X, $Y, $dYdX ) = @_;
+    my ( $self, $lambda, $ovp, $dYdX ) = @_;
 
     # Given:
     #   symmetry = (0,1,2) 
     #   gamma
-    #   X = ln(range)
-    #   Y = ln(ovp) = ln(overpressure ratio) 
+    #   lambda = range
+    #   ovp = overpressure
     #   dYdX = d(ln P)/d(ln R) along shock front
     #
     # Compute some shock front values and return in a hash ref
@@ -950,29 +1031,172 @@ sub shock_front_values {
     my $sspd_amb = $self->{_sspd_amb};
     my $rho_amb  = $self->{_rho_amb};
 
-    my $lambda = exp($X);
-    my $ovprat = exp($Y);
-    my $ovp    = $p_amb * $ovprat;
-    my $pabs   = $ovp + $p_amb;
+    # Compute some shock front properties ...
+    my $rhash = $self->shock_front_values_from_ovp($ovp);
 
-    if ( $pabs < 0 ) { print STDERR "Negative abs p in sadek\n"; return }
+    my $D          = $rhash->{ushock};
+    my $D_minus_c0 = $rhash->{ushockx};
+    my $up         = $rhash->{up};
+    my $aa         = $rhash->{sspd};
+    my $rho        = $rhash->{rho};
+    my $dudp_sf    = $rhash->{dudp_sf};
+    my $sspd_sq    = $aa**2;
+    my $rhocsq     = $rho * $sspd_sq;
+    my $sigma      = $rhash->{sigma};
+    
+
+    # Compute the slopes of the wave profile at the shock front ...
+    #   dp/dr, du/dr, dp/dt, du/dt
+
+    # Reference for slopes:
+    #  INITIAL DECAY OF FLOW PROPERTJES OF PLANAR, CYLINDRJCAL AND SPHERICAL
+    #  BLAST WAVES
+    #  H. S. I. Sadek and J. J. Gott1ieb
+    #  UTIAS Technica1 Note No. 244, CN ISSN 0082-5263
+    #  October, 1983
+    #  See eq 3.29, p24 of pdf
+
+    # Solve
+    #      det * dpdr|t + (D-u)D dpdr|s + rho*a**2 * D * dudr|s +
+    #              N*rho*a**2 * up * (D-u)/r = 0
+    # where
+    #       dudr|s = dpdr|s * dudp_s
+    # So
+    #
+    #      det * dpdr|t + [ (D-u)D + rho*a**2 * D *dudp_s ]*dpdr|s +
+    #              N*rho*a**2 * up * (D-u)/r = 0
+    # Or
+    #      det * dpdr|t + C1 * dpdr|s + C2 = 0
+    # or
+    #      dpdr|s = [- det * dpdr|t + C2 ] / C1
+
+    # And in general, with different values for sign, C1 and C2:
+    #
+    #      dpdr|s = [ $sign * det * slope + C2 ] / C1
+    #
+    my ( $dpdr_t, $dudr_t, $dpdt_r, $dudt_r ) = ( 0, 0, 0, 0 );
+
+    ###########################################################
+    # FIXME: expand for small ovp
+    ###########################################################
+    # Roundoff control for det...
+    # sspd_sq = $gamma*$pabs/$rho = $gamma*($p_amb+$ovp)/$rho 
+    #    = $sspd_amb_sq+$gamma*$ovp/rho;
+    # sspd_sq - sspd_amb_sq = gamma*$ovp/$rho
+    # (sspd-sspd_amb)*(sspd+sspd_amb)=gamma*ovp/rho
+    # ... so ..
+    # sspdx == sspd-sspd_amb=gamma*ovp/rho/(sspd+sspd_amb)
+    ##my $aa_minus_c0 = $gamma * $ovp / $rho / ( $aa + $sspd_amb );
+    my $aa_minus_c0 = $aa - $sspd_amb;
+    ###########################################################
+
+    my $D_minus_u = $D - $up;
+    #  $det = $sspd_sq - $D_minus_u**2;
+    my $det = ( $aa + $D_minus_u ) * ( $aa_minus_c0 - $D_minus_c0 + $up );
+    if ( $det != 0 ) {
+
+        my $D_minus_u = $D - $up;
+        my $dpdt_sf   = $D * $dYdX * $ovp / $lambda;
+        my $dudt_sf   = $dudp_sf * $dpdt_sf;
+        $dpdr_t =
+          -( $D_minus_u * $dpdt_sf +
+              $rhocsq * $dudt_sf +
+              $symmetry * $rhocsq * $up * $D_minus_u / $lambda ) /
+          $det;
+
+        $dudr_t =
+          -( $D_minus_u * $dudt_sf +
+              $dpdt_sf / $rho +
+              $symmetry * $sspd_sq * $up / $lambda ) /
+          $det;
+
+        $dpdt_r =
+          ( ( $sspd_sq + $up * $D_minus_u ) * $dpdt_sf +
+              $rhocsq * $D * $dudt_sf +
+              $symmetry * $rhocsq * $up * $D * $D_minus_u / $lambda ) /
+          $det;
+
+        $dudt_r =
+          ( ( $sspd_sq + $up * $D_minus_u ) * $dudt_sf +
+              $D / $rho * $dpdt_sf +
+              $symmetry * $sspd_sq * $up * $D / $lambda ) /
+          $det;
+
+    }
+
+    my $Sigma =
+      ( $symmetry == 0 ) ? $sigma : $sigma * $lambda**( $symmetry / 2 );
+
+    $rhash->{dpdr_t} = $dpdr_t; 
+    $rhash->{dudr_t} = $dudr_t; 
+    $rhash->{dpdt_r} = $dpdt_r; 
+    $rhash->{dudt_r} = $dudt_r; 
+    $rhash->{Sigma}  = $Sigma; 
+
+    return $rhash;
+}
+
+sub OLD_shock_front_values_from_dYdX {
+
+    # This has been replaced with two routines
+    my ( $self, $lambda, $ovp, $dYdX ) = @_;
+
+    # Given:
+    #   symmetry = (0,1,2) 
+    #   gamma
+    #   lambda = range
+    #   ovp = overpressure
+    #   dYdX = d(ln P)/d(ln R) along shock front
+    #
+    # Compute some shock front values and return in a hash ref
+    #
+    # FIXME: some of these expressions would benefit from Taylor series
+    # expansions for small ovp
+
+    my $symmetry = $self->{_symmetry};
+    my $gamma    = $self->{_gamma};
+    my $p_amb    = $self->{_p_amb};
+    my $sspd_amb = $self->{_sspd_amb};
+    my $rho_amb  = $self->{_rho_amb};
+
+    my $pabs   = $ovp + $p_amb;
+    if ( $pabs < 0 ) {
+        print STDERR "Negative abs p in shock front values\n";
+        return;
+    }
 
     # Compute some shock front properties ...
 
     # D = Shock speed D
-    my $term     = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
-    my $mshock   = sqrt( 1 + $term );
-    my $D   = $sspd_amb * $mshock;
-    my $D_minus_c0  = $D - $sspd_amb;
+    # D_minus_c0 = D - c0
+    my ( $D, $D_minus_c0 ) = ( 0, 0 );
 
-    # Taylor series expansion of the square root for small overpressures
-    # Switch at a point which keeps error < about 1.e-17
-    if ( $term < 1.e-4 ) {
-        $D_minus_c0 = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
+    if ( $p_amb > 0 ) {
+
+        my $ovprat = $ovp / $p_amb;
+        my $term       = $ovprat * ( $gamma + 1 ) / ( 2 * $gamma );
+        my $mshock     = sqrt( 1 + $term );
+        $D          = $sspd_amb * $mshock;
+        $D_minus_c0 = $D - $sspd_amb;
+
+        # Taylor series expansion of the square root for small overpressures
+        # Switch at a point which keeps error < about 1.e-17
+        if ( $term < 1.e-4 ) {
+            $D_minus_c0 = $term * ( 0.5 + $term * ( -0.125 + $term / 16 ) );
+        }
+    }
+    else {
+
+	# since p_amb=0 we have a strong shock
+        my $gg = 2 / ( $gamma + 1 );
+        if ( $pabs > 0 && $rho_amb > 0 ) {
+            $D = sqrt( $pabs / ( $gg * $rho_amb ) );
+            ##$up = $gg * $D;
+        }
     }
 
     # up = shock particle velocity
-    my $up = $ovprat * $p_amb / ( $rho_amb * $D );
+    my $up = $ovp / ( $rho_amb * $D );
 
     # dup/dovp along shock front
     my $dudp_sf =
@@ -1083,8 +1307,10 @@ sub shock_front_values {
         dpdt_r        => $dpdt_r,
         dudt_r        => $dudt_r,
         up            => $up,
-        density_ratio => $rhorat,
+	rho           => $rho,
+        rhorat        => $rhorat,
         ushock        => $D,
+        ushockx       => $D_minus_c0,
         sspd          => $aa,
 	sigma         => $sigma,
 	Sigma         => $Sigma,

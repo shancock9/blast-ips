@@ -1803,10 +1803,10 @@ sub wavefront {
     };
 
     # add some shock front values
-    #my $rsf_values= $self->shock_front_values( $X, $Y, $dYdX );
-    #my $rsf_values = shock_front_values($symmetry, $gamma, $X, $Y, $dYdX );
     my $medium=$self->{_medium};
-    my $rsf_values = $medium->shock_front_values($X, $Y, $dYdX );
+    #my $rsf_values = $medium->shock_front_values($X, $Y, $dYdX );
+    my $rsf_values =
+      $medium->profile_slopes_from_dYdX( exp($X), exp($Y), $dYdX );
     foreach my $key(keys %{$rsf_values}) {
 	$return_hash->{$key}=$rsf_values->{$key};
     }
