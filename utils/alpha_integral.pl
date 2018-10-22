@@ -49,12 +49,13 @@ foreach my $symmetry ( 0, 1, 2 ) {
     $fh_table->print("    [\n");
 
     my $idel       = 1;
-    my $igamma_max = 7000;
+    my $igamma_max = $symmetry == 2 ? 7000 : 11000;
     for ( my $igamma = 1001 ; $igamma <= $igamma_max ; $igamma += $idel ) {
         if ( $igamma >= 1010 ) { $idel = 10 }
         if ( $igamma >= 2000 ) { $idel = 20 }
         if ( $igamma >= 3000 ) { $idel = 50 }
         if ( $igamma >= 4000 ) { $idel = 100 }
+        if ( $igamma >= 7000 ) { $idel = 200 }
         my $gamma = $igamma / 1000;
 
         my $obj = Blast::IPS::SimilaritySolution->new(
