@@ -30,9 +30,11 @@ Reference:
 
 =cut
 
-    $rindex = Blast::IPS->get_table_index();
-
-    my $ntests = 0 + keys %{$rindex};
+    $rindex = Blast::IPS->get_index();
+    my $ntests =
+      @{ $rindex->[0] } +
+      @{ $rindex->[1] } +
+      @{ $rindex->[2] };    #0 + keys %{$rindex};
     plan tests => $ntests;
 }
 
@@ -42,22 +44,27 @@ my $VERBOSE = 0;
 my $err_stop = 0.1;
 
 print "symmetry\tgamma\tX\tY\n" if ($VERBOSE);
-foreach my $table_name ( keys %{$rindex} ) {
-    my $symmetry = $rindex->{$table_name}->{symmetry};
-    my $gamma    = $rindex->{$table_name}->{gamma};
+##foreach my $table_name ( keys %{$rindex} ) {
+##    my $symmetry = $rindex->{$table_name}->{symmetry};
+##    my $gamma    = $rindex->{$table_name}->{gamma};
+
+foreach my $symmetry(0..2) {
+    foreach my $item(@{$rindex->[$symmetry]}) {
+    my ($gamma, $table_name)=@{$item};
 
     # Create a table for this case
-    my $blast_table = Blast::IPS->new( 'table_name' => $table_name );
+    #my $blast_table = Blast::IPS->new( 'table_name' => $table_name );
+    my $blast_table = Blast::IPS->new( 'symmetry'=>$symmetry, 'gamma'=>$gamma );
     if ( !defined($blast_table) ) {
         die "missing table for sym=$symmetry, gamma=$gamma\n";
     }
-    my $table_name_check = $blast_table->get_table_name();
-    if ( $table_name ne $table_name_check ) {
-        die <<EOM;
-Asked for table '$table_name' but got '$table_name_check'
-gamma=$gamma, symmetry=$symmetry
-EOM
-    }
+##?    my $table_name_check = $blast_table->get_table_name();
+##?    if ( $table_name ne $table_name_check ) {
+##?        die <<EOM;
+##?Asked for table '$table_name' but got '$table_name_check'
+##?gamma=$gamma, symmetry=$symmetry
+##?EOM
+##?    }
 
     # Use the blast table value of alpha. Another test verifies that this
     # value is accurate.
@@ -111,5 +118,6 @@ EOM
     # The overpressure will be between 20 and 30 atmospheres for all tables
     # for the 10% error case
     ok( $ovp_stop > 20 && $ovp_stop < 30 );
+}
 }
 

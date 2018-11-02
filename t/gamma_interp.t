@@ -15,7 +15,7 @@ my $rgamma_table;
 
 INIT {
 
-    $rgamma_table = Blast::IPS::get_rgamma_table();
+    $rgamma_table = Blast::IPS::get_index();
 
     my $n0 = @{ $rgamma_table->[0] } - 2;
     my $n1 = @{ $rgamma_table->[1] } - 2;
@@ -78,7 +78,7 @@ foreach my $symmetry ( 0, 1, 2 ) {
               set_interpolation_points_with_gap( $igam, $ngam, $six );
 
             $rtable_mid =
-              Blast::IPS::_make_intermediate_gamma_table( $symmetry, $gamma,
+              Blast::IPS::_make_interpolated_gamma_table( $symmetry, $gamma,
                 $rilist_6, $rilist_4 );
             my $rerr =
               compare_tables( $rtable_mid, $blast_table_mid, $verbose );

@@ -57,37 +57,24 @@ use 5.006;
 our $VERSION = 0.1.1;
 
 use Carp;
+use Storable qw(dclone);
 
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
-use Blast::IPS::BlastInfo qw(get_blast_info);
-use Blast::IPS::EnergyTables;
-use Blast::IPS::ImpulseTables;
 use Blast::IPS::MathUtils qw(
   locate_2d
   polint
   set_interpolation_points
 );
 use Blast::IPS::Medium;
-use Blast::IPS::PzeroFit;
-use Blast::IPS::PzeroTail;
-use Blast::IPS::ShockTables;
-use Blast::IPS::ShockTablesIndex;
-use Blast::IPS::TailShockTables;
 use Blast::IPS::Utils qw( check_keys );
+use Blast::IPS::Data;
 
-my $rshock_tables_info = $Blast::IPS::ShockTablesIndex::rshock_tables_info;
-my $rshock_tables      = $Blast::IPS::ShockTables::rshock_tables;
-my $rpzero_fit         = $Blast::IPS::PzeroFit::rpzero_fit;
-my $rpzero_tail        = $Blast::IPS::PzeroTail::rpzero_tail;
-my $rimpulse_tables    = $Blast::IPS::ImpulseTables::rimpulse_tables;
-my $renergy_tables     = $Blast::IPS::EnergyTables::renergy_tables;
-my $rtail_shock_tables = $Blast::IPS::TailShockTables::rtail_shock_tables;
-my $rgamma_table;
-my %valid_input_keys; 
+my $rgamma_table = Blast::IPS::Data->get_index();
+my %valid_input_keys;
 
 BEGIN {
 
-    # Shock Table variable layout
+    # Shock Table variable layout scheme
     my $i = 0;
     use constant {
         I_X      => $i++,
@@ -128,106 +115,6 @@ BEGIN {
     );
 }
 
-INIT {
-
-    # Make an index table for searching gamma...
-
-    # Given the hash of info with data of the form:
-    #    table_name   => [ symmetry, gamma,  9.8e-7, 4000, ... ],
-    # Invert to make a lookup table of sorted gamma values of the form:
-    #     $rgamma->[symmetry]->[gamma, table name]
-    # This is needed for searching for a specific gamma value.
-    my $rtmp = [];
-    foreach my $key ( keys %{$rshock_tables_info} ) {
-        my $item = $rshock_tables_info->{$key};
-        my ( $symmetry, $gamma ) = @{$item};
-        if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
-            croak "Unexpected symmetry $symmetry in table $key of Blast::Table";
-        }
-        push @{ $rtmp->[$symmetry] }, [ $gamma, $key ];
-    }
-
-    foreach my $sym ( 0, 1, 2 ) {
-        my @sorted = sort { $a->[0] <=> $b->[0] } @{ $rtmp->[$sym] };
-
-        # We require a table of unique gamma values.
-        # If there are multiple tables for a given gamma, use the
-        # table with least error.
-        my @unique;
-        my ( $gamma_last, $key_last );
-        foreach my $item (@sorted) {
-            my ( $gamma, $key ) = @{$item};
-            if ( !$gamma_last || $gamma != $gamma_last ) {
-                push @unique, $item;
-                $gamma_last = $gamma;
-                $key_last   = $key;
-                next;
-            }
-            my $err_last = $rshock_tables_info->{$key_last}->[2];
-            my $err      = $rshock_tables_info->{$key}->[2];
-            next if ( $err_last < $err );
-            $unique[-1] = $item;
-        }
-
-        $rgamma_table->[$sym] = \@unique;
-    }
-
-    sub _merge_energy_tables {
-
-        # Merge the energy tables into the shock tables. The ShockTables and
-        # EnergyTables have the same X values in column 1 but they have been
-        # stored separately for flexibility.  The disadvantage is that we have
-        # to merge them and at the same time verify that the X values are still
-        # identical.
-        my ($table_name);
-        my @errors;
-        my $table_error = sub {
-            my ($msg) = @_;
-            print STDERR "Error merging table $table_name: $msg\n";
-            push @errors, $table_name;
-        };
-        foreach $table_name ( sort keys %{$rshock_tables} ) {
-            my $renergy_table = $renergy_tables->{$table_name};
-            my $rshock_table  = $rshock_tables->{$table_name};
-            my $num0          = @{$rshock_table};
-            my $num1          = @{$renergy_table};
-            my $rnew_table;
-
-            if ( $num0 != $num1 ) {
-                $table_error->("number of rows differ: $num0 != $num1");
-                next;
-            }
-            for ( my $i = 0 ; $i < $num0 ; $i++ ) {
-                my $X0 = $rshock_table->[$i]->[0];
-                my $X1 = $renergy_table->[$i]->[0];
-                if ( $X0 != $X1 ) {
-                    $table_error->("X values differ for row $i: $X0 != $X1");
-                    next;
-                }
-
-                # Combine variables in shock table and energy table,
-                # leaving spots for T and dTdX, Z-X and dZ-X/dX
-                my @vars = @{ $renergy_table->[$i] };
-                shift @vars;    # remove leading X
-                push @{$rnew_table},
-                  [ @{ $rshock_table->[$i] }, 0, 0, 0, 0, @vars ];
-            }
-
-            # Success, install the new table
-            $rshock_tables->{$table_name} = $rnew_table;
-        }
-        if (@errors) {
-            print STDERR
-              "Tables differ. Run blast_energy_integral_primary.pl\n";
-            local $" = ')(';
-            print STDERR "(@errors)\n";
-            croak "Table Errors; run terminated\n";
-        }
-        return;
-    }
-    _merge_energy_tables();
-}
-
 sub new {
     my ( $class, @args ) = @_;
     my $self = {};
@@ -240,7 +127,7 @@ sub _setup {
     my ( $self, @args ) = @_;
 
     my @input_keys = qw(
-      rtable
+      rTables
       table_name
       gamma
       symmetry
@@ -288,14 +175,13 @@ sub _setup {
         "Checking for valid input keys" );
 
     # The following four quantities can be specified:
-    my $rtable     = $rinput_hash->{rtable};
+    my $rTables    = $rinput_hash->{rTables};
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
-    my ( $rimpulse_table, $rtail_shock_table, $loc_gamma_table, $rigam_4,
-        $rigam_6 );
 
     # Allow input of the older 'ASYM' keyword for the symmetry
+    # FIXME: this option to be deleted
     if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
 
     # allow alphanumeric abbreviations for symmetry
@@ -309,7 +195,12 @@ sub _setup {
     # Input Option 1: a user-supplied table is given
     # symmetry and gamma must be given too
     # table name is optional
-    if ( defined($rtable) ) {
+
+    ################################################
+    # Not currently working:
+    # FIXME: the complete hash of tables should be given in the future, for testing a new table
+    ################################################
+    if ( defined($rTables) ) {
 
         if ( !defined($symmetry) || !defined($gamma) ) {
             carp(<<EOM);
@@ -318,7 +209,7 @@ EOM
             return;
         }
         if ( !defined($table_name) ) {
-            $table_name = _make_table_name( $symmetry, $gamma );
+            $table_name = Blast::IPS::Data::make_table_key( $symmetry, $gamma );
             $table_name .= "_custom";
         }
     }
@@ -327,13 +218,12 @@ EOM
     # symmetry and gamma must match if given; it is safest not to give them.
     elsif ( defined($table_name) ) {
 
-        ( $rtable, $rimpulse_table, $rtail_shock_table ) =
-          get_builtin_tables($table_name);
-        my $item = $rshock_tables_info->{$table_name};
-        if ( defined($item) ) {
+        $rTables     = get_builtin_tables($table_name);
+        if ( defined($rTables) ) {
             my $old_symmetry = $symmetry;
             my $old_gamma    = $gamma;
-            ( $symmetry, $gamma, my $err_est ) = @{$item};
+            $symmetry = $rTables->{symmetry};
+            $gamma    = $rTables->{gamma};
             if ( defined($old_symmetry) && $old_symmetry != $symmetry ) {
                 carp(<<EOM);
 symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
@@ -371,34 +261,27 @@ EOM
         # allow default of spherical symmetry, gamma=1.4
         if ( !defined($gamma) )    { $gamma    = 1.4 }
         if ( !defined($symmetry) ) { $symmetry = 2 }
+        $rTables = get_builtin_tables('symmetry'=>$symmetry, 'gamma'=>$gamma);
+	if (!defined($rTables)) {
 
-        # Search for this gamma value
-        my $result = _gamma_lookup( $symmetry, $gamma );
-        my $old_table_name = $table_name;
-        $table_name      = $result->{table_name};
-        $loc_gamma_table = $result->{loc_gamma_table};
+            # No builtin table, so we make interpolated tables
+            # Search for this gamma value
+            $rTables = _make_interpolated_tables( $symmetry, $gamma );    
 
-        # Get builtin table if there is one
-        if ( defined($table_name) ) {
-            ( $rtable, $rimpulse_table, $rtail_shock_table ) =
-              get_builtin_tables($table_name);
-        }
-
-        # Otherwise, make an interpolated table
-        else {
-            $rigam_6 = $result->{rigam_6};
-            $rigam_4 = $result->{rigam_4};
-            if ( defined($rigam_6) && defined($rigam_4) ) {
-                $rtable = _make_intermediate_gamma_table( $symmetry, $gamma,
-                    $rigam_6, $rigam_4 );
-
-                # FIXME: make interpolated impulse table too
-                if ( !$table_name ) {
-                    $table_name = _make_table_name( $symmetry, $gamma );
-                }
-            }
+            if (!$rTables) {
+                carp(<<EOM);
+Unable to create an interpolated table for symmetry=$symmetry and gamma=$gamma
+EOM
+		return;
+	    }
         }
     }
+
+    $table_name = $rTables->{table_name};
+    my $rshock_table            = $rTables->{shock_table};
+    my $rimpulse_table    = $rTables->{impulse_table};
+    my $rtail_shock_table = $rTables->{tail_shock_table};
+    my $rblast_info       = $rTables->{blast_info};
 
     # Now check the results
     my $error = "";
@@ -407,55 +290,65 @@ EOM
         $error .= "Bad symmetry='$symmetry'\n";
     }
 
-    my $table_error = _check_table($rtable);
+    my $table_error = _check_table($rshock_table);
     $error .= $table_error;
 
     my $num_table;
     if ( !$error ) {
-        _update_toa_table($rtable);
-        $num_table = @{$rtable};
+        _update_toa_table($rshock_table);
+        $num_table = @{$rshock_table};
     }
 
     my $rztables = _make_z_tables($rimpulse_table);
-    my $medium = Blast::IPS::Medium->new(symmetry=>$symmetry, gamma=>$gamma);
+    $rTables->{rztables} = $rztables;
 
-    $self->{_rtable}                  = $rtable;
-    $self->{_rimpulse_table}          = $rimpulse_table;
-    $self->{_rztables}                = $rztables;
-    $self->{_rtail_shock_table_table} = $rtail_shock_table;
-    $self->{_table_name}              = $table_name;
-    $self->{_loc_gamma_table}         = $loc_gamma_table;
-    $self->{_rigam_4}                 = $rigam_4;
-    $self->{_rigam_6}                 = $rigam_6;
-    $self->{_gamma}                   = $gamma;
-    $self->{_symmetry}                = $symmetry;
+    my $medium =
+      Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
+
+    # Basic parameters
+    $self->{_gamma}      = $gamma;
+    $self->{_symmetry}   = $symmetry;
+    $self->{_rTables}    = $rTables;
+    $self->{_table_name} = $table_name;
+    $self->{_medium}     = $medium;
+
+    # saved table lookup locations for shock table
     $self->{_jl}                      = -1;
     $self->{_ju}                      = $num_table;
+
+    # saved table lookup locations for impulse table
     $self->{_jl2}                     = -1;
     $self->{_ju2}                     = undef;
-    $self->{_error}                   = $error;
-    $self->{_medium}                  = $medium;
 
+    if (!$error) { 
 
-    if ($error) { carp "$error\n" }
-    else {
-        $self->_end_model_setup();
+	# Compute alpha. We can either get alpha from the shock table, or use
+	# the pre-computed values.  For now we get it from the table, but
+	# eventually I may change.
+	my $alpha = alpha_from_shock_table($symmetry, $gamma, $rTables);
+        $self->{_alpha} = $alpha;
+
+	# Compute parameters for extrapolating spherical waves
+	my ($A_far, $B_far, $Z_zero, $msg) = long_range_parameters($symmetry, $gamma, $rTables);
+        $self->{_A_far}  = $A_far;
+        $self->{_B_far}  = $B_far;
+        $self->{_Z_zero} = $Z_zero;
+	$error .= $msg;
+
+    }
+
+    if ($error) { 
+       $self->{_error} = $error;
+       carp "$error\n" 
     }
     return;
 }
 
-sub _end_model_setup {
-    my ($self) = @_;
+sub alpha_from_shock_table {
+    my ($symmetry, $gamma, $rTables) = @_;
+    my $rtable   = $rTables->{shock_table};
 
-    # Add additional quantities of interest to $self
-    my $rtable   = $self->{_rtable};
-    my $gamma    = $self->{_gamma};
-    my $symmetry = $self->{_symmetry};
-
-    # Set parameters for evaluation beyond the ends of the table
-    # Set asymptotic wave parameters, given a table and gamma
-
-    # Near region: we find the value of alpha at the first table point
+    # we find the value of alpha at the first table point
     # based on R^(symmetry+1)*u**2=constant
     my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
       @{ $rtable->[0] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
@@ -466,177 +359,55 @@ sub _end_model_setup {
     my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
     my $alpha =
       ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
-    $self->{_alpha} = $alpha;
+    return $alpha;
+}
 
-    # Distant region
-    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) =   #@{ $rtable->[-1] };
+sub long_range_parameters {
+    my ( $symmetry, $gamma, $rTables ) = @_;
+    my $rtable = $rTables->{shock_table};
+
+    # Set asymptotic wave parameters for the distant region, given a table and gamma
+    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = 
       @{ $rtable->[-1] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
-    my ( $A_far, $B_far, $Z_zero ) = ( 0, 0, 0 );
+    my ( $A_far, $B_far, $Z_zero, $msg ) = ( 0, 0, 0, "" );
     if ( $symmetry == 2 ) {
         my $mu = -( $dYdX_far + 1 );
         if ( $mu > 0 ) {
             $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
             $B_far = 0.5 / $mu - $X_far;
         }
-        else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
+        ##else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
+        else { $msg = "ending dYdX=$dYdX_far is bad\n" }
         $Z_zero =
           exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
         $Z_zero = log($Z_zero);
     }
-    $self->{_A_far}  = $A_far;
-    $self->{_B_far}  = $B_far;
-    $self->{_Z_zero} = $Z_zero;
-
-    $self->_set_global_info();
-    return;
+    return ( $A_far, $B_far, $Z_zero, $msg );
 }
 
-sub _locate_2d {
-    my ( $self, $xx, $icol, $rtab ) = @_;
-
-    # Binary search for two consecutive table row indexes, jl and ju, of a
-    # 2D matrix such that the value of x lies between these two table values.
-    # $icol is the column of the variable x
-    # If x is out of bounds, returns either jl<0 or ju>=N
-
-    $rtab = $self->{_rtable} unless defined($rtab);
-    my $jl = $self->{_jl};
-    my $ju = $self->{_ju};
-    ($jl, $ju) = locate_2d($xx, $icol, $rtab, $jl, $ju);
-    $self->{_jl} = $jl;
-    $self->{_ju} = $ju;
-    return ( $jl, $ju );
-}
-
-sub _make_table_name {
-
-    # Make a table name by combining the symmetry and gamma;
-    # i.e. make the name 'S1.37' for spherical symmetry with gamma=1.37
-
-    my ( $symmetry, $gamma ) = @_;
-    my $table_name;
-    my $gamma_pr = sprintf "%.4g", $gamma;
-    my $char = $symmetry == 0 ? 'P' : $symmetry == 1 ? 'C' : 'S';
-    $table_name = $char . $gamma_pr;
-    return $table_name;
-}
-
-sub _gamma_lookup {
-    my ( $symmetry, $gamma ) = @_;
-
-    # Look for a table matching a given symmetry and gamma
-
-    # Given:
-    #   $symmetry = a 1d symmetry (0, 1, or 2) and
-    #   $gamma = an ideal gas gamma
-    # Return:
-    #   a return hash, with three possible results as follows;
-
-    # CASE 1. returns nothing if gamma is out of bounds or there is an error
-
-    # CASE 2. If the gamma is within a small tolerance of one of these gammas
-    # then returns reference to a hash with
-    #     table_name => $table_name
-
-    # CASE 3. If the gamma differs from the table entries but is within
-    # bounds of the table, returns index of bounding tables
-    # for use in interpolation:
-    #    rigam_4 => $rigam_4,
-    #    rigam_6 => $rigam_6,
-    # where
-    # rigam_4 is a list of indexes for 4 point interpolation
-    # rigam_6 is a list of indexes for 6 point interpolation
-
-    # for all cases, also returns
-    #   loc_gamma_table => has location in the table of gamma values
-    # $return_hash->{'loc_gamma_table'} =
-    # [index (if exact match), lower index, upper index, $ntab ];
-
-    # uses $rgamma_table, the global table of gamma values for the builtin
-    # tables
-
-    return if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 );
-
-    # The tolerance for testing gamma is currently fixed. It should be very
-    # small because we can construct very accurate interpolated tables.
-    my $eps = 1.e-7;
-
-    my $return_hash = {};
-
-    # lookup this gamma in the table of gamma values for this symmetry
-    my $rtab  = $rgamma_table->[$symmetry];
-    my $ntab  = @{$rtab};
-    my $icol  = 0;
-    my $rhash = {
-        _jl     => undef,
-        _ju     => undef,
-        _rtable => $rtab,
-    };
-    my ( $j2, $j3 ) = _locate_2d( $rhash, $gamma, $icol );
-    my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
-    my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
-
-    # save the location of this gamma in the gamma table so that we
-    # can do further intepolations later
-
-    # Check if out of bounds (CASE 1)
-    if ( $j2 < 0 ) {
-        return if ( $gamma + $eps < $gamma_min );
-        $return_hash->{'table_name'} = $key_min;
-        $return_hash->{'loc_gamma_table'} = [ 0, $j2, $j3, $ntab ];
-        return $return_hash;
-    }
-    if ( $j3 >= $ntab ) {
-        return if ( $gamma - $eps > $gamma_max );
-        $return_hash->{'table_name'} = $key_max;
-        $return_hash->{'loc_gamma_table'} = [ $ntab - 1, $j2, $j3, $ntab ];
-        return $return_hash;
-    }
-
-    # Check for an exact match (CASE 2)
-    my ( $gamma2, $key2 ) = @{ $rtab->[$j2] };
-    my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
-    if ( abs( $gamma - $gamma2 ) < $eps ) {
-        $return_hash->{'table_name'} = $key2;
-        $return_hash->{'loc_gamma_table'} = [ $j2, $j2, $j3, $ntab ];
-        return $return_hash;
-    }
-    if ( abs( $gamma - $gamma3 ) < $eps ) {
-        $return_hash->{'table_name'} = $key3;
-        $return_hash->{'loc_gamma_table'} = [ $j3, $j2, $j3, $ntab ];
-        return $return_hash;
-    }
-
-    # CASE 3: Not an exact match: return indexes of bounding tables in
-    # preparation for interpolation.
-
-    # At the start of the table, in the low gamma range, results are better if
-    # we reduce the number of lagrange points to keep the points them from
-    # being too lopsided.  Thus, if we are interpolating near the first table
-    # point, we will use 4 point interpolation instead of 6 point.
-    # At the upper end of the table it is not necessary or beneficial to do
-    # this.
-    my $six = $j2 == 0 ? 4 : $j2 == 1 ? 5 : 6;
-
-    my $rigam_4 = set_interpolation_points( $j2, $ntab, 4 );
-    my $rigam_6 = set_interpolation_points( $j2, $ntab, $six );
-    $return_hash->{'rigam_4'}         = $rigam_4;
-    $return_hash->{'rigam_6'}         = $rigam_6;
-    $return_hash->{'loc_gamma_table'} = [ undef, $j2, $j3, $ntab, ];
-    return ($return_hash);
+sub get_index {
+    return $rgamma_table;
 }
 
 sub get_builtin_tables {
-    my ($table_name) = @_;
-    return (
-        $rshock_tables->{$table_name},
-        $rimpulse_tables->{$table_name},
-        $rtail_shock_tables->{$table_name}
-    );
+    my @args = @_; 
+    my $rTables             = Blast::IPS::Data::get(@args);
+    return $rTables;
 }
 
-sub get_rgamma_table {
-    return $rgamma_table;
+sub load_data_tables {
+    my ( $symmetry, @gammas ) = @_;
+
+    # Create a cache of tables with different gamma values, for interpolation
+    my $rTables_loaded;
+    foreach my $igam (@gammas) {
+        my ( $gamma, $table_name ) =
+          @{ $rgamma_table->[$symmetry]->[$igam] };
+        if ( !defined( $rTables_loaded->{$table_name} ) ) {
+            $rTables_loaded->{$table_name} = get_builtin_tables($table_name);
+        }
+    }
+    return $rTables_loaded;
 }
 
 sub get_info {
@@ -651,7 +422,7 @@ sub get_info {
 
     # Return all values in the _rinfo hash
     my $rinfo  = {};
-    my $_rinfo = $self->{_rinfo};
+    my $_rinfo = $self->{_rTables}->{blast_info};
     if ( defined($_rinfo) ) {
         foreach my $key ( keys %{$_rinfo} ) {
             $rinfo->{$key} = $_rinfo->{$key};
@@ -665,90 +436,55 @@ sub get_info {
     return ($rinfo);
 }
 
-sub get_table_index {
-
-    # returns hash ref with index to all built-in tables
-    # NOTE:
-    # -  The hash key is the name of the builtin table ('S1.4', 'C1.667', etc);
-    # -  symmetry = 0, 1, or 2 for plane, cylindrical or spherical
-    # -  gamma is the ideal gas gamma
-    # -  error_estimate = the estimated maximum relative error in shock
-    #      overpressure after interpolation using the standard cubic
-    #      interpolation
-    # -  N = the number of points across the blast wave in the finite difference
-    #      calculation used to make the table
-    # Additional specific parameters can be obtained by loading a table and
-    # using the 'get_info()' method.
-    my $rtable_index = {};
-    foreach my $key ( sort keys %{$rshock_tables_info} ) {
-        my $item = $rshock_tables_info->{$key};
-
-        my (
-            $symmetry,     $gamma,    $Max_Error, $N,
-            $Energy_Error, $R_FD_MOC, $FD_Error,  $MOC_Error,
-            $Interp_Error, $rs2,      $zs2
-        ) = @{$item};
-        $rtable_index->{$key} = {
-            symmetry     => $symmetry,
-            gamma        => $gamma,
-            Max_Error    => $Max_Error,
-            N            => $N,
-            r_tail_shock => $rs2,
-            z_tail_shock => $zs2,
-        };
-    }
-    return ($rtable_index);
-}
-
-sub check_tables {
-
-    # Should be called at program installation to check the tables
-
-    my @info_keys  = keys %{$rshock_tables_info};
-    my @table_keys = keys %{$rshock_tables};
-
-    # Check that the keys of the two table hashes are the same
-    my @missing_info_keys =
-      grep { !exists $rshock_tables_info->{$_} } @table_keys;
-    my @missing_table_keys =
-      grep { !exists $rshock_tables->{$_} } @info_keys;
-    my $error = @missing_info_keys || @missing_table_keys;
-    if ($error) {
-        local $" = ')(';
-        $error = <<EOM;
-------------------------------------------------------------------------
-Program error detected checking hash keys
-Have info but not table for: (@missing_table_keys)
-Have table but no info for: (@missing_info_keys)
-------------------------------------------------------------------------
-EOM
-        croak $error;
-    }
-
-    return $error if ($error);
-
-    foreach my $key (@info_keys) {
-        my $rtable = $rshock_tables->{$key};
-
-        # Check for a naming error
-        my $item = $rshock_tables_info->{$key};
-        my ( $symmetry, $gamma, $err_est ) = @{$item};
-        my $letter = $symmetry eq 0 ? 'P' : $symmetry eq 1 ? 'C' : 'S';
-        my $str = $letter . $gamma;
-
-        #print STDERR "Checking if table $key similar to $str\n";
-        if ( $key !~ /^$str/i ) {
-            return "Table $key: expected to be like $str\n";
-        }
-
-        # Check for numerical problems
-        my $error = _check_table($rtable);
-        if ($error) {
-            return "Table $key:\n" . $error;
-        }
-    }
-    return;
-}
+##sub check_tables {
+##
+##    # Should be called at program installation to check the tables
+##
+##    my @info_keys  = keys %{$rshock_tables_info};
+##    my @table_keys = keys %{$rshock_tables};
+##
+##    # Check that the keys of the two table hashes are the same
+##    my @missing_info_keys =
+##      grep { !exists $rshock_tables_info->{$_} } @table_keys;
+##    my @missing_table_keys =
+##      grep { !exists $rshock_tables->{$_} } @info_keys;
+##    my $error = @missing_info_keys || @missing_table_keys;
+##    if ($error) {
+##        local $" = ')(';
+##        $error = <<EOM;
+##------------------------------------------------------------------------
+##Program error detected checking hash keys
+##Have info but not table for: (@missing_table_keys)
+##Have table but no info for: (@missing_info_keys)
+##------------------------------------------------------------------------
+##EOM
+##        croak $error;
+##    }
+##
+##    return $error if ($error);
+##
+##    foreach my $key (@info_keys) {
+##        my $rtable = $rshock_tables->{$key};
+##
+##        # Check for a naming error
+##        my $item = $rshock_tables_info->{$key};
+##        my ( $symmetry, $gamma, $err_est ) = @{$item};
+##        my $letter = $symmetry eq 0 ? 'P' : $symmetry eq 1 ? 'C' : 'S';
+##        my $str = $letter . $gamma;
+##
+##        #print STDERR "Checking if table $key similar to $str\n";
+##        if ( $key !~ /^$str/i ) {
+##            return "Table $key: expected to be like $str\n";
+##        }
+##
+##        # Check for numerical problems
+##        my $error = _check_table($rtable);
+##        if ($error) {
+##            return "Table $key:\n" . $error;
+##        }
+##    }
+##    return;
+##}
 
 sub _check_table {
 
@@ -929,12 +665,7 @@ sub get_z {
 
     # Locate this point in the table
     my $ntab  = @{$rztab};
-    my $rhash = {
-        _jl     => $jl,
-        _ju     => $ju,
-        _rtable => $rztab,
-    };
-    ( $jl, $ju ) = _locate_2d( $rhash, $T, 0 );
+    ($jl, $ju) = locate_2d($T, 0, $rztab, $jl, $ju);
     my $zz;
     my $tt = exp($T);
     if ( $jl < 0 ) {
@@ -959,7 +690,8 @@ sub get_z {
 
 sub get_impulse {
     my ( $self, $result ) = @_;
-    my $rimpulse_table = $self->{_rimpulse_table};
+    ##my $rimpulse_table = $self->{_rimpulse_table};
+    my $rimpulse_table = $self->{_rTables}->{impulse_table};
     return unless ($rimpulse_table);
     my $jl       = $self->{_jl2};
     my $ju       = $self->{_ju2};
@@ -971,12 +703,8 @@ sub get_impulse {
 
     # Locate this point in the table
     my $ntab  = @{$rimpulse_table};
-    my $rhash = {
-        _jl     => $jl,
-        _ju     => $ju,
-        _rtable => $rimpulse_table,
-    };
-    ( $jl, $ju ) = _locate_2d( $rhash, $X, 0 );
+    ($jl, $ju) = locate_2d($X, 0, $rimpulse_table, $jl, $ju);
+
     $self->{_jl2} = $jl;
     $self->{_ju2} = $ju;
     return unless ( defined($jl) );
@@ -1217,336 +945,13 @@ sub _interpolate_table_rows {
     return $rrow;
 }
 
-sub get_phase_lengths {
-
-    # FIXME: rewrite this, combining both get_ routines
-
-    my ( $self, $rs, $zs ) = @_;
-    my $symmetry = $self->{_symmetry};
-    my $Tneg     = 0;
-    my $Lneg     = 0;
-    my ( $Tpos, $Lpos ) = $self->get_positive_phase( $rs, $zs );
-    if ( $symmetry == 2 ) {
-        ( $Tneg, $Lneg ) = $self->get_negative_phase( $rs, $zs );
-        $Tneg -= $Tpos if ($Tneg);
-        $Lneg -= $Lpos if ($Lneg);
-
-        # Approximation for very long range as an N wave forms:
-        # At very long range the negative phase length increases
-        # due to the second shock so that the negative phase
-        # duration does not get less than the positive phase
-        if ( $Tneg < $Tpos ) { $Tneg = $Tpos }
-        if ( $Lneg < $Lpos ) { $Lneg = $Lpos }
-    }
-    return ( $Tpos, $Lpos, $Tneg, $Lneg );
-}
-
-sub _set_global_info {
-    my ($self) = @_;
-
-    # Given a shock radius and z value, return the positive phase duration and
-    # length
-    my $symmetry        = $self->{_symmetry};
-    my $gamma           = $self->{_gamma};
-    my $rhash           = get_blast_info( $symmetry, $gamma );
-    my $loc_gamma_table = $self->{_loc_gamma_table};
-    my $rigam_4         = $self->{_rigam_4};
-    if ( !defined($rhash) && defined($loc_gamma_table) && defined($rigam_4) ) {
-
-        # If this table is an interpolated table then we can interpolate
-        # P0 from nearby fits.
-        # FIXME: this works now but needs a lot of refinement for better
-        # Use best transformation for each variable.
-        # Sintegral needs (alpha+2) weighting.
-        my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-
-        #if ( defined($loc_gamma_table) && defined($rigam_4) ) {
-        if ( $jl >= 0 && $ju < $num ) {
-
-            my $alpha = alpha_interpolate( $symmetry, $gamma );
-            my $rtab;
-            foreach my $igam ( @{$rigam_4} ) {
-                my ( $gamma_i, $table_name_i ) =
-                  @{ $rgamma_table->[$symmetry]->[$igam] };
-                my $rhash_i = get_blast_info( $symmetry, $gamma_i );
-                my $alpha_i = alpha_interpolate( $symmetry, $gamma_i );
-                push @{$rtab}, [ $rhash_i, $gamma_i, $alpha_i, $igam ];
-            }
-
-            # loop to interpolate all values
-            my @keys = keys %{ $rtab->[0]->[0] };
-            foreach my $key (@keys) {
-                my ( $rx, $ry );
-                my $nogo;
-                foreach my $item ( @{$rtab} ) {
-                    my ( $rhash_i, $gamma_i, $alpha_i, $igam ) = @{$item};
-                    my $val_i = $rhash_i->{$key};
-                    if ( !defined($val_i) || $val_i == 0 ) {
-
-                        # no interpolation if missing or zero bounding points
-                        $nogo ||= ( $igam eq $jl || $igam eq $ju );
-                        last if $nogo;
-                        next;
-                    }
-
-                    # FIXME: Sintegral should be weighted with (alpha+2)
-                    push @{$rx}, $gamma_i;
-                    push @{$ry}, $val_i;
-                }
-
-                my $val = 0;
-                if ( !$nogo ) {
-                    $val = polint( $gamma, $rx, $ry );
-                }
-                $rhash->{$key} = $val;
-            }
-
-            # Old Linear interpolation, for reference
-            # execute to see comparison with polynomial interpolation
-            if (0) {
-                my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-                if ( $jl >= 0 && $ju < $num ) {
-                    my $rtab    = $rgamma_table->[$symmetry];
-                    my $gamma_l = $rtab->[$jl]->[0];
-                    my $gamma_u = $rtab->[$ju]->[0];
-                    my $rhash_l = get_blast_info( $symmetry, $gamma_l );
-                    my $rhash_u = get_blast_info( $symmetry, $gamma_u );
-
-                    if ( defined($rhash_l) && defined($rhash_u) ) {
-                        foreach my $key ( keys %{$rhash_l} ) {
-                            my $val_l = $rhash_l->{$key};
-                            my $val_u = $rhash_u->{$key};
-
-                            if ( defined($val_l) && defined($val_u) ) {
-                                my $val = _linear_interpolation(
-                                    $gamma,   $gamma_l, $val_l,
-                                    $gamma_u, $val_u
-                                );
-                                my $vsave = $rhash->{$key};
-                                $rhash->{$key} = $val;
-
-                                # DEBUG: comparison of methods
-                                print STDERR
-                                  "key=$key polint=$vsave linear=$val\n";
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    # Store this hash of values in self
-    $self->{_rinfo} = $rhash;
-    return;
-}
-
-sub get_positive_phase {
-    my ( $self, $rs, $zs ) = @_;
-
-    # Given a shock radius and z value, return the positive phase duration and
-    # length
-    my $symmetry = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
-    my $rpz_fit  = $rpzero_fit->{$symmetry}->{$gamma};
-    my ( $Tpos, $Lpos ) = ( 0, 0 );
-
-    if ( defined($rpz_fit) ) {
-
-        # Handle builtin table
-        ( $Tpos, $Lpos ) = _positive_phase( $rs, $zs, $symmetry, $rpz_fit );
-    }
-    else {
-
-        # No P0 fit is defined for this gamma; if this table is an interpolated
-        # table then we can interpolate P0 from nearby fits.
-        my $loc_gamma_table = $self->{_loc_gamma_table};
-        if ( defined($loc_gamma_table) ) {
-            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-            if ( $jl >= 0 && $ju < $num ) {
-                my $rtab      = $rgamma_table->[$symmetry];
-                my $gamma_l   = $rtab->[$jl]->[0];
-                my $gamma_u   = $rtab->[$ju]->[0];
-                my $rpz_fit_l = $rpzero_fit->{$symmetry}->{$gamma_l};
-                my $rpz_fit_u = $rpzero_fit->{$symmetry}->{$gamma_u};
-                if ( defined($rpz_fit_l) && defined($rpz_fit_u) ) {
-                    my ( $Tpos_l, $Lpos_l ) =
-                      _positive_phase( $rs, $zs, $symmetry, $rpz_fit_l );
-                    my ( $Tpos_u, $Lpos_u ) =
-                      _positive_phase( $rs, $zs, $symmetry, $rpz_fit_u );
-                    $Tpos =
-                      _linear_interpolation( $gamma, $gamma_l, $Tpos_l,
-                        $gamma_u, $Tpos_u );
-                    $Lpos =
-                      _linear_interpolation( $gamma, $gamma_l, $Lpos_l,
-                        $gamma_u, $Lpos_u );
-                }
-            }
-        }
-    }
-    return wantarray ? ( $Tpos, $Lpos ) : $Tpos;
-}
-
-sub _positive_phase {
-    my ( $rs, $zs, $symmetry, $rpz_fit ) = @_;
-
-    # Given:
-    # $rs - a shock radius
-    # $zs - the z at that radius
-    # $symmetry - 0, 1, or 2
-    # $rpz_fit - the zero pressure fit parameters
-
-    # return:
-    # $Tpos - the positive phase duration (in time)
-    # $Lpos - the positive phase length (in space)
-
-    # Note: Returns 0's if no positive phase
-    # $Tpos = 0 if no positive phase duration
-    # $Lpos = 0 if no positive phase length
-    my $Tpos = 0;
-    my $Lpos = 0;
-    if ( defined($rpz_fit) && @{$rpz_fit} ) {
-        my ( $tPc0, $t0, $r0, $tmin_fit, $rmin_fit, $zinf, $AA, $BB ) =
-          @{$rpz_fit};
-
-        my $AH = $symmetry / 2;
-
-        # First find the positive phase duration
-        my $z = $zs;
-        if ( $rs >= $rmin_fit ) {
-
-            # in analytical region
-            my $r     = $rs;
-            my $rpow  = $r**$AH;
-            my $denom = $rpow - $BB + $AA;
-            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
-        }
-        else {
-
-            # before analytical region; use straight line to origin
-            my $zc       = 0 - $tPc0;
-            my $zmin_fit = $rmin_fit - $tmin_fit;
-            $z = $zc + ( $zmin_fit - $zc ) * $rs / $rmin_fit;
-            if ( $z > $zs ) { $z = $zs }
-        }
-        $Tpos = ( $zs - $z );
-
-        my $ts = $rs - $zs;
-        if ( $ts >= $tmin_fit ) {
-
-            # in analytical section...
-            # We must iterate to find the positive length
-            # We start with the previous z
-            my $r     = $rs - ( $zs - $z );
-            my $rpow  = $r**$AH;
-            my $denom = $rpow - $BB + $AA;
-            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
-
-            # re-iterate
-            $r     = $rs - ( $zs - $z );
-            $rpow  = $r**$AH;
-            $denom = $rpow - $BB + $AA;
-            if ( $denom > 0 ) { $z = $zinf * ( 1 - $AA / $denom ); }
-            $Lpos = $zs - $z;
-        }
-        elsif ( $ts >= $tPc0 ) {
-
-            # before analytical section...connect line to origin
-            my $zc       = 0 - $tPc0;
-            my $zmin_fit = $rmin_fit - $tmin_fit;
-            $z =
-              $zc +
-              ( $zmin_fit - $zc ) * ( $ts - $tPc0 ) / ( $tmin_fit - $tPc0 );
-            if ( $z > $zs ) { $z = $zs }
-            $Lpos = $zs - $z;
-        }
-        else {
-
-            # before tPc0: no positive length
-        }
-    }
-    return wantarray ? ( $Tpos, $Lpos ) : $Tpos;
-}
-
-sub get_negative_phase {
-    my ( $self, $rs, $zs ) = @_;
-
-    # Given a shock radius and z value, return the negative phase duration and
-    # length. This is zero except for spherical symmetry
-    my $symmetry = $self->{_symmetry};
-    my $gamma    = $self->{_gamma};
-    my $rpz_tail = $rpzero_tail->{$symmetry}->{$gamma};
-    my ( $Tneg, $Lneg ) = ( 0, 0 );
-
-    if ( defined($rpz_tail) ) {
-
-        # Handle builtin table
-        ( $Tneg, $Lneg ) = _negative_phase( $rs, $zs, $symmetry, $rpz_tail );
-    }
-    else {
-
-        # No P0 fit is defined for this gamma; if this table is an interpolated
-        # table then we can interpolate P0 from nearby fits.
-        my $loc_gamma_table = $self->{_loc_gamma_table};
-        if ( defined($loc_gamma_table) ) {
-            my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-            if ( !$jj && $jl >= 0 && $ju < $num ) {
-                my $rtab       = $rgamma_table->[$symmetry];
-                my $gamma_l    = $rtab->[$jl]->[0];
-                my $gamma_u    = $rtab->[$ju]->[0];
-                my $rpz_tail_l = $rpzero_tail->{$symmetry}->{$gamma_l};
-                my $rpz_tail_u = $rpzero_tail->{$symmetry}->{$gamma_u};
-                if ( defined($rpz_tail_l) && defined($rpz_tail_u) ) {
-                    my ( $Tneg_l, $Lneg_l ) =
-                      _negative_phase( $rs, $zs, $symmetry, $rpz_tail_l );
-                    my ( $Tneg_u, $Lneg_u ) =
-                      _negative_phase( $rs, $zs, $symmetry, $rpz_tail_u );
-                    $Tneg =
-                      _linear_interpolation( $gamma, $gamma_l, $Tneg_l,
-                        $gamma_u, $Tneg_u );
-                    $Lneg =
-                      _linear_interpolation( $gamma, $gamma_l, $Lneg_l,
-                        $gamma_u, $Lneg_u );
-                }
-            }
-        }
-    }
-    return wantarray ? ( $Tneg, $Lneg ) : $Tneg;
-}
-
-sub _negative_phase {
-    my ( $rs, $zs, $symmetry, $rpz_tail ) = @_;
-
-    # Given:
-    # $rs - a shock radius
-    # $zs - the z at that radius
-    # $symmetry - 0, 1, or 2
-    # $rpz_tail - the zero pressure fit parameters
-
-    # return:
-    # $Tneg - time to arrival of second zero p
-    # $Lneg - distance to arrival of second zero p
-
-    # Returns 0's if no negative phase:
-    # $Tneg = 0 if no negative phase duration
-    # $Lneg = 0 if no negative phase length
-    my $Tneg = 0;
-    my $Lneg = 0;
-    if ( defined($rpz_tail) && @{$rpz_tail} ) {
-        my ( $t0, $r0, $ztail ) = @{$rpz_tail};
-        if ( $rs >= $r0 ) { $Tneg = ( $zs - $ztail ); }
-        my $ts = $rs - $zs;
-        if ( $ts >= $t0 ) { $Lneg = $zs - $ztail }
-    }
-    return wantarray ? ( $Tneg, $Lneg ) : $Tneg;
-}
-
 sub get_ASYM       { my $self = shift; return $self->{_symmetry}; }
 sub get_symmetry   { my $self = shift; return $self->{_symmetry} }
 sub get_gamma      { my $self = shift; return $self->{_gamma} }
 sub get_alpha      { my $self = shift; return $self->{_alpha} }
 sub get_error      { my $self = shift; return $self->{_error} }
-sub get_table      { my $self = shift; return $self->{_rtable} }
+sub get_table      { my $self = shift; return $self->{_rTables}->{shock_table} }
+sub get_Tables     { my $self = shift; return $self->{_rTables} }
 sub get_table_name { my $self = shift; return $self->{_table_name} }
 
 sub set_table {
@@ -1563,12 +968,8 @@ sub clone {
     my ($self) = @_;
     my $class = ref($self);
     my $newobj = bless { %{$self} }, $class;
-    my $rtable = $newobj->{_rtable};
-    my $rcopy;
-    foreach my $item ( @{$rtable} ) {
-        push @{$rcopy}, [ @{$item} ];
-    }
-    $newobj->{_rtable} = $rcopy;
+    my $rTables = $newobj->{_rTables};
+    $newobj->{_rTables} = dclone($rTables);
     return $newobj;
 }
 
@@ -1612,10 +1013,11 @@ sub wavefront {
     }
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
-    my $Sint_pos = $self->{_rinfo}->{Sintegral_pos};
-    my $Sint_neg = $self->{_rinfo}->{Sintegral_neg};
+    my $rTables  = $self->{_rTables};
+    my $Sint_pos = $rTables->{blast_info}->{Sintegral_pos};
+    my $Sint_neg = $rTables->{blast_info}->{Sintegral_neg};
 
-    my $rtab = $self->{_rtable};
+    my $rtab = $rTables->{shock_table};
     my $ntab = @{$rtab};
 
     if ( @args == 0 ) {
@@ -1664,7 +1066,12 @@ sub wavefront {
     }
 
     # Locate this point in the table
-    my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
+    #my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
+    my $il = $self->{_jl};
+    my $iu = $self->{_ju};
+    ( $il, $iu ) = locate_2d( $Q, $icol, $rtab, $il, $iu );
+    $self->{_jl} = $il;
+    $self->{_ju} = $iu;
 
     my $result;
 
@@ -1739,7 +1146,7 @@ sub wavefront {
     my ( $z_pose_ts, $z_pmin_ts, $z_nege_ts ) =
       ( $z_pose_rs, $z_pmin_rs, $z_nege_rs );
 
-    my $rztables = $self->{_rztables};
+    my $rztables = $self->{_rTables}->{rztables};
     if ( defined($rztables) ) {
         my ( $rzpose_table, $rzpmin_table, $rznege_table ) = @{$rztables};
         $z_pose_ts = $self->get_z( $T, $rzpose_table, $z_pose_ts );
@@ -1748,9 +1155,9 @@ sub wavefront {
     }
 
     # backup analytical fit to zero pressure lines
-    my $rs = exp($X);
-    my $zs = exp($Z);
-    my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
+    #my $rs = exp($X);
+    #my $zs = exp($Z);
+    #my ( $Tpos, $Lpos, $Tneg, $Lneg ) = $self->get_phase_lengths( $rs, $zs );
 
     # FUTURE: use more accurate values if possible
     #if ( defined($z_pose_rs) ) { $Tpos = $zs - $z_pose_rs; }
@@ -1758,6 +1165,12 @@ sub wavefront {
 
     # TableLoc  shows which table rows were interpolated
     # TableVars shows the interpolated row values
+
+    # For convenience, compute the positive phase time duration and length 
+    # since they are frequently needed.
+    my $zs = exp($Z);
+    my $Tpos = defined($z_pose_rs) ? $zs - $z_pose_rs : 0;
+    my $Lpos = defined($z_pose_ts) ? $zs - $z_pose_ts : 0;
 
     my $return_hash = {
         'X'       => $X,
@@ -1804,7 +1217,6 @@ sub wavefront {
 
     # add some shock front values
     my $medium=$self->{_medium};
-    #my $rsf_values = $medium->shock_front_values($X, $Y, $dYdX );
     my $rsf_values =
       $medium->profile_slopes_from_dYdX( exp($X), exp($Y), $dYdX );
     foreach my $key(keys %{$rsf_values}) {
@@ -1835,7 +1247,7 @@ sub table_gen {
     # $X_b = first value of ln(r) [ default is first table value ]
     # $X_e = last value of ln(r)  [ default is last table value ]
 
-    my $rtable = $self->{_rtable};
+    my $rtable = $self->{_rTables}->{shock_table};
     my $Xtmin  = $rtable->[0]->[0];
     my $Xtmax  = $rtable->[-1]->[0];
 
@@ -1860,7 +1272,7 @@ sub table_gen {
 
 sub _short_range_calc {
     my ( $self, $Q, $icol ) = @_;
-    my $rtab     = $self->{_rtable};
+    my $rtab     = $self->{_rTables}->{shock_table};
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
     my $alpha    = $self->{_alpha};
@@ -2059,7 +1471,7 @@ sub _long_range_calc {
 
 sub _add_long_range_energy {
     my ( $self, $result_i ) = @_;
-    my $rtab     = $self->{_rtable};
+    my $rtab     = $self->{_rTables}->{shock_table};
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
 
@@ -2137,7 +1549,7 @@ sub _long_range_sphere {
         $log_ga = log( $gamma * $A_far );
     }
     my $kA = 0.5 * ( $gamma + 1 ) * $A_far;
-    my $rtab = $self->{_rtable};
+    my $rtab     = $self->{_rTables}->{shock_table};
 
     my (
         $X_e,   $Y_e,      $dYdX_e, $Z_e,     $dZdX_e, $T_e, $dTdX_e,
@@ -2286,7 +1698,7 @@ sub _long_range_non_sphere {
     my ( $self, $Q, $icol ) = @_;
     my $symmetry = $self->{_symmetry};
     my $gamma    = $self->{_gamma};
-    my $rtab     = $self->{_rtable};
+    my $rtab     = $self->{_rTables}->{shock_table};
     my ( $X_e, $Y_e, $dY_dX_e, $Z_e, $dZ_dX_e ) = @{ $rtab->[-1] };
     my ( $X_i, $Y_i, $dY_dX_i, $Z_i, $dZ_dX_i, $d2Y_dX2_i, $d2Z_dX2_i );
     $dY_dX_i   = $dY_dX_e;
@@ -2590,15 +2002,174 @@ sub is_monotonic_list {
     return wantarray ? ( $mono, $i_non_mono ) : $mono;
 }
 
-sub _make_intermediate_gamma_table {
+##############################################################################
+# Routines to create new tables for intermediate gamma values by interpolation 
+##############################################################################
+
+sub _make_interpolated_tables {
+    my ( $symmetry, $gamma ) = @_; 
+    my $rTables;
+    my $result = _gamma_lookup( $symmetry, $gamma );
+
+    my $table_name      = $result->{table_name};
+    my $loc_gamma_table = $result->{loc_gamma_table};
+    my $rigam_6         = $result->{rigam_6};
+    my $rigam_4         = $result->{rigam_4};
+
+    if ( defined($rigam_6) && defined($rigam_4) ) {
+
+        # load all tables needed for interpolation
+        my $rTables_loaded =
+          load_data_tables( $symmetry, @{$rigam_6}, @{$rigam_4} );
+
+        my $rtable = _make_interpolated_gamma_table( $symmetry, $gamma,
+            $rigam_6, $rigam_4, $rTables_loaded );
+
+        my $rblast_info =
+          _make_interpolated_blast_info( $symmetry, $gamma, $rigam_4,
+            $loc_gamma_table, $rTables_loaded );
+
+        my $rimpulse_table =
+          _make_interpolated_impulse_table( $symmetry, $gamma,
+            $rigam_6, $rigam_4, $rTables_loaded );
+
+        my $rtail_shock_table =
+          _make_interpolated_tail_shock_table( $symmetry, $gamma,
+            $rigam_6, $rigam_4, $rTables_loaded );
+
+        if ( !$table_name ) {
+            $table_name = Blast::IPS::Data::make_table_key( $symmetry, $gamma );
+        }
+
+        $rTables->{shock_table}      = $rtable;
+        $rTables->{impulse_table}    = $rimpulse_table;
+        $rTables->{tail_shock_table} = $rtail_shock_table;
+        $rTables->{blast_info}       = $rblast_info;
+        $rTables->{symmetry}         = $symmetry;
+        $rTables->{gamma}            = $gamma;
+        $rTables->{table_name}       = $table_name;
+    }
+    return $rTables;
+}
+
+sub _gamma_lookup {
+    my ( $symmetry, $gamma ) = @_;
+
+    # Look for a table matching a given symmetry and gamma
+
+    # Given:
+    #   $symmetry = a 1d symmetry (0, 1, or 2) and
+    #   $gamma = an ideal gas gamma
+    # Return:
+    #   a return hash, with three possible results as follows;
+
+    # CASE 1. returns nothing if gamma is out of bounds or there is an error
+
+    # CASE 2. If the gamma is within a small tolerance of one of these gammas
+    # then returns reference to a hash with
+    #     table_name => $table_name
+
+    # CASE 3. If the gamma differs from the table entries but is within
+    # bounds of the table, returns index of bounding tables
+    # for use in interpolation:
+    #    rigam_4 => $rigam_4,
+    #    rigam_6 => $rigam_6,
+    # where
+    # rigam_4 is a list of indexes for 4 point interpolation
+    # rigam_6 is a list of indexes for 6 point interpolation
+
+    # for all cases, also returns
+    #   loc_gamma_table => has location in the table of gamma values
+    # $return_hash->{'loc_gamma_table'} =
+    # [index (if exact match), lower index, upper index, $ntab ];
+
+    # uses $rgamma_table, the global table of gamma values for the builtin
+    # tables
+
+    return if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 );
+
+    # The tolerance for testing gamma is currently fixed. It should be very
+    # small because we can construct very accurate interpolated tables.
+    my $eps = 1.e-7;
+
+    my $return_hash = {};
+
+    # lookup this gamma in the table of gamma values for this symmetry
+    my $rtab  = $rgamma_table->[$symmetry];
+    my $ntab  = @{$rtab};
+    my $icol  = 0;
+
+    my ($j2, $j3) = locate_2d($gamma, $icol, $rtab, undef,undef);
+
+    my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
+    my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
+
+    # save the location of this gamma in the gamma table so that we
+    # can do further intepolations later
+
+    # Check if out of bounds (CASE 1)
+    if ( $j2 < 0 ) {
+        return if ( $gamma + $eps < $gamma_min );
+        $return_hash->{'table_name'} = $key_min;
+        $return_hash->{'loc_gamma_table'} = [ 0, $j2, $j3, $ntab ];
+        return $return_hash;
+    }
+    if ( $j3 >= $ntab ) {
+        return if ( $gamma - $eps > $gamma_max );
+        $return_hash->{'table_name'} = $key_max;
+        $return_hash->{'loc_gamma_table'} = [ $ntab - 1, $j2, $j3, $ntab ];
+        return $return_hash;
+    }
+
+    # Check for an exact match (CASE 2)
+    my ( $gamma2, $key2 ) = @{ $rtab->[$j2] };
+    my ( $gamma3, $key3 ) = @{ $rtab->[$j3] };
+    if ( abs( $gamma - $gamma2 ) < $eps ) {
+        $return_hash->{'table_name'} = $key2;
+        $return_hash->{'loc_gamma_table'} = [ $j2, $j2, $j3, $ntab ];
+        return $return_hash;
+    }
+    if ( abs( $gamma - $gamma3 ) < $eps ) {
+        $return_hash->{'table_name'} = $key3;
+        $return_hash->{'loc_gamma_table'} = [ $j3, $j2, $j3, $ntab ];
+        return $return_hash;
+    }
+
+    # CASE 3: Not an exact match: return indexes of bounding tables in
+    # preparation for interpolation.
+
+    # At the start of the table, in the low gamma range, results are better if
+    # we reduce the number of lagrange points to keep the points them from
+    # being too lopsided.  Thus, if we are interpolating near the first table
+    # point, we will use 4 point interpolation instead of 6 point.
+    # At the upper end of the table it is not necessary or beneficial to do
+    # this.
+    my $six = $j2 == 0 ? 4 : $j2 == 1 ? 5 : 6;
+
+    my $rigam_4 = set_interpolation_points( $j2, $ntab, 4 );
+    my $rigam_6 = set_interpolation_points( $j2, $ntab, $six );
+    $return_hash->{'rigam_4'}         = $rigam_4;
+    $return_hash->{'rigam_6'}         = $rigam_6;
+    $return_hash->{'loc_gamma_table'} = [ undef, $j2, $j3, $ntab, ];
+    return ($return_hash);
+}
+
+
+sub _make_interpolated_gamma_table {
 
     # Given: a symmetry, gamma, and a list of the indexes of the builtin tables
     #     to be interpolated
     # Return: a table of X,Y,dYdX,Z,dZdX for an intermediate gamma
     #     by using cubic interpolation between the four builtin tables
 
-    my ( $symmetry, $gamma_x, $rilist_6, $rilist_4 ) = @_;
+    my ( $symmetry, $gamma_x, $rilist_6, $rilist_4, $rTables_loaded ) = @_;
     $rilist_4 = $rilist_6 unless defined($rilist_4);
+
+    # Create a cache of needed tables if caller has not done so
+    if ( !defined($rTables_loaded) ) {
+	$rTables_loaded = load_data_tables($symmetry, @{$rilist_6}, @{$rilist_4});
+    }
+
     my $rtable_new;
     my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
     my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
@@ -2612,8 +2183,9 @@ sub _make_intermediate_gamma_table {
     foreach my $igam ( @{$rilist_6} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha = alpha_interpolate( $symmetry, $gamma );
-        my ( $rtable, $rimpulse_table, $rtail_shock_table ) =
-          get_builtin_tables($table_name);
+        #my $rTables = get_builtin_tables($table_name);
+        my $rTables = $rTables_loaded->{$table_name};
+	my $rtable = $rTables->{shock_table};
 
         my $A = -log( ( $gamma + 1 ) * $alpha );
         my $dA = ( $A_x - $A );
@@ -2628,9 +2200,9 @@ sub _make_intermediate_gamma_table {
     foreach my $igam ( @{$rilist_4} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha = alpha_interpolate( $symmetry, $gamma );
-        ##my $rtable = get_builtin_table($table_name);
-        my ( $rtable, $rimpulse_table, $rtail_shock_table ) =
-          get_builtin_tables($table_name);
+        ##my $rTables = get_builtin_tables($table_name);
+        my $rTables = $rTables_loaded->{$table_name};
+	my $rtable = $rTables->{shock_table};
         my $A = -log( ( $gamma + 1 ) * $alpha );
         push @{$rlag_points_4}, [ $rtable, $A, $gamma, $alpha, $table_name ];
         push @{$rA_4}, $A;
@@ -2668,14 +2240,9 @@ EOM
         my $interp = 0;    # use cubic interpolation
 
         my $ntab  = @{$rtab};
-        my $rhash = {
-            _rtable => $rtab,
-            _jl     => undef,
-            _ju     => undef,
-        };
 
         # Locate this point in the table
-        my ( $il, $iu ) = _locate_2d( $rhash, $Y, $icol );
+        my ( $il, $iu ) = locate_2d( $Y, $icol, $rtab, undef, undef );
 
         # Handle case before start of the table
         if ( $il < 0 ) {
@@ -2791,6 +2358,122 @@ EOM
         push @{$rtab_x}, [@vars];
     }
     return $rtab_x;
+}
+
+
+sub _make_interpolated_impulse_table {
+
+    # FIXME: this needs to be written
+    my ( $symmetry, $gamma, $rigam_6, $rigam_4, $rTables_loaded ) = @_;
+    my $rimpulse_table;
+    return $rimpulse_table;
+}
+
+sub _make_interpolated_tail_shock_table {
+
+    # FIXME: this needs to be written
+    my ( $symmetry, $gamma, $rigam_6, $rigam_4, $rTables_loaded ) = @_;
+    my $rtail_shock_table;
+    return $rtail_shock_table;
+}
+
+sub _make_interpolated_blast_info {
+    my ( $symmetry, $gamma, $rigam_4, $loc_gamma_table, $rTables_loaded ) = @_;
+
+    my $rblast_info;
+    if( defined($loc_gamma_table) && defined($rigam_4) ) {
+
+        # If this table is an interpolated table then we can interpolate
+        # P0 from nearby fits.
+        # FIXME: this works now but needs a lot of refinement for better
+        # Use best transformation for each variable.
+        # Sintegral needs (alpha+2) weighting.
+        my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+
+        #if ( defined($loc_gamma_table) && defined($rigam_4) ) {
+        if ( $jl >= 0 && $ju < $num ) {
+
+            my $alpha = alpha_interpolate( $symmetry, $gamma );
+            my $rtab;
+            foreach my $igam ( @{$rigam_4} ) {
+                my ( $gamma_i, $table_name_i ) =
+                  @{ $rgamma_table->[$symmetry]->[$igam] };
+
+                #my $rblast_info_i = get_blast_info( $symmetry, $gamma_i );
+                my $rblast_info_i = $rTables_loaded->{$table_name_i}->{blast_info};
+                my $alpha_i = alpha_interpolate( $symmetry, $gamma_i );
+                push @{$rtab}, [ $rblast_info_i, $gamma_i, $alpha_i, $igam ];
+            }
+
+            # loop to interpolate all values
+            my @keys = keys %{ $rtab->[0]->[0] };
+            foreach my $key (@keys) {
+                my ( $rx, $ry );
+                my $nogo;
+                foreach my $item ( @{$rtab} ) {
+                    my ( $rblast_info_i, $gamma_i, $alpha_i, $igam ) = @{$item};
+                    my $val_i = $rblast_info_i->{$key};
+                    if ( !defined($val_i) || $val_i == 0 ) {
+
+                        # no interpolation if missing or zero bounding points
+                        $nogo ||= ( $igam eq $jl || $igam eq $ju );
+                        last if $nogo;
+                        next;
+                    }
+
+                    # FIXME: Sintegral should be weighted with (alpha+2)
+                    push @{$rx}, $gamma_i;
+                    push @{$ry}, $val_i;
+                }
+
+                my $val = 0;
+                if ( !$nogo ) {
+                    $val = polint( $gamma, $rx, $ry );
+                }
+                $rblast_info->{$key} = $val;
+            }
+
+            # Old Linear interpolation, for reference
+            # execute to see comparison with polynomial interpolation
+            if (0) {
+                my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+                if ( $jl >= 0 && $ju < $num ) {
+                    my $rtab          = $rgamma_table->[$symmetry];
+
+##                    my $gamma_l       = $rtab->[$jl]->[0];
+##                    my $gamma_u       = $rtab->[$ju]->[0];
+##                    my $rblast_info_l = get_blast_info( $symmetry, $gamma_l );
+##                    my $rblast_info_u = get_blast_info( $symmetry, $gamma_u );
+
+                    my ( $gamma_l, $table_name_l ) = @{$rtab->[$jl]};
+                    my ( $gamma_u, $table_name_u ) = @{$rtab->[$ju]};
+                    my $rblast_info_l = $rTables_loaded->{$table_name_l}->{blast_info};
+                    my $rblast_info_u = $rTables_loaded->{$table_name_u}->{blast_info};
+
+                    if ( defined($rblast_info_l) && defined($rblast_info_u) ) {
+                        foreach my $key ( keys %{$rblast_info_l} ) {
+                            my $val_l = $rblast_info_l->{$key};
+                            my $val_u = $rblast_info_u->{$key};
+
+                            if ( defined($val_l) && defined($val_u) ) {
+                                my $val = _linear_interpolation(
+                                    $gamma,   $gamma_l, $val_l,
+                                    $gamma_u, $val_u
+                                );
+                                my $vsave = $rblast_info->{$key};
+                                $rblast_info->{$key} = $val;
+
+                                # DEBUG: comparison of methods
+                                print STDERR
+                                  "key=$key polint=$vsave linear=$val\n";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return $rblast_info;
 }
 
 1;

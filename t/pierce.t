@@ -60,9 +60,17 @@ foreach my $item ( @{$rtable} ) {
     my $err = abs( $Y - $Y_k );
     if ( !defined($err_max) || $err > $err_max ) { $err_max = $err }
 
-    my $rs=exp($X);
-    my $zs=exp($Z);
-    my ($Tpos, $Lpos)= $blast_table->get_positive_phase( $rs, $zs ); 
+
+    ## OLD method, has been deleted:
+    ##my $rs=exp($X);
+    ##my $zs=exp($Z);
+    #my ($Tpos, $Lpos)= $blast_table->get_positive_phase( $rs, $zs ); 
+
+    my $ret = $blast_table->wavefront( 'X' => $X );
+#    my $z_pose_rs = $ret->{z_pose_rs};
+#    my $Tpos      = $zs - $z_pose_rs;
+    my $Tpos = $ret->{Tpos};
+
     my $err2 = abs($Tpos-$Tpos_k)/$Tpos;
     if ( !defined($err2_max) || $err2 > $err2_max ) { $err2_max = $err2 }
     #print STDERR "$rs, $zs, $Tpos, $Tpos_k, $err2\n";

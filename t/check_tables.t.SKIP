@@ -3,6 +3,8 @@ use warnings;
 use Test;
 use Blast::IPS;
 
+## SKIP: the check_tables() routine has been deleted
+
 my $rtables;
 
 BEGIN {
