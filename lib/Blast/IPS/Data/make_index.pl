@@ -34,8 +34,10 @@ foreach my $file (@files) {
             next;
         }
 
-        my $key = _make_table_name( $symmetry, $gamma );
-        push @{ $rtmp->[$symmetry] }, [ $gamma, $key, $module_name ];
+        ##my $key = _make_table_name( $symmetry, $gamma );
+        my $key = $module_name;
+        ##push @{ $rtmp->[$symmetry] }, [ $gamma, $key, $module_name ];
+        push @{ $rtmp->[$symmetry] }, [ $gamma, $key ];
     }
     else {
         print STDERR "skipping $file: cannot parse symmetry from name\n";

@@ -2,7 +2,7 @@ package Blast::IPS::Data;
 
 # This package handles access to individual data modules for
 # a given symmetry and gamma value.  It returns a reference to
-# the data in the appropriate module in Data/.  The actual
+# the data in the appropriate module.  The actual
 # data returned will differ from the data in the modules due to
 # several post-processing steps which are done.
 
@@ -21,6 +21,7 @@ our $VERSION = 0.1.1;
 use Carp;
 use Blast::IPS::Data::Index;
 use Storable qw(dclone);
+use File::Basename;
 
 # This hash reference holds references to all loaded data tables. Each set of
 # data has a unique hash key:  
@@ -41,19 +42,16 @@ BEGIN {
 	return $rindex_table;
     }
 
-    # Make a lookup table for module names
-    #my $rindex_table = $Blast::IPS::Data::Index::rindex_table;
-    #my $rindex_table = Blast::IPS::Data::Index->get_index();
-
+    # Make a lookup table for existing module names
     foreach my $symmetry ( 0, 1, 2 ) {
         next unless defined( $rindex_table->[$symmetry] );
         foreach my $item ( @{ $rindex_table->[$symmetry] } ) {
-            my ( $gamma, $key, $module_name ) = @{$item};
-            $rmodule_names->{$key} = $module_name;
+            my ( $gamma, $key ) = @{$item};
+            $rmodule_names->{$key} = $key;
         }
     }
 
-    # These are the variable names currently in the 'blast_info' array
+    # These are the variable names in the 'blast_info' array
     @vnames = qw(
       symmetry
       gamma
@@ -83,16 +81,16 @@ BEGIN {
 sub make_table_key {
 
     # Make a standard table key by concatenating the symmetry letter and the gamma;
-    # For example, make the key 'S1.37' for spherical symmetry with gamma=1.37
+    # For example, make the key 'S1x37' for spherical symmetry with gamma=1.37
     # This key will be used as the hash key for a module in the global table.
     my ( $sym, $gamma ) = @_;
-    $gamma=~s/0+$//;
+    my $gamma_x = sprintf "%.8g", $gamma;
+    $gamma_x=~s/\./x/;
     my $table_key;
-    my $gamma_pr = sprintf "%.4g", $gamma;
     if ( $sym =~ /\d/ ) {
         $sym = $sym == 0 ? 'P' : $sym == 1 ? 'C' : 'S';
     }
-    $table_key = $sym . $gamma_pr;
+    $table_key = $sym . $gamma_x;
     return $table_key;
 }
 
@@ -103,6 +101,7 @@ sub _decrypt_table_key {
         $symmetry = $1;
         $gamma    = $2;
         $symmetry = ( $symmetry eq 'S' ) ? 2 : ( $symmetry eq 'C' ) ? 1 : 0;
+	$gamma =~ s/x/\./;
     }
     return ( $symmetry, $gamma );
 }
@@ -183,23 +182,30 @@ sub _merge_shock_and_blast_info {
     return;
 }
 
-
 sub get {
 
     # return reference to the data tables for a specific case, if they exists
 
-    # The call parameter(s) are either the hash key for a module (like 'S1.4')
+    # The call parameter(s) are either the hash key for a module (like 'S1x4')
     # or a hash of call parameter values (either 'name' or 'symmetry' and
     # 'gamma')
 
     # The data is loaded and cached in $rDataTables->{$module_key},
-    # where the key $module_key is in the standard name format (like 'S1.4')
+    # where the key $module_key is in the standard name format (like 'S1x4')
 
     # Example of calls to load a table for spherical symmetry and gamma=1.4:
     # $rtables = get('gamma'=>1.4, 'symmetry'=>'S')
     # $rtables = get('gamma'=>1.4, 'symmetry'=>2)
-    # $rtables = get('S1.4')
-    # $rtables = get('table_name'=>'S1.4')
+    # $rtables = get('S1x4')
+    # $rtables = get('table_name'=>'S1x4')
+
+    # Calls to test new modules; the basename of the file must be the module name
+    # $rtables = get('file'=>'./TestData/S1x41.pm', 'table_name'=>'S1x41')
+    # $rtables = get('gamma'=>1.4, 'symmetry'=>2, 'file'=>'./TestData/S1x4.pm')
+
+    # Example call to test a new library in directory ./TestData/
+    # Note that the final / on the directory name is required
+    # $rtables = get('gamma'=>1.4, 'symmetry'=>2, 'file'=>'./TestData/')
 
     # We return a reference to a copy of the tables to avoid changing values in
     # the cashed table
@@ -210,14 +216,25 @@ sub get {
 
 sub _get_raw {
 
-    # Load a data module if necessary and return the hash key for it in 
+    # Load a data module if necessary and return the hash key for it in
     # $rDataTables, or return undef if it does not exist
-
+    
+    # If 'file' is given, it may either give a complete file name or just a path
+    # For example,
+    #   file = /tmp/TestData/bubba.pm   means bubba.pm has the data file;
+    #        in this case you must also give symmetry, gamma, and the table name
+    #   file = /tmp/TestData/    means the data files are in that directory
+    #        and they have the standard names
+    
     # a reference consulted:
     # https://stackoverflow.com/questions/1917261/how-can-i-dynamically-include-perl-modules-without-using-eval
 
-    my @args = @_;
-    my ( $key, $symmetry, $gamma );
+    my @args        = @_;
+    my $module_path = "Blast::IPS::Data::";
+    my $file_path   = "Blast/IPS/Data/";
+    my $file_ext    = ".pm";
+
+    my ( $key, $symmetry, $gamma, $file, $module_name );
     if ( @args == 1 ) {
         $key = $args[0];
 	($symmetry, $gamma) = _decrypt_table_key($key);
@@ -228,17 +245,37 @@ sub _get_raw {
         $key      = $hash{'table_name'};
         $symmetry = $hash{'symmetry'};
         $gamma    = $hash{'gamma'};
+        $file     = $hash{'file'};
+
+        if ( defined($file) ) {
+            ( $module_name, $file_path, $file_ext ) =
+              fileparse( $file, qr/\.[^.]*/ );
+            if ( !$key ) { $key = $module_name }
+        }
+
         if ( !$key ) { $key = make_table_key( $symmetry, $gamma ) }
-        else         { ( $symmetry, $gamma ) = _decrypt_table_key($key) }
+        else         { 
+	   # convert older key types 'S1.2' into 'S1x2'
+	   $key =~ s/\./x/;
+           my ( $sym, $gam) = _decrypt_table_key($key);
+           $symmetry = $sym unless defined($symmetry);
+           $gamma = $gam unless defined($gamma);
+        }
     }
 
-    my $module_name   = $rmodule_names->{$key};
-    return unless ($module_name);
     if ( !defined( $rBlastData->{$key} ) ) {
+
+	# generate a known module name from its key
+        if ( !defined($module_name) ) {
+            $module_name = $rmodule_names->{$key};
+            return unless ($module_name);
+        }
+
+        # load the module
+        my $module = $module_path . $module_name;
+        my $module_file = $file_path . $module_name . $file_ext; 
         eval {
-            my $module = "Blast::IPS::Data::$module_name";
-            ( my $file = $module ) =~ s|::|/|g;
-            require $file . '.pm';
+            require $module_file; 
             $module->import();
             1;
         } or do {
@@ -252,9 +289,6 @@ sub _get_raw {
         _convert_blast_info_to_hash($key); 
         _merge_shock_and_blast_info($key); 
 
-        $rBlastData->{$key}->{symmetry}   = $symmetry;
-        $rBlastData->{$key}->{gamma}      = $gamma;
-        $rBlastData->{$key}->{table_name} = $key;
     }
     return $rBlastData->{$key}; 
 }

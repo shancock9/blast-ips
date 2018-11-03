@@ -6,7 +6,11 @@ use warnings;
 # For data definitions see the README file in Blast::IPS::Data.
 
 our $rBlastData;
-$rBlastData->{'S6.5'} = {
+$rBlastData->{'S6x5'} = {
+
+    table_name => 'S6x5',
+    symmetry   => 2,
+    gamma      => 6.5,
 
     shock_table_info => [ 2, 6.5, 8.27e-07, 8000, 3.78e-07, 4, 3.64e-08, 2.9e-07, 5e-07, 0.59028, -0.83858 ],
 

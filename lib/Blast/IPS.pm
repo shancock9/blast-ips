@@ -127,7 +127,7 @@ sub _setup {
     my ( $self, @args ) = @_;
 
     my @input_keys = qw(
-      rTables
+      file
       table_name
       gamma
       symmetry
@@ -175,10 +175,195 @@ sub _setup {
         "Checking for valid input keys" );
 
     # The following four quantities can be specified:
-    my $rTables    = $rinput_hash->{rTables};
     my $table_name = $rinput_hash->{table_name};
     my $gamma      = $rinput_hash->{gamma};
     my $symmetry   = $rinput_hash->{symmetry};
+    my $file       = $rinput_hash->{file};
+
+    # allow alphanumeric abbreviations for symmetry
+    # i.e. 'S', 'sph', 'spherical' etc
+    if ( defined($symmetry) ) {
+        if    ( $symmetry =~ /^S/i ) { $symmetry = 2 }
+        elsif ( $symmetry =~ /^C/i ) { $symmetry = 1 }
+        elsif ( $symmetry =~ /^P/i ) { $symmetry = 0 }
+    }
+
+    # use default spherical symmetry with gamma=1.4 if no args given
+    if ( !defined($file) && !defined($table_name) ) {
+        $symmetry = 2   unless defined($symmetry);
+        $gamma    = 1.4 unless defined($gamma);
+    }
+
+    # Look for a table
+    my $rTables = get_builtin_tables(
+        'symmetry'   => $symmetry,
+        'gamma'      => $gamma,
+        'table_name' => $table_name,
+        'file'       => $file,
+    );
+
+    if ( !defined($rTables) ) {
+
+        # No builtin table found, so make interpolated tables
+        $rTables = _make_interpolated_tables( $symmetry, $gamma );
+
+        if ( !$rTables ) {
+            carp(<<EOM);
+Unable to create an interpolated table for symmetry=$symmetry and gamma=$gamma
+EOM
+            return;
+        }
+    }
+
+    # Now check the results
+    my $symmetry_old = $symmetry;
+    my $gamma_old    = $gamma;
+
+    $table_name = $rTables->{table_name};
+    $gamma      = $rTables->{gamma};
+    $symmetry   = $rTables->{symmetry};
+
+    # Be sure requested symmetry and gamma agree with the values in the table
+    if ( defined($symmetry_old) && $symmetry_old != $symmetry ) {
+                carp(<<EOM);
+symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
+your value '$symmetry_old'.  You may have entered the wrong value for this table.
+EOM
+                return;
+    }
+    if ( defined($gamma_old) && $gamma_old != $gamma ) {
+                carp(<<EOM);
+gamma of builtin table name: '$table_name' is '$gamma' which differs from
+your value '$gamma_old'.  You may have entered the wrong value for this table.
+EOM
+                return;
+    }
+
+    my $error = "";
+    if ( $gamma <= 1.0 ) { $error .= "Bad gamma='$gamma'\n" }
+    if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
+        $error .= "Bad symmetry='$symmetry'\n";
+    }
+
+    my $rshock_table = $rTables->{shock_table};
+    my $table_error  = _check_table($rshock_table);
+    $error .= $table_error;
+
+    my $num_table;
+    if ( !$error ) {
+        _update_toa_table($rshock_table);
+        $num_table = @{$rshock_table};
+    }
+
+    my $rimpulse_table = $rTables->{impulse_table};
+    my $rztables       = _make_z_tables($rimpulse_table);
+    $rTables->{rztables} = $rztables;
+
+    my $medium =
+      Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
+
+    # Store some basic parameters
+    $self->{_gamma}      = $gamma;
+    $self->{_symmetry}   = $symmetry;
+    $self->{_rTables}    = $rTables;
+    $self->{_table_name} = $table_name;
+    $self->{_medium}     = $medium;
+
+    # saved table lookup locations for shock table
+    $self->{_jl} = -1;
+    $self->{_ju} = $num_table;
+
+    # saved table lookup locations for impulse table
+    $self->{_jl2} = -1;
+    $self->{_ju2} = undef;
+
+    if ( !$error ) {
+
+
+        # FIXME: make both available - put the first one in blast_info
+        # Compute alpha. We can either get alpha from the shock table:
+        my $alpha = alpha_from_shock_table( $symmetry, $gamma, $rTables );
+
+        # or use the pre-computed values:  
+        #   my $alpha = alpha_interpolate( $symmetry, $gamma );
+
+	# The pre-computed values are very slightly more accurate, but the
+	# difference is negligable
+        $self->{_alpha} = $alpha;
+
+        # Compute parameters for extrapolating spherical waves
+        my ( $A_far, $B_far, $Z_zero, $msg ) =
+          long_range_parameters( $symmetry, $gamma, $rTables );
+        $self->{_A_far}  = $A_far;
+        $self->{_B_far}  = $B_far;
+        $self->{_Z_zero} = $Z_zero;
+        $error .= $msg;
+
+    }
+
+    if ($error) {
+        $self->{_error} = $error;
+        carp "$error\n";
+    }
+    return;
+}
+
+sub OLD_setup {
+    my ( $self, @args ) = @_;
+
+    my @input_keys = qw(
+      file
+      table_name
+      gamma
+      symmetry
+    );
+    my %valid_input_keys;
+    @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
+
+    # Convert the various input methods to a hash ref
+    my $rinput_hash;
+    my $reftype;
+    if (@args) {
+        my $arg0    = $args[0];
+        my $reftype = ref($arg0);
+        if ( !$reftype ) {
+
+            if ( defined($arg0) ) {
+
+                # simple hash of named values
+                my %input_hash = @args;
+                $rinput_hash = \%input_hash;
+            }
+
+        }
+        elsif ( $reftype eq 'HASH' ) {
+            $rinput_hash = $arg0;
+        }
+        elsif ( $reftype eq "ARRAY" ) {
+
+            # useful? maybe delete this option?
+            $rinput_hash = { rtable => $arg0 };
+        }
+        else {
+            carp "Unexpected ref type: $reftype\n";
+            return;
+        }
+    }
+    else {
+
+        # default to spherical table with gamma 1.4 if no arg given
+        $rinput_hash = { symmetry => 2, gamma => 1.4 };
+    }
+
+    # Validate input keys
+    check_keys( $rinput_hash, \%valid_input_keys,
+        "Checking for valid input keys" );
+
+    # The following four quantities can be specified:
+    my $table_name = $rinput_hash->{table_name};
+    my $gamma      = $rinput_hash->{gamma};
+    my $symmetry   = $rinput_hash->{symmetry};
+    my $file       = $rinput_hash->{file};
 
     # Allow input of the older 'ASYM' keyword for the symmetry
     # FIXME: this option to be deleted
@@ -200,8 +385,23 @@ sub _setup {
     # Not currently working:
     # FIXME: the complete hash of tables should be given in the future, for testing a new table
     ################################################
-    if ( defined($rTables) ) {
+    my $rTables;
+    if ( defined($file) ) {
+        $rTables = get_builtin_tables(
+            'file'       => $file,
+            'symmetry'   => $symmetry,
+            'gamma'      => $gamma,
+            'table_name' => $table_name
+        );
+        if ( !defined($rTables) ) {
+            carp(<<EOM);
+Could not create a module for file='$file'
+EOM
+            return;
 
+        }
+
+=pod
         if ( !defined($symmetry) || !defined($gamma) ) {
             carp(<<EOM);
 You must give a value for symmetry and gamma when you supply a complete table
@@ -212,6 +412,7 @@ EOM
             $table_name = Blast::IPS::Data::make_table_key( $symmetry, $gamma );
             $table_name .= "_custom";
         }
+=cut
     }
 
     # Input Option 2: a builtin table name is given
@@ -277,7 +478,29 @@ EOM
         }
     }
 
+    my $symmetry_old = $symmetry;
+    my $gamma_old    = $gamma;
+
     $table_name = $rTables->{table_name};
+    $gamma      = $rTables->{gamma};
+    $symmetry   = $rTables->{symmetry};
+
+    # Be sure requested symmetry and gamma agree with the values in the table
+    if ( defined($symmetry_old) && $symmetry_old != $symmetry ) {
+                carp(<<EOM);
+symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
+your value '$symmetry_old'.  You may have entered the wrong value for this table.
+EOM
+                return;
+    }
+    if ( defined($gamma_old) && $gamma_old != $gamma ) {
+                carp(<<EOM);
+gamma of builtin table name: '$table_name' is '$gamma' which differs from
+your value '$gamma_old'.  You may have entered the wrong value for this table.
+EOM
+                return;
+    }
+
     my $rshock_table            = $rTables->{shock_table};
     my $rimpulse_table    = $rTables->{impulse_table};
     my $rtail_shock_table = $rTables->{tail_shock_table};
@@ -376,7 +599,6 @@ sub long_range_parameters {
             $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
             $B_far = 0.5 / $mu - $X_far;
         }
-        ##else { $self->{_error} .= "ending dYdX=$dYdX_far is bad\n" }
         else { $msg = "ending dYdX=$dYdX_far is bad\n" }
         $Z_zero =
           exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
@@ -690,7 +912,6 @@ sub get_z {
 
 sub get_impulse {
     my ( $self, $result ) = @_;
-    ##my $rimpulse_table = $self->{_rimpulse_table};
     my $rimpulse_table = $self->{_rTables}->{impulse_table};
     return unless ($rimpulse_table);
     my $jl       = $self->{_jl2};
@@ -1277,7 +1498,7 @@ sub _short_range_calc {
     my $gamma    = $self->{_gamma};
     my $alpha    = $self->{_alpha};
     my $delta    = ( 3 + $symmetry ) / 2;
-    my $p_amb    = 1;                       ## PATCH!! FIXME
+    my $p_amb    = 1;                
 
     # $icol is the column number of the variable $Q which we are given
     # 0 = X
@@ -2183,7 +2404,6 @@ sub _make_interpolated_gamma_table {
     foreach my $igam ( @{$rilist_6} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha = alpha_interpolate( $symmetry, $gamma );
-        #my $rTables = get_builtin_tables($table_name);
         my $rTables = $rTables_loaded->{$table_name};
 	my $rtable = $rTables->{shock_table};
 
@@ -2200,7 +2420,6 @@ sub _make_interpolated_gamma_table {
     foreach my $igam ( @{$rilist_4} ) {
         my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
         my $alpha = alpha_interpolate( $symmetry, $gamma );
-        ##my $rTables = get_builtin_tables($table_name);
         my $rTables = $rTables_loaded->{$table_name};
 	my $rtable = $rTables->{shock_table};
         my $A = -log( ( $gamma + 1 ) * $alpha );
@@ -2439,11 +2658,6 @@ sub _make_interpolated_blast_info {
                 my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
                 if ( $jl >= 0 && $ju < $num ) {
                     my $rtab          = $rgamma_table->[$symmetry];
-
-##                    my $gamma_l       = $rtab->[$jl]->[0];
-##                    my $gamma_u       = $rtab->[$ju]->[0];
-##                    my $rblast_info_l = get_blast_info( $symmetry, $gamma_l );
-##                    my $rblast_info_u = get_blast_info( $symmetry, $gamma_u );
 
                     my ( $gamma_l, $table_name_l ) = @{$rtab->[$jl]};
                     my ( $gamma_u, $table_name_u ) = @{$rtab->[$ju]};
