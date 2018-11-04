@@ -51,12 +51,15 @@ foreach my $symmetry ( 0 .. 2 ) {
         # $alpha = the value estimated from the finite difference calculation
         # $alpha2 = the value computed by integrating the analytical solution
 
-        # This gets the value extracted from the FD calculation:
-        my $alpha = $blast_table->get_alpha();
+	# The value returned by the get routine is currently the alpha_interpolate() value
+        # my $alpha = $blast_table->get_alpha();
 
-       # The easiest way to get the analytical value is with the following call.
-       # These values are in a table called AlphaTable.pm; no interpolation will
-       # be actually needed.
+        # This gets the value extracted from the FD calculation:
+        my $alpha = $blast_table->alpha_from_shock_table();
+
+        # The analytical value is obtain with the following call.
+        # These values are in a table called AlphaTable.pm; no interpolation will
+        # be actually needed.
         my $alpha2 = Blast::IPS::alpha_interpolate( $symmetry, $gamma );
 
         my $dalp = abs( $alpha2 - $alpha );

@@ -64,6 +64,7 @@ use Blast::IPS::MathUtils qw(
   locate_2d
   polint
   set_interpolation_points
+  table_row_interpolation
 );
 use Blast::IPS::Medium;
 use Blast::IPS::Utils qw( check_keys );
@@ -113,6 +114,24 @@ BEGIN {
         'dI-XdX'           => I_dImXdX,
         interpolation_flag => 0,
     );
+
+    # Impulse table variable layout scheme
+    my $j = 0;
+    use constant {
+        J_X           => $j++,
+        J_Y           => $j++,
+        J_Z           => $j++,
+        J_rpint_pos   => $j++,
+        J_rpint_neg   => $j++,
+        J_z_pose_rs   => $j++,
+        J_z_nege_rs   => $j++,
+        J_Qint_pos    => $j++,
+        J_rovp_min    => $j++,
+        J_z_pmin_rs   => $j++,
+        J_ke_pos      => $j++,
+        J_work_pos    => $j++,
+        J_Disp_pos    => $j++,
+    };
 }
 
 sub new {
@@ -262,7 +281,7 @@ EOM
     my $medium =
       Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
 
-    # Store some basic parameters
+    # some basic parameters
     $self->{_gamma}      = $gamma;
     $self->{_symmetry}   = $symmetry;
     $self->{_rTables}    = $rTables;
@@ -282,13 +301,13 @@ EOM
 
         # FIXME: make both available - put the first one in blast_info
         # Compute alpha. We can either get alpha from the shock table:
-        my $alpha = alpha_from_shock_table( $symmetry, $gamma, $rTables );
+        # my $alpha = $self->alpha_from_shock_table();
 
         # or use the pre-computed values:  
-        #   my $alpha = alpha_interpolate( $symmetry, $gamma );
+        my $alpha = alpha_interpolate( $symmetry, $gamma );
 
 	# The pre-computed values are very slightly more accurate, but the
-	# difference is negligable
+	# difference is very small
         $self->{_alpha} = $alpha;
 
         # Compute parameters for extrapolating spherical waves
@@ -308,273 +327,17 @@ EOM
     return;
 }
 
-sub OLD_setup {
-    my ( $self, @args ) = @_;
-
-    my @input_keys = qw(
-      file
-      table_name
-      gamma
-      symmetry
-    );
-    my %valid_input_keys;
-    @valid_input_keys{@input_keys} = (1) x scalar(@input_keys);
-
-    # Convert the various input methods to a hash ref
-    my $rinput_hash;
-    my $reftype;
-    if (@args) {
-        my $arg0    = $args[0];
-        my $reftype = ref($arg0);
-        if ( !$reftype ) {
-
-            if ( defined($arg0) ) {
-
-                # simple hash of named values
-                my %input_hash = @args;
-                $rinput_hash = \%input_hash;
-            }
-
-        }
-        elsif ( $reftype eq 'HASH' ) {
-            $rinput_hash = $arg0;
-        }
-        elsif ( $reftype eq "ARRAY" ) {
-
-            # useful? maybe delete this option?
-            $rinput_hash = { rtable => $arg0 };
-        }
-        else {
-            carp "Unexpected ref type: $reftype\n";
-            return;
-        }
-    }
-    else {
-
-        # default to spherical table with gamma 1.4 if no arg given
-        $rinput_hash = { symmetry => 2, gamma => 1.4 };
-    }
-
-    # Validate input keys
-    check_keys( $rinput_hash, \%valid_input_keys,
-        "Checking for valid input keys" );
-
-    # The following four quantities can be specified:
-    my $table_name = $rinput_hash->{table_name};
-    my $gamma      = $rinput_hash->{gamma};
-    my $symmetry   = $rinput_hash->{symmetry};
-    my $file       = $rinput_hash->{file};
-
-    # Allow input of the older 'ASYM' keyword for the symmetry
-    # FIXME: this option to be deleted
-    if ( !defined($symmetry) ) { $symmetry = $rinput_hash->{ASYM}; }
-
-    # allow alphanumeric abbreviations for symmetry
-    # i.e. 'S', 'sph', 'spherical' etc
-    if ( defined($symmetry) ) {
-        if    ( $symmetry =~ /^S/i ) { $symmetry = 2 }
-        elsif ( $symmetry =~ /^C/i ) { $symmetry = 1 }
-        elsif ( $symmetry =~ /^P/i ) { $symmetry = 0 }
-    }
-
-    # Input Option 1: a user-supplied table is given
-    # symmetry and gamma must be given too
-    # table name is optional
-
-    ################################################
-    # Not currently working:
-    # FIXME: the complete hash of tables should be given in the future, for testing a new table
-    ################################################
-    my $rTables;
-    if ( defined($file) ) {
-        $rTables = get_builtin_tables(
-            'file'       => $file,
-            'symmetry'   => $symmetry,
-            'gamma'      => $gamma,
-            'table_name' => $table_name
-        );
-        if ( !defined($rTables) ) {
-            carp(<<EOM);
-Could not create a module for file='$file'
-EOM
-            return;
-
-        }
-
-=pod
-        if ( !defined($symmetry) || !defined($gamma) ) {
-            carp(<<EOM);
-You must give a value for symmetry and gamma when you supply a complete table
-EOM
-            return;
-        }
-        if ( !defined($table_name) ) {
-            $table_name = Blast::IPS::Data::make_table_key( $symmetry, $gamma );
-            $table_name .= "_custom";
-        }
-=cut
-    }
-
-    # Input Option 2: a builtin table name is given
-    # symmetry and gamma must match if given; it is safest not to give them.
-    elsif ( defined($table_name) ) {
-
-        $rTables     = get_builtin_tables($table_name);
-        if ( defined($rTables) ) {
-            my $old_symmetry = $symmetry;
-            my $old_gamma    = $gamma;
-            $symmetry = $rTables->{symmetry};
-            $gamma    = $rTables->{gamma};
-            if ( defined($old_symmetry) && $old_symmetry != $symmetry ) {
-                carp(<<EOM);
-symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
-your value '$symmetry'.
-You should either specify a table name or else symmetry and gamma.
-EOM
-                return;
-            }
-            if ( defined($old_gamma) && $old_gamma != $gamma ) {
-                carp(<<EOM);
-gamma of builtin table name: '$table_name' is '$gamma' which differs from
-your value '$gamma'. 
-You should either specify a table name or else symmetry and gamma.
-EOM
-                return;
-            }
-        }
-        else {
-            carp(<<EOM);
-Not a builtin table name: '$table_name'
-
-To create a table for any symmetry and gamma you can use:
-   Blast::IPS->new(symmetry='S', gamma=>1.23); 
-where symmetry can be 'P', 'C' or 'S'
-and gamma can be any value between 1.1 and 6.5
-
-EOM
-            return;
-        }
-    }
-
-    # Input Option 3: gamma and symmetry are given. This is the normal method.
-    else {
-
-        # allow default of spherical symmetry, gamma=1.4
-        if ( !defined($gamma) )    { $gamma    = 1.4 }
-        if ( !defined($symmetry) ) { $symmetry = 2 }
-        $rTables = get_builtin_tables('symmetry'=>$symmetry, 'gamma'=>$gamma);
-	if (!defined($rTables)) {
-
-            # No builtin table, so we make interpolated tables
-            # Search for this gamma value
-            $rTables = _make_interpolated_tables( $symmetry, $gamma );    
-
-            if (!$rTables) {
-                carp(<<EOM);
-Unable to create an interpolated table for symmetry=$symmetry and gamma=$gamma
-EOM
-		return;
-	    }
-        }
-    }
-
-    my $symmetry_old = $symmetry;
-    my $gamma_old    = $gamma;
-
-    $table_name = $rTables->{table_name};
-    $gamma      = $rTables->{gamma};
-    $symmetry   = $rTables->{symmetry};
-
-    # Be sure requested symmetry and gamma agree with the values in the table
-    if ( defined($symmetry_old) && $symmetry_old != $symmetry ) {
-                carp(<<EOM);
-symmetry of builtin table name: '$table_name' is '$symmetry' which differs from
-your value '$symmetry_old'.  You may have entered the wrong value for this table.
-EOM
-                return;
-    }
-    if ( defined($gamma_old) && $gamma_old != $gamma ) {
-                carp(<<EOM);
-gamma of builtin table name: '$table_name' is '$gamma' which differs from
-your value '$gamma_old'.  You may have entered the wrong value for this table.
-EOM
-                return;
-    }
-
-    my $rshock_table            = $rTables->{shock_table};
-    my $rimpulse_table    = $rTables->{impulse_table};
-    my $rtail_shock_table = $rTables->{tail_shock_table};
-    my $rblast_info       = $rTables->{blast_info};
-
-    # Now check the results
-    my $error = "";
-    if ( $gamma <= 1.0 ) { $error .= "Bad gamma='$gamma'\n" }
-    if ( $symmetry != 0 && $symmetry != 1 && $symmetry != 2 ) {
-        $error .= "Bad symmetry='$symmetry'\n";
-    }
-
-    my $table_error = _check_table($rshock_table);
-    $error .= $table_error;
-
-    my $num_table;
-    if ( !$error ) {
-        _update_toa_table($rshock_table);
-        $num_table = @{$rshock_table};
-    }
-
-    my $rztables = _make_z_tables($rimpulse_table);
-    $rTables->{rztables} = $rztables;
-
-    my $medium =
-      Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
-
-    # Basic parameters
-    $self->{_gamma}      = $gamma;
-    $self->{_symmetry}   = $symmetry;
-    $self->{_rTables}    = $rTables;
-    $self->{_table_name} = $table_name;
-    $self->{_medium}     = $medium;
-
-    # saved table lookup locations for shock table
-    $self->{_jl}                      = -1;
-    $self->{_ju}                      = $num_table;
-
-    # saved table lookup locations for impulse table
-    $self->{_jl2}                     = -1;
-    $self->{_ju2}                     = undef;
-
-    if (!$error) { 
-
-	# Compute alpha. We can either get alpha from the shock table, or use
-	# the pre-computed values.  For now we get it from the table, but
-	# eventually I may change.
-	my $alpha = alpha_from_shock_table($symmetry, $gamma, $rTables);
-        $self->{_alpha} = $alpha;
-
-	# Compute parameters for extrapolating spherical waves
-	my ($A_far, $B_far, $Z_zero, $msg) = long_range_parameters($symmetry, $gamma, $rTables);
-        $self->{_A_far}  = $A_far;
-        $self->{_B_far}  = $B_far;
-        $self->{_Z_zero} = $Z_zero;
-	$error .= $msg;
-
-    }
-
-    if ($error) { 
-       $self->{_error} = $error;
-       carp "$error\n" 
-    }
-    return;
-}
-
 sub alpha_from_shock_table {
-    my ($symmetry, $gamma, $rTables) = @_;
-    my $rtable   = $rTables->{shock_table};
+    my ($self)       = @_;
+    my $rTables      = $self->{_rTables};
+    my $rshock_table = $rTables->{shock_table};
+    my $symmetry     = $rTables->{symmetry};
+    my $gamma        = $rTables->{gamma};
 
     # we find the value of alpha at the first table point
     # based on R^(symmetry+1)*u**2=constant
     my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
-      @{ $rtable->[0] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
+      @{ $rshock_table->[0] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
     my $lambda = exp($X_near);
     my $Prat   = exp($Y_near) + 1;
     my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
@@ -854,9 +617,9 @@ sub _make_z_tables {
         my $t_pose_rs = $rs - $z_pose_rs;
         my $t_nege_rs = $rs - $z_nege_rs;
         my $t_pmin_rs = $rs - $z_pmin_rs;
-        my $T_pose_rs = log($t_pose_rs);
-        my $T_pmin_rs = log($t_pmin_rs);
-        my $T_nege_rs = log($t_nege_rs);
+        my $T_pose_rs = $t_pose_rs > 0 ? log($t_pose_rs) : 0;
+        my $T_pmin_rs = $t_pmin_rs > 0 ? log($t_pmin_rs) : 0;
+        my $T_nege_rs = $t_nege_rs > 0 ? log($t_nege_rs) : 0;
         push @{$rzpose_table}, [ $T_pose_rs, $z_pose_rs ];
         push @{$rzpmin_table}, [ $T_pmin_rs, $z_pmin_rs ];
         push @{$rznege_table}, [ $T_nege_rs, $z_nege_rs ];
@@ -1174,15 +937,6 @@ sub get_error      { my $self = shift; return $self->{_error} }
 sub get_table      { my $self = shift; return $self->{_rTables}->{shock_table} }
 sub get_Tables     { my $self = shift; return $self->{_rTables} }
 sub get_table_name { my $self = shift; return $self->{_table_name} }
-
-sub set_table {
-
-    # install a new table, or
-    # reset to defaults if called without arguments
-    my ( $self, $rtable, $options ) = @_;
-    $self->_setup( $rtable, $options );
-    return;
-}
 
 sub clone {
 
@@ -2225,6 +1979,7 @@ sub is_monotonic_list {
 
 ##############################################################################
 # Routines to create new tables for intermediate gamma values by interpolation 
+# FIXME: Maybe move to a separate module
 ##############################################################################
 
 sub _make_interpolated_tables {
@@ -2259,7 +2014,7 @@ sub _make_interpolated_tables {
             $rigam_6, $rigam_4, $rTables_loaded );
 
         if ( !$table_name ) {
-            $table_name = Blast::IPS::Data::make_table_key( $symmetry, $gamma );
+            $table_name = Blast::IPS::Data::make_table_name( $symmetry, $gamma );
         }
 
         $rTables->{shock_table}      = $rtable;
@@ -2374,7 +2129,6 @@ sub _gamma_lookup {
     $return_hash->{'loc_gamma_table'} = [ undef, $j2, $j3, $ntab, ];
     return ($return_hash);
 }
-
 
 sub _make_interpolated_gamma_table {
 
@@ -2579,18 +2333,230 @@ EOM
     return $rtab_x;
 }
 
-
 sub _make_interpolated_impulse_table {
 
-    # FIXME: this needs to be written
-    my ( $symmetry, $gamma, $rigam_6, $rigam_4, $rTables_loaded ) = @_;
-    my $rimpulse_table;
-    return $rimpulse_table;
+    # Given: a symmetry, gamma, and a list of the indexes of the builtin tables
+    #     to be interpolated
+    # Return: an impulse table for an intermediate gamma made
+
+    my ( $symmetry, $gamma_x, $rilist_6, $rilist_4, $rTables_loaded ) = @_;
+    $rilist_4 = $rilist_6 unless defined($rilist_4);
+
+    # Create a cache of needed tables if caller has not done so
+    if ( !defined($rTables_loaded) ) {
+        $rTables_loaded =
+          load_data_tables( $symmetry, @{$rilist_6}, @{$rilist_4} );
+    }
+
+    my $rtable_new;
+    my $alpha_x = alpha_interpolate( $symmetry, $gamma_x );
+    my $A_x = -log( ( $gamma_x + 1 ) * $alpha_x );
+
+    my $rtable_closest;
+    my $dA_min;
+    my $rlag_points_6;
+    my $rlag_points_4;
+
+    # Prepare for either 4 point or 6 point interpolations, even though we
+    # might only use 4 points.
+    my $rA_6;
+    foreach my $igam ( @{$rilist_6} ) {
+        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
+        my $alpha        = alpha_interpolate( $symmetry, $gamma );
+        my $rTables      = $rTables_loaded->{$table_name};
+        my $rtable       = $rTables->{impulse_table};
+        my $rshock_table = $rTables->{shock_table};
+
+        my $A = -log( ( $gamma + 1 ) * $alpha );
+        my $dA = ( $A_x - $A );
+        if ( !defined($dA_min) || abs($dA) < $dA_min ) {
+            $rtable_closest = $rtable;
+        }
+        push @{$rlag_points_6},
+          [ $rtable, $A, $gamma, $alpha, $rshock_table, $table_name ];
+        push @{$rA_6}, $A;
+    }
+
+    my $rA_4;
+    foreach my $igam ( @{$rilist_4} ) {
+        my ( $gamma, $table_name ) = @{ $rgamma_table->[$symmetry]->[$igam] };
+        my $alpha        = alpha_interpolate( $symmetry, $gamma );
+        my $rTables      = $rTables_loaded->{$table_name};
+        my $rtable       = $rTables->{impulse_table};
+        my $rshock_table = $rTables->{shock_table};
+        my $A            = -log( ( $gamma + 1 ) * $alpha );
+        push @{$rlag_points_4},
+          [ $rtable, $A, $gamma, $alpha, $rshock_table, $table_name ];
+        push @{$rA_4}, $A;
+    }
+
+    # check that A values vary monotonically;
+    # otherwise interpolation will fail
+    # NOTE: assuming that rA_4 is monotonic if rA_6 is
+    if ( !is_monotonic_list($rA_6) ) {
+
+        print STDERR <<EOM;
+Program error: non-monotonic A
+symmetry=$symmetry gamma = $gamma_x alpha=$alpha_x 
+indexes of tables = @{$rilist_6}
+A values are (@{$rA_6})
+EOM
+        return;
+    }
+
+    # find the minimum Ymax and maximum Ymin of the collection
+    my ( $Ymin, $Ymax );
+    foreach my $rpoint ( @{$rlag_points_6}, @{$rlag_points_4} ) {
+        my ( $rtable, $A ) = @{$rpoint};
+        my $Ymax_i = $rtable->[0]->[1];
+        my $Ymin_i = $rtable->[-1]->[1];
+        if ( !defined($Ymax) || $Ymax_i < $Ymax ) { $Ymax = $Ymax_i }
+        if ( !defined($Ymin) || $Ymin_i > $Ymin ) { $Ymin = $Ymin_i }
+    }
+
+    # add a small tolerance for floating point comparisons near table edges
+    my $eps = 1.e-8;
+    $Ymax -= $eps;
+    $Ymin += $eps;
+
+    # Set the list of Y points equal to the closest table
+    my @Ylist = ($Ymax);
+    foreach my $item_ref ( @{$rtable_closest} ) {
+        my $YY = $item_ref->[1];
+        push @Ylist, $YY if ( $YY > $Ymin && $YY < $Ymax );
+    }
+    push @Ylist, $Ymin;
+
+ # We are interpolating vars, like X and Z, with 6 interpolation points.
+ # We are interpolating slopes, like dYdX and dZdX, with 4 interpolation points.
+    my $rtab_x = [];
+
+    foreach my $Y (@Ylist) {
+
+        # arrays for holding tables of values
+        my (
+            $_X,         $_Y,         $_Z,        $_rpint_pos, $_rpint_neg,
+            $_z_pose_rs, $_z_nege_rs, $_Qint_pos, $_rovp_min,  $_z_pmin_rs,
+            $_ke_pos,    $_work_pos,  $_Disp_pos
+        );
+
+        my $missing_item;
+        foreach my $rpoint ( @{$rlag_points_6} ) {
+            my ( $rtable, $A, $gamma, $alpha, $rshock_table ) = @{$rpoint};
+            my $item = table_row_interpolation( $Y, $rtable, 1, 4 );
+            if ( !defined($item) ) { $missing_item = 1; last }
+            my (
+                $X,         $Y,         $Z,        $rpint_pos, $rpint_neg,
+                $z_pose_rs, $z_nege_rs, $Qint_pos, $rovp_min,  $z_pmin_rs,
+                $ke_pos,    $work_pos,  $Disp_pos
+              )
+              = @{$item}[
+              J_X,         J_Y,         J_Z,         J_rpint_pos,
+              J_rpint_neg, J_z_pose_rs, J_z_nege_rs, J_Qint_pos,
+              J_rovp_min,  J_z_pmin_rs, J_ke_pos,    J_work_pos,
+              J_Disp_pos,
+              ];
+
+            # X and Z are more accurately interpolated from the shock table for
+            # this Y value.
+            my ( $il, $iu ) = locate_2d( $Y, 1, $rshock_table );
+            if ( $il >= 0 && $iu < @{$rshock_table} ) {
+                my $result =
+                  _interpolate_rows( $Y, 1, $rshock_table->[$il],
+                    $rshock_table->[$iu], 0 );
+
+                my ( $X_old, $Z_old ) = ( $X, $Z );
+                $X = $result->[I_X];
+                $Z = $result->[I_Z];
+            }
+
+            # 6 point interpolation for these
+            push @{$_X}, $X;
+            push @{$_Z}, $Z;
+        }
+
+        # All values must exist in order to interpolate
+        # (tables all start and end at slightly different values)
+        next if ($missing_item);
+
+        foreach my $rpoint ( @{$rlag_points_4} ) {
+            my ( $rtable, $A, $gamma, $alpha, $rshock_table ) = @{$rpoint};
+            my $item = table_row_interpolation( $Y, $rtable, 1, 4 );
+            if ( !defined($item) ) { $missing_item = 1; last }
+
+            my (
+                $X,         $Y,         $Z,        $rpint_pos, $rpint_neg,
+                $z_pose_rs, $z_nege_rs, $Qint_pos, $rovp_min,  $z_pmin_rs,
+                $ke_pos,    $work_pos,  $Disp_pos
+              )
+              = @{$item}[
+              J_X,         J_Y,         J_Z,         J_rpint_pos,
+              J_rpint_neg, J_z_pose_rs, J_z_nege_rs, J_Qint_pos,
+              J_rovp_min,  J_z_pmin_rs, J_ke_pos,    J_work_pos,
+              J_Disp_pos,
+              ];
+
+            my $rs        = exp($X);
+            my $t_pose_rs = $rs - $z_pose_rs;
+            my $t_nege_rs = $rs - $z_nege_rs;
+            my $t_pmin_rs = $rs - $z_pmin_rs;
+
+            # 4 point interpolation variables go here:
+            push @{$_rpint_pos}, $rpint_pos;
+            push @{$_rpint_neg}, $rpint_neg;
+            push @{$_z_pose_rs}, $t_pose_rs;    #$z_pose_rs;
+            push @{$_z_nege_rs}, $t_nege_rs;    #$z_nege_rs;
+            push @{$_Qint_pos},  $Qint_pos;
+            push @{$_rovp_min},  $rovp_min;
+            push @{$_z_pmin_rs}, $t_pmin_rs;    #$z_pmin_rs;
+            push @{$_ke_pos},    $ke_pos;
+            push @{$_work_pos},  $work_pos;
+            push @{$_Disp_pos},  $Disp_pos;
+
+        }
+        next if ($missing_item);
+
+        my $X_x         = polint( $A_x, $rA_6, $_X );
+        my $Z_x         = polint( $A_x, $rA_6, $_Z );
+        my $rpint_pos_x = polint( $A_x, $rA_4, $_rpint_pos );
+        my $rpint_neg_x = polint( $A_x, $rA_4, $_rpint_neg );
+        my $t_pose_rs_x = polint( $A_x, $rA_4, $_z_pose_rs );
+        my $t_nege_rs_x = polint( $A_x, $rA_4, $_z_nege_rs );
+        my $Qint_pos_x  = polint( $A_x, $rA_4, $_Qint_pos );
+        my $rovp_min_x  = polint( $A_x, $rA_4, $_rovp_min );
+        my $t_pmin_rs_x = polint( $A_x, $rA_4, $_z_pmin_rs );
+        my $ke_pos_x    = polint( $A_x, $rA_4, $_ke_pos );
+        my $work_pos_x  = polint( $A_x, $rA_4, $_work_pos );
+        my $Disp_pos_x  = polint( $A_x, $rA_4, $_Disp_pos );
+
+        my $rs_x        = exp($X_x);
+        my $z_pose_rs_x = $rs_x - $t_pose_rs_x;
+        my $z_nege_rs_x = $rs_x - $t_nege_rs_x;
+        my $z_pmin_rs_x = $rs_x - $t_pmin_rs_x;
+
+        my @vars;
+        @vars[
+          J_X,         J_Y,         J_Z,        J_rpint_pos, J_rpint_neg,
+          J_z_pose_rs, J_z_nege_rs, J_Qint_pos, J_rovp_min,  J_z_pmin_rs,
+          J_ke_pos,    J_work_pos,  J_Disp_pos
+          ]
+          = (
+            $X_x,         $Y,           $Z_x,         $rpint_pos_x,
+            $rpint_neg_x, $z_pose_rs_x, $z_nege_rs_x, $Qint_pos_x,
+            $rovp_min_x,  $z_pmin_rs_x, $ke_pos_x,    $work_pos_x,
+            $Disp_pos_x,
+          );
+
+        push @{$rtab_x}, [@vars];
+    }
+    ##use Data::Dumper;
+    ##print STDERR Data::Dumper->Dump( [$rtab_x] );
+    return $rtab_x;
 }
 
 sub _make_interpolated_tail_shock_table {
 
-    # FIXME: this needs to be written
+    # FIXME: TBD
     my ( $symmetry, $gamma, $rigam_6, $rigam_4, $rTables_loaded ) = @_;
     my $rtail_shock_table;
     return $rtail_shock_table;

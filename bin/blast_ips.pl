@@ -942,7 +942,11 @@ sub point_evaluations_dimensionless {
             $Q  = $val;
             $iQ = $vname;
         }
-        elsif ( $vname =~ /^[xyzt]$/ ) { $Q = log($val); $iQ = uc($vname) }
+        elsif ( $vname =~ /^[xyzt]$/ ) {
+            next if ( $val <= 0 );
+            $Q  = log($val);
+            $iQ = uc($vname);
+        }
         elsif ( $vname eq 'q' ) {
 
             # Convert q=(c0/D)**2 to Y=ln(ovp ratio)

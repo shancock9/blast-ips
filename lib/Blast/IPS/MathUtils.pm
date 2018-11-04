@@ -34,6 +34,7 @@ our @EXPORT_OK = qw(
   parabolic_integral
   polint
   set_interpolation_points
+  table_row_interpolation
   trapezoidal_integral
 );
 use Exporter;
@@ -525,6 +526,93 @@ sub locate_2d {
         }
     }
     return ( $jl, $ju );
+}
+
+sub table_row_interpolation {
+
+    # interpolate all row values of a table to an arbitrary x value All values
+    # in a row must be floating point, and the same NLAG is used for all
+
+    # caller can look at $jl and $ju to see if the results are off the table
+
+    my ( $xx, $rtable, $icx, $NLAG, $jl, $ju, $no_extrap_l, $no_extrap_u, ) =
+      @_;
+
+    # $xx = the value of the X variable
+    # $rt   = table
+    # $icx = column number of X variable [default is 0]
+    # $NLAG = #Lagrange points [default 4]
+    # $jl, $ju = optional last search location, for speed
+    # $no_extrap_l = >0 to prevent extrapolation before start of OLD table
+    # 		[default=0]
+    # $no_extrap_u = >0 to prevent extrapolation beyond end of OLD table
+    # 		[default=0]
+
+    $icx  = 0 unless defined($icx);
+    $NLAG = 4 unless defined($NLAG);
+
+    # number of lagrange points cannot exceed number of table points
+    my $npts = @{$rtable};
+    if ( $NLAG > $npts ) { $NLAG = $npts }
+    my $NH = int( $NLAG / 2 );
+
+    my $jpoly_l = -1;
+
+    ( $jl, $ju ) = locate_2d( $xx, $icx, $rtable, $jl, $ju );
+    my $rrow;
+
+    # loop just to simplify break
+    while ( !$rrow ) {
+        if ( $jl >= 0 && $ju < $npts ) {
+
+            # We want to have about equal numbers around this point
+            $jpoly_l = $jl - $NH + 1;
+
+            # But keep the points within the old table
+            my $jpoly_u = $jpoly_l + $NLAG - 1;
+            my $dj = $jpoly_u - ( $npts - 1 );
+            if ( $dj > 0 ) {
+                $jpoly_l -= $dj;
+            }
+            $jpoly_l = 0 if ( $jpoly_l < 0 );
+        }
+        elsif ( $jl < 0 ) {
+            if ($no_extrap_l) { $rrow = [ @{ $rtable->[0] } ]; last }
+            $jpoly_l = 0;
+        }
+        else {
+            #if ($no_extrap_u) { $rrow=$rtable->[-1]; last }
+            if ($no_extrap_u) { $rrow = [ @{ $rtable->[-1] } ]; last }
+            $jpoly_l = $npts - $NLAG;
+            $jpoly_l = 0 if ( $jpoly_l < 0 );
+        }
+
+        my $nvars = @{ $rtable->[0] };
+
+        my $rlag_x = [];
+        my $jj     = $jpoly_l;
+        for ( my $n = 0 ; $n < $NLAG ; $n++ ) {
+            last if ( $jj > $npts - 1 );    ## For safety
+            push @{$rlag_x}, $rtable->[$jj]->[$icx];
+            $jj++;
+        }
+
+        # now loop to define all values
+        # Note that we are also interpolating the x variable as a control
+        for ( my $icy = 0 ; $icy < $nvars ; $icy++ ) {
+            my $rlag_y = [];
+            my $jj     = $jpoly_l;
+            for ( my $n = 0 ; $n < $NLAG ; $n++ ) {
+                last if ( $jj > $npts - 1 );    ## For safety
+                push @{$rlag_y}, $rtable->[$jj]->[$icy];
+                $jj++;
+            }
+            my $yy = polint( $xx, $rlag_x, $rlag_y );
+            $rrow->[$icy] = $yy;
+        }
+        last;
+    }
+    return wantarray ? ( $rrow, $jl, $ju ) : $rrow;
 }
 
 sub nbrenti {

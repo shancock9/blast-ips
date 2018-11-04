@@ -23,12 +23,12 @@ use Blast::IPS::Data::Index;
 use Storable qw(dclone);
 use File::Basename;
 
-# This hash reference holds references to all loaded data tables. Each set of
-# data has a unique hash key:  
+# This hash reference holds references to all loaded data modules. Module names
+# are used as the hash key.
 our $rBlastData;
 
 # Local hash lookup table
-my $rmodule_names;
+my $is_builtin;
 
 # array with BlastInfo names
 my @vnames;
@@ -42,12 +42,12 @@ BEGIN {
 	return $rindex_table;
     }
 
-    # Make a lookup table for existing module names
+    # Make a hash for checking the existance of modules
     foreach my $symmetry ( 0, 1, 2 ) {
         next unless defined( $rindex_table->[$symmetry] );
         foreach my $item ( @{ $rindex_table->[$symmetry] } ) {
             my ( $gamma, $key ) = @{$item};
-            $rmodule_names->{$key} = $key;
+            $is_builtin->{$key} = $key;
         }
     }
 
@@ -78,33 +78,32 @@ BEGIN {
     );
 }
 
-sub make_table_key {
+sub make_table_name {
 
-    # Make a standard table key by concatenating the symmetry letter and the gamma;
+    # Make a standard table name by concatenating the symmetry letter and the
+    # gamma; and change any decimal point to an 'x'.
     # For example, make the key 'S1x37' for spherical symmetry with gamma=1.37
     # This key will be used as the hash key for a module in the global table.
     my ( $sym, $gamma ) = @_;
     my $gamma_x = sprintf "%.8g", $gamma;
-    $gamma_x=~s/\./x/;
-    my $table_key;
+    $gamma_x =~ s/\./x/;
     if ( $sym =~ /\d/ ) {
         $sym = $sym == 0 ? 'P' : $sym == 1 ? 'C' : 'S';
     }
-    $table_key = $sym . $gamma_x;
-    return $table_key;
+    return $sym . $gamma_x;
 }
 
-sub _decrypt_table_key {
-    my ($key) = @_;
-    my ( $symmetry, $gamma );
-    if ( $key =~ /^([SCP])(.*)$/ ) {
-        $symmetry = $1;
-        $gamma    = $2;
-        $symmetry = ( $symmetry eq 'S' ) ? 2 : ( $symmetry eq 'C' ) ? 1 : 0;
-	$gamma =~ s/x/\./;
-    }
-    return ( $symmetry, $gamma );
-}
+##?sub _decrypt_table_key {
+##?    my ($key) = @_;
+##?    my ( $symmetry, $gamma );
+##?    if ( $key =~ /^([SCP])(.*)$/ ) {
+##?        $symmetry = $1;
+##?        $gamma    = $2;
+##?        $symmetry = ( $symmetry eq 'S' ) ? 2 : ( $symmetry eq 'C' ) ? 1 : 0;
+##?	$gamma =~ s/x/\./;
+##?    }
+##?    return ( $symmetry, $gamma );
+##?}
 
 sub _merge_shock_and_energy_tables {
 
@@ -218,64 +217,61 @@ sub _get_raw {
 
     # Load a data module if necessary and return the hash key for it in
     # $rDataTables, or return undef if it does not exist
-    
+
     # If 'file' is given, it may either give a complete file name or just a path
     # For example,
     #   file = /tmp/TestData/bubba.pm   means bubba.pm has the data file;
     #        in this case you must also give symmetry, gamma, and the table name
     #   file = /tmp/TestData/    means the data files are in that directory
     #        and they have the standard names
-    
-    # a reference consulted:
-    # https://stackoverflow.com/questions/1917261/how-can-i-dynamically-include-perl-modules-without-using-eval
+
+# a reference consulted:
+# https://stackoverflow.com/questions/1917261/how-can-i-dynamically-include-perl-modules-without-using-eval
 
     my @args        = @_;
     my $module_path = "Blast::IPS::Data::";
     my $file_path   = "Blast/IPS/Data/";
-    my $file_ext    = ".pm";
+    my $file_basename;
+    my $file_ext = ".pm";
 
-    my ( $key, $symmetry, $gamma, $file, $module_name );
+    my ( $module_name, $symmetry, $gamma, $file );
     if ( @args == 1 ) {
-        $key = $args[0];
-	($symmetry, $gamma) = _decrypt_table_key($key);
+        $module_name = $args[0];
     }
     else {
-	my $nargs=@args;
+        my $nargs = @args;
         my (%hash) = @args;
-        $key      = $hash{'table_name'};
-        $symmetry = $hash{'symmetry'};
-        $gamma    = $hash{'gamma'};
-        $file     = $hash{'file'};
+        $module_name = $hash{'table_name'};
+        $symmetry    = $hash{'symmetry'};
+        $gamma       = $hash{'gamma'};
+        $file        = $hash{'file'};
 
         if ( defined($file) ) {
-            ( $module_name, $file_path, $file_ext ) =
+            ( $file_basename, $file_path, $file_ext ) =
               fileparse( $file, qr/\.[^.]*/ );
-            if ( !$key ) { $key = $module_name }
+            if ( !$module_name ) { $module_name = $file_basename }
         }
 
-        if ( !$key ) { $key = make_table_key( $symmetry, $gamma ) }
-        else         { 
-	   # convert older key types 'S1.2' into 'S1x2'
-	   $key =~ s/\./x/;
-           my ( $sym, $gam) = _decrypt_table_key($key);
-           $symmetry = $sym unless defined($symmetry);
-           $gamma = $gam unless defined($gamma);
+        if ( !$module_name ) {
+            $module_name = make_table_name( $symmetry, $gamma );
+        }
+        else {
+
+            # convert older key types 'S1.2' into 'S1x2'
+            $module_name =~ s/\./x/;
         }
     }
 
-    if ( !defined( $rBlastData->{$key} ) ) {
+    if ( !defined( $rBlastData->{$module_name} ) ) {
 
-	# generate a known module name from its key
-        if ( !defined($module_name) ) {
-            $module_name = $rmodule_names->{$key};
-            return unless ($module_name);
-        }
+        return unless $is_builtin->{$module_name};
 
         # load the module
-        my $module = $module_path . $module_name;
-        my $module_file = $file_path . $module_name . $file_ext; 
+        $file_basename = $module_name unless ($file_basename);
+        my $module      = $module_path . $module_name;
+        my $module_file = $file_path . $file_basename . $file_ext;
         eval {
-            require $module_file; 
+            require $module_file;
             $module->import();
             1;
         } or do {
@@ -284,12 +280,12 @@ sub _get_raw {
             return;
         };
 
-	# now do any post-processing steps 
-	_merge_shock_and_energy_tables($key);
-        _convert_blast_info_to_hash($key); 
-        _merge_shock_and_blast_info($key); 
+        # post-processing steps...
+        _merge_shock_and_energy_tables($module_name);
+        _convert_blast_info_to_hash($module_name);
+        _merge_shock_and_blast_info($module_name);
 
     }
-    return $rBlastData->{$key}; 
+    return $rBlastData->{$module_name};
 }
 1;
