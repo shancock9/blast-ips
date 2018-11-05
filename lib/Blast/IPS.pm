@@ -16,20 +16,6 @@ package Blast::IPS;
 # All calculations are done in dimensionless units. The calling program must
 # handle conversion to and from physical units.
 
-# TODO list:
-
-# - Needed to check the extrapolation method beyond the ranges of the tables for
-# some spherical symmetry variables.
-
-# - An easy way to test the extrapolation is to have the driver get a
-# builtin table, truncate at both ends, reinstall it and look at the errors at
-# both missing ends.
-
-# - allow lookup on slope dYdX or dZdX, with quadratic interpolation
-#   and handle case where they exceed limiting values
-
-# - Need clear 'out of bounds' signal
-
 # MIT License
 # Copyright (c) 2018 Steven Hancock
 #
@@ -292,21 +278,20 @@ EOM
       Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
     $self->{medium}     = $medium;
 
-    # Tables have all been made; copy them into self.
+    # Copy the final tables into self.
     foreach my $key (keys %{$rTables}) {
 	$self->{$key} = $rTables->{$key};
     }
 
-    # cached table lookup locations for shock table
+    # cached shock table lookup locations 
     $self->{_jl} = -1;
     $self->{_ju} = $num_table;
 
-    # cached table lookup locations for impulse table
+    # cached impulse table lookup locations
     $self->{_jl2} = -1;
     $self->{_ju2} = undef;
 
     if ( !$error ) {
-
 
         # Compute an alpha. We can either get alpha from the shock table,
         #      my $alpha = $self->alpha_from_shock_table();
@@ -324,7 +309,6 @@ EOM
         $self->{B_far}  = $B_far;
         $self->{Z_zero} = $Z_zero;
         $error .= $msg;
-
     }
 
     if ($error) {
@@ -340,40 +324,22 @@ sub _clip_tables {
     # Remove all table points beyond Ymax_clip and Ymin_clip, if they are
     # given.  This is for testing only.  This allows us to compare the results
     # at the removed points with the values computed by the analytical
-    # extension models, and thereby get an estimate of the error fo these
-    # models.
+    # extension models, and thereby get an estimate of the error of these
+    # models, and to improve them.
     return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
-    _clip_shock_table($rTables, $Ymax_clip, $Ymin_clip);
-    _clip_impulse_table($rTables, $Ymax_clip, $Ymin_clip);
-}
-
-sub _clip_shock_table {
-    my ( $rTables, $Ymax_clip, $Ymin_clip )=@_;
-    return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
-    my $rnew_table;
-    my $rshock_table = $rTables->{shock_table};
-    foreach my $item ( @{$rshock_table} ) {
-        my $Y = $item->[I_Y];
-        next if ( defined($Ymax_clip) && $Y > $Ymax_clip );
-        next if ( defined($Ymin_clip) && $Y < $Ymin_clip );
-        push @{$rnew_table}, $item;
-    }
-    $rTables->{shock_table} = $rnew_table;
-    return;
-}
-
-sub _clip_impulse_table {
-    my ( $rTables, $Ymax_clip, $Ymin_clip )=@_;
-    return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
-    my $rnew_table;
-    my $rimpulse_table = $rTables->{impulse_table};
-    foreach my $item ( @{$rimpulse_table} ) {
-        my $Y = $item->[I_Y];
-        next if ( defined($Ymax_clip) && $Y > $Ymax_clip );
-        next if ( defined($Ymin_clip) && $Y < $Ymin_clip );
-        push @{$rnew_table}, $item;
-    }
-    $rTables->{impulse_table} = $rnew_table;
+    my $clip_table = sub {
+        my ( $rtable, $IY ) = @_;
+        my $rnew_table;
+        foreach my $item ( @{$rtable} ) {
+            my $Y = $item->[$IY];
+            next if ( defined($Ymax_clip) && $Y > $Ymax_clip );
+            next if ( defined($Ymin_clip) && $Y < $Ymin_clip );
+            push @{$rnew_table}, $item;
+        }
+        return $rnew_table;
+    };
+    $rTables->{shock_table} = $clip_table->( $rTables->{shock_table}, I_Y );
+    $rTables->{impulse_table} = $clip_table->( $rTables->{impulse_table}, J_Y );
     return;
 }
 
@@ -901,21 +867,16 @@ sub get_impulse {
 
     # otherwise interpolate within table
     else {
-        #my $rrow = _interpolate_table_rows( $X, $rimpulse_table, $jl );
-        #if ($rrow) {
         (
             my $X_i,    my $Y_i,    my $Z_i,   $rpint_pos, $rpint_neg,
             $z_pose_rs, $z_nege_rs, $Qint_pos, $rovp_min,  $z_pmin_rs,
             $ke_pos,    $work_pos,  $Disp_pos
-              ##) = @{$rrow};
           ) = @{$rrow}[
           J_X,         J_Y,         J_Z,         J_rpint_pos,
           J_rpint_neg, J_z_pose_rs, J_z_nege_rs, J_Qint_pos,
           J_rovp_min,  J_z_pmin_rs, J_ke_pos,    J_work_pos,
           J_Disp_pos,
           ];
-
-        #}
     }
     my $disp_pos = defined($Disp_pos) ? exp($Disp_pos) : undef;
     my $qint_pos = defined($Qint_pos) ? exp($Qint_pos) : undef;
