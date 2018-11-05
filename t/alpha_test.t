@@ -19,7 +19,7 @@ BEGIN {
     # appropriate call.  These tabulated values have estimated maximum errors of
     # about 1.e-7 or less.
 
-    $rindex = Blast::IPS->get_index();
+    $rindex = Blast::IPS::get_index();
 
     ##my $ntests = 0 + keys %{$rindex};
     my $ntests =

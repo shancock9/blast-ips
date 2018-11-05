@@ -19,7 +19,7 @@ my $rindex;
 
 BEGIN {
 
-    $rindex = Blast::IPS->get_index();
+    $rindex = Blast::IPS::get_index();
 
     my $ntests =
       @{ $rindex->[0] } +
@@ -114,9 +114,10 @@ sub compare_tables {
     my $Xmin    = $rbounds->[0]->[0];
     my $Xmax    = $rbounds->[1]->[0];
 
-    # Get the interpolated object table
-    my $rTables = $blast_table_interp->get_Tables;
-    my $rtable  = $rTables->{shock_table};
+    # Get the interpolated shock table
+    ##my $rTables = $blast_table_interp->get_Tables;
+    ##my $rtable  = $rTables->{shock_table};
+    my $rtable = $blast_table_interp->get_table();
 
     foreach my $item ( @{$rtable} ) {
         my ( $X_int, $Y_int, $dYdX_int, $Z_int, $dZdX_int ) = @{$item};

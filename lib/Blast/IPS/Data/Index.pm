@@ -125,6 +125,12 @@ BEGIN {
 }
 
 sub get_index {
+    my ($symmetry) = @_;
+    if ( defined($symmetry) ) {
+        if ( $symmetry == 0 || $symmetry == 1 || $symmetry == 2 ) {
+            return $rindex_table->[$symmetry];
+        }
+    }
     return $rindex_table;
 }
 1;

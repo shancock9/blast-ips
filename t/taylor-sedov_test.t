@@ -30,7 +30,7 @@ Reference:
 
 =cut
 
-    $rindex = Blast::IPS->get_index();
+    $rindex = Blast::IPS::get_index();
     my $ntests =
       @{ $rindex->[0] } +
       @{ $rindex->[1] } +

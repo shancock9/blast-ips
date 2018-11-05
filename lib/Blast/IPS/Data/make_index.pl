@@ -125,7 +125,13 @@ EOM
 }
 
 sub get_index {
-   return $rindex_table;
+    my ($symmetry) = @_;
+    if ( defined($symmetry) ) {
+        if ( $symmetry == 0 || $symmetry == 1 || $symmetry == 2 ) {
+            return $rindex_table->[$symmetry];
+        }
+    }
+    return $rindex_table;
 }
 1;
 EOM

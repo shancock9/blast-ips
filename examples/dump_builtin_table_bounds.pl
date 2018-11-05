@@ -4,7 +4,7 @@ use warnings;
 use Blast::IPS;
 
 # Print a list of the builtin tables and their bounds
-my $rindex = Blast::IPS->get_index();
+my $rindex = Blast::IPS::get_index();
 
 my @output;
 foreach my $symmetry ( 0 .. 2 ) {

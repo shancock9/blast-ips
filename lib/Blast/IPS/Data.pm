@@ -33,14 +33,14 @@ my $is_builtin;
 # array with BlastInfo names
 my @vnames;
 
-my $rindex_table; 
+##my $rindex_table; 
 
 BEGIN {
 
-    $rindex_table = Blast::IPS::Data::Index->get_index();
-    sub get_index {
-	return $rindex_table;
-    }
+    my $rindex_table = Blast::IPS::Data::Index::get_index();
+##?    sub get_index {
+##?	return $rindex_table;
+##?    }
 
     # Make a hash for checking the existance of modules
     foreach my $symmetry ( 0, 1, 2 ) {
