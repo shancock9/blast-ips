@@ -8,9 +8,10 @@ use warnings;
 our $rBlastData;
 $rBlastData->{'P5'} = {
 
-    table_name => 'P5',
-    symmetry   => 0,
-    gamma      => 5,
+    table_name  => 'P5',
+    symmetry    => 0,
+    gamma       => 5,
+    data_source => 'P4000_G5/moc3p_from_AD_r100/',
 
     shock_table_info => [ 0, 5, 1.67e-06, 4000, 1.31e-06, 100, 8.85e-07, 2.8e-07, 5e-07 ],
 
