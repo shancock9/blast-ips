@@ -154,11 +154,13 @@ sub _setup {
     my ( $self, @args ) = @_;
 
     my @setup_keys = qw(
+      symmetry
+      gamma
+      table_name
       file
       hide
-      table_name
-      gamma
-      symmetry
+      Ymax_clip
+      Ymin_clip
     );
     my %valid_setup_keys;
     @valid_setup_keys{@setup_keys} = (1) x scalar(@setup_keys);
@@ -207,6 +209,8 @@ sub _setup {
     my $gamma      = $rinput_hash->{gamma};
     my $file       = $rinput_hash->{file};
     my $hide       = $rinput_hash->{hide};
+    my $Ymax_clip  = $rinput_hash->{Ymax_clip};
+    my $Ymin_clip  = $rinput_hash->{Ymin_clip};
 
     # Convert symmetry to numeric value;
     # allow alphanumeric abbreviations for symmetry
@@ -265,6 +269,10 @@ EOM
         $error .= "Bad symmetry='$symmetry'\n";
     }
 
+    if ($Ymax_clip || $Ymin_clip) {
+       _clip_tables($rTables, $Ymax_clip, $Ymin_clip);
+    }
+
     my $rshock_table = $rTables->{shock_table};
     my $table_error  = _check_table($rshock_table);
     $error .= $table_error;
@@ -300,15 +308,13 @@ EOM
     if ( !$error ) {
 
 
-        # FIXME: make both available - put the first one in blast_info
-        # Compute alpha. We can either get alpha from the shock table:
-        # my $alpha = $self->alpha_from_shock_table();
-
-        # or use the pre-computed values:  
+        # Compute an alpha. We can either get alpha from the shock table,
+        #      my $alpha = $self->alpha_from_shock_table();
+        # or use the pre-computed values in alpha_interpolate.  
+	# The pre-computed values are very slightly more accurate, but the
+	# difference is very small.
         my $alpha = alpha_interpolate( $symmetry, $gamma );
 
-	# The pre-computed values are very slightly more accurate, but the
-	# difference is very small
         $self->{alpha} = $alpha;
 
         # Compute parameters for extrapolating spherical waves
@@ -322,9 +328,52 @@ EOM
     }
 
     if ($error) {
-        $self->{_error} = $error;
+        $self->{error} = $error;
         carp "$error\n";
     }
+    return;
+}
+
+sub _clip_tables {
+    my ($rTables, $Ymax_clip, $Ymin_clip)=@_;
+
+    # Remove all table points beyond Ymax_clip and Ymin_clip, if they are
+    # given.  This is for testing only.  This allows us to compare the results
+    # at the removed points with the values computed by the analytical
+    # extension models, and thereby get an estimate of the error fo these
+    # models.
+    return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
+    _clip_shock_table($rTables, $Ymax_clip, $Ymin_clip);
+    _clip_impulse_table($rTables, $Ymax_clip, $Ymin_clip);
+}
+
+sub _clip_shock_table {
+    my ( $rTables, $Ymax_clip, $Ymin_clip )=@_;
+    return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
+    my $rnew_table;
+    my $rshock_table = $rTables->{shock_table};
+    foreach my $item ( @{$rshock_table} ) {
+        my $Y = $item->[I_Y];
+        next if ( defined($Ymax_clip) && $Y > $Ymax_clip );
+        next if ( defined($Ymin_clip) && $Y < $Ymin_clip );
+        push @{$rnew_table}, $item;
+    }
+    $rTables->{shock_table} = $rnew_table;
+    return;
+}
+
+sub _clip_impulse_table {
+    my ( $rTables, $Ymax_clip, $Ymin_clip )=@_;
+    return unless ( defined($Ymax_clip) || defined($Ymin_clip) );
+    my $rnew_table;
+    my $rimpulse_table = $rTables->{impulse_table};
+    foreach my $item ( @{$rimpulse_table} ) {
+        my $Y = $item->[I_Y];
+        next if ( defined($Ymax_clip) && $Y > $Ymax_clip );
+        next if ( defined($Ymin_clip) && $Y < $Ymin_clip );
+        push @{$rnew_table}, $item;
+    }
+    $rTables->{impulse_table} = $rnew_table;
     return;
 }
 
@@ -894,7 +943,7 @@ sub get_impulse {
 sub get_symmetry   { my $self = shift; return $self->{symmetry} }
 sub get_gamma      { my $self = shift; return $self->{gamma} }
 sub get_alpha      { my $self = shift; return $self->{alpha} }
-sub get_error      { my $self = shift; return $self->{_error} }
+sub get_error      { my $self = shift; return $self->{error} }
 sub get_table      { my $self = shift; return $self->{shock_table} }
 sub get_table_name { my $self = shift; return $self->{table_name} }
 
@@ -931,7 +980,7 @@ sub wavefront {
     my ( $self, @args ) = @_;
 
     # do not proceed unless the table is good
-    my $error = $self->{_error};
+    my $error = $self->{error};
     if ($error) {
         carp "$error";
         return;
@@ -2551,13 +2600,13 @@ sub _make_interpolated_tail_shock_table {
 sub _make_interpolated_blast_info {
     my ( $symmetry, $gamma, $rigam_4, $loc_gamma_table, $rTables_loaded, $rgtab ) = @_;
 
+    # TODO: needs more testing; add some cases to 'hide..'.t
+
     my $rblast_info;
     if( defined($loc_gamma_table) && defined($rigam_4) ) {
 
         # If this table is an interpolated table then we can interpolate
-        # P0 from nearby fits.
-        # FIXME: this works now but needs testing
-        # Use best transformation for each variable.
+        # P0 from nearby fits.  Use best transformation for each variable.
         # Sintegral needs (alpha+2) weighting.
         my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
 
