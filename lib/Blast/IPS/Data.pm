@@ -234,33 +234,49 @@ sub _get_raw {
     my $file_basename;
     my $file_ext = ".pm";
 
-    my ( $module_name, $symmetry, $gamma, $file );
+    my $rhash = {};
     if ( @args == 1 ) {
-        $module_name = $args[0];
+        if ( ref( $args[0] ) ) {
+            $rhash = $args[0];
+        }
+        else {
+            $rhash->{'table_name'} = $args[0];
+        }
     }
     else {
         my $nargs = @args;
         my (%hash) = @args;
-        $module_name = $hash{'table_name'};
-        $symmetry    = $hash{'symmetry'};
-        $gamma       = $hash{'gamma'};
-        $file        = $hash{'file'};
-
-        if ( defined($file) ) {
-            ( $file_basename, $file_path, $file_ext ) =
-              fileparse( $file, qr/\.[^.]*/ );
-            if ( !$module_name ) { $module_name = $file_basename }
-        }
-
-        if ( !$module_name ) {
-            $module_name = make_table_name( $symmetry, $gamma );
-        }
-        else {
-
-            # convert older key types 'S1.2' into 'S1x2'
-            $module_name =~ s/\./x/;
-        }
+        $rhash = \%hash;
     }
+
+    my $module_name = $rhash->{'table_name'};
+    my $symmetry    = $rhash->{'symmetry'};
+    my $gamma       = $rhash->{'gamma'};
+    my $file        = $rhash->{'file'};
+    my $hide        = $rhash->{'hide'};
+    if ( defined($symmetry) ) {
+        if    ( $symmetry =~ /^S/i ) { $symmetry = 2 }
+        elsif ( $symmetry =~ /^C/i ) { $symmetry = 1 }
+        elsif ( $symmetry =~ /^P/i ) { $symmetry = 0 }
+    }
+
+    if ( defined($file) ) {
+        ( $file_basename, $file_path, $file_ext ) =
+          fileparse( $file, qr/\.[^.]*/ );
+        if ( !$module_name ) { $module_name = $file_basename }
+    }
+
+    if ( !$module_name ) {
+        $module_name = make_table_name( $symmetry, $gamma );
+    }
+    else {
+
+        # convert older key types 'S1.2' into 'S1x2'
+        $module_name =~ s/\./x/;
+    }
+
+    # check for hidden module option, which is for testing
+    return if ($hide && $module_name eq $hide);
 
     if ( !defined( $rBlastData->{$module_name} ) ) {
 

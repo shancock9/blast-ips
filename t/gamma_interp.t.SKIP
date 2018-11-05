@@ -4,6 +4,8 @@ use warnings;
 use Test;
 use Blast::IPS;
 
+# This has been replaced with 'hide_test.t'
+
 # Test interpolation to arbitrary gamma by comparing each table to the value
 # that would be interpolated to it if it were not in the set.
 
