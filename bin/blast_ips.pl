@@ -529,9 +529,11 @@ sub request_positive_value {
 
     my $range;
     my $medium;
+    my $sie_HE;
 
     BEGIN {
-        $range = undef;
+        $sie_HE = 4.6e6;
+        $range   = undef;
         my $gamma          = 1.4;
         my $symmetry       = 2;
         my $p_sea_level    = 1.01325e5;
@@ -546,6 +548,20 @@ sub request_positive_value {
             _E0           => undef,
             _ground_plane => 'YES',
         };
+    }
+
+    sub get_sie_HE { return $sie_HE; }
+
+    sub ask_sie_HE {
+	print STDOUT <<EOM;
+The ideal point source explosion model is for a source of energy with zero
+mass.  However, it can be convenient to estimate the mass of an explosive
+material with an equivalent amount of energy, and this can be done with this
+parameter.  Please keep in mind however that close-in results (say above 10
+atmospheres overpressure) for a massless source will be very different from a
+source with mass.  A very approximate value for TNT is 4.6e6 J/kg.
+EOM
+	$sie_HE = get_num("Energy/Mass for estimating source mass, J/kg:", $sie_HE);
     }
 
     sub point_evaluations_SI {
@@ -633,6 +649,26 @@ EOM
             $user_set_E0=1;;
             $set_dscale->();
         };
+        my $ask_for_M0 = sub {
+
+            if ( $sie_HE <= 0 ) { query("enter HE energy first"); return }
+            my $M0 = $E0 / $sie_HE;
+            if ( $symmetry == 0 ) {
+                $M0 = request_dimensional_value( "Enter Mass M, (kg/m^2):",
+                    'M/L^2', $M0, 0 );
+            }
+            elsif ( $symmetry == 1 ) {
+                $M0 = request_dimensional_value( "Enter Mass M, (kg/m):",
+                    'M/L', $M0, 0 );
+            }
+            else {
+                $M0 = request_dimensional_value( "Enter mass M, (kg):",
+                    'M', $M0, 0 );
+            }
+            $user_set_E0 = 1;
+            $E0          = $sie_HE * $M0;
+            $set_dscale->();
+        };
         my $ask_for_range = sub {
             $range =
               request_dimensional_value( "Enter range, m:", 'L', $range, 0 );
@@ -671,6 +707,7 @@ EOM
             my $p_amb_str   = format_value($p_amb, 'P'); 
             my $sspd_amb_str   = format_value($sspd_amb, 'L/T'); 
             my $E0_str     = format_E($E0, $symmetry); 
+	    my $M0_str = ($sie_HE>0) ? format_M($E0/$sie_HE, $symmetry) : ""; 
             $ground_factor = ground_factor( $symmetry, $ground_plane );
 
             print <<EOM;
@@ -683,7 +720,9 @@ Main Menu - SI units.  Menu Commands are Case Insensitive
    A  atmospheric Pressure, Pa.... $p_amb_str
       ambient sound speed, m/s.... $sspd_amb_str
       gamma....................... $gamma
-   E  Energy...................... $E0_str   
+   HE energy/mass for M <=> E conv $sie_HE J/kg
+   M  Mass of source if HE........ $M0_str   
+   E  Energy of source............ $E0_str   
    R  Range....................... $range_str
       scale dist. (g*E0/P0)$pstr... $dscale_str m 
 
@@ -723,9 +762,15 @@ EOM
             elsif ( $ans eq 'E' ) {
                 $ask_for_E0->();
             }
+            elsif ( $ans eq 'M' ) {
+                $ask_for_M0->();
+            }
             elsif ( $ans eq 'G' ) {
                 $ground_plane = ask_ground_plane();
                 $medium->{_ground_plane}=$ground_plane;
+            }
+            elsif ( $ans eq 'HE' ) {
+                ask_sie_HE();
             }
             elsif ( $ans eq 'A' ) {
                 ( $blast_table, $medium ) =
@@ -1749,9 +1794,10 @@ EOM
 
 {   # i/o with units
 
-    my ( $kt_to_joules, $pa_to_psi, $m_to_ft, $rto_SI, $rSI_name );
+    my ( $kt_to_joules, $pa_to_psi, $m_to_ft, $rto_SI, $rSI_name, $lb_to_kg );
 
     BEGIN {
+        $lb_to_kg = 1/2.20462,
         $kt_to_joules = 4.184e12;
         $pa_to_psi    = 0.00014503773800722;
         $m_to_ft      = 3.2808;
@@ -1804,18 +1850,41 @@ EOM
                 'lb/m^2'  => 0.001 * $kt_to_joules / 2000,
                 'klb/m^2' => $kt_to_joules / 2000,
             },
+            'M' => {
+                'g'   => 0.001,
+                'kg'  => 1,
+                'Mg'  => 1.e3,
+                'lb'  => $lb_to_kg,
+                'klb' => $lb_to_kg * 1000,
+                'Mlb' => $lb_to_kg * 1.e6,
+            },
+            'M/L' => {
+                'g'   => 0.001,
+                'kg'  => 1,
+                'Mg'  => 1.e3,
+                'lb'  => $lb_to_kg,
+                'klb' => $lb_to_kg * 1000,
+                'Mlb' => $lb_to_kg * 1.e6,
+            },
+            'M/L^2' => {
+                'g'   => 0.001,
+                'kg'  => 1,
+                'Mg'  => 1.e3,
+                'lb'  => $lb_to_kg,
+                'klb' => $lb_to_kg * 1000,
+                'Mlb' => $lb_to_kg * 1.e6,
+            },
             'L/T' => {
                 'm/s'  => 1,
                 'km/s' => 1000,
                 'mps'  => 1,
                 'fps'  => 1 / $m_to_ft,
                 'kfps' => 1000 / $m_to_ft,
-              },
+            },
             'P*T' => {
                 'Pa-s'   => 1,
                 'psi-s'  => 1 / $pa_to_psi,
                 'psi-ms' => 0.001 / $pa_to_psi,
-                'fps'    => 1 / $m_to_ft,
             },
         };
         $rSI_name       = {
@@ -1918,12 +1987,16 @@ EOM
                 }
                 elsif ( $unit_type eq 'E' ) {
                     my $val_kt = $val / 4.184e12;
-                    my $val_lb = $val_kt * 2.e6;
+                    #my $val_lb = $val_kt * 2.e6;
+		    ##my $sie_HE = get_sie_HE();
+                    ##my $val_kg = $val / $sie_HE;
+                    ##my $val_lb = $val_kg/2.20462;
                     my $val_mj = $val / 1.e6;
                     $val_kt = sprintf( "%0.6g", $val_kt );
                     $val_mj = sprintf( "%0.6g", $val_mj );
-                    $val_lb = sprintf( "%0.3g", $val_lb );
-                    $str    = "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
+                    ##$val_lb = sprintf( "%0.3g", $val_lb );
+                    ##$str    = "$val_mj MJ = $val_kt kt =~ $val_lb lb TNT";
+                    $str    = "$val_mj MJ = $val_kt kt";
                 }
                 elsif ( $unit_type eq 'E/L' ) {
                     $val = sprintf( "%0.6g", $val );
@@ -1932,6 +2005,22 @@ EOM
                 elsif ( $unit_type eq 'E/L^2' ) {
                     $val = sprintf( "%0.6g", $val );
                     $str = "$val J/m^2";
+                }
+                elsif ( $unit_type eq 'M' ) {
+                    my $val_lb = $val/$lb_to_kg;
+                    $val = sprintf( "%0.6g", $val );
+                    $val_lb = sprintf( "%0.3g", $val_lb );
+                    $str    = "$val kg = $val_lb lb HE";
+                }
+                elsif ( $unit_type eq 'M/L' ) {
+                    my $val_lb = $val/$lb_to_kg;
+                    $val = sprintf( "%0.6g", $val );
+                    $str    = "$val kg/m HE";
+                }
+                elsif ( $unit_type eq 'M/L^2' ) {
+                    my $val_lb = $val/$lb_to_kg;
+                    $val = sprintf( "%0.6g", $val );
+                    $str    = "$val kg/m^2 HE";
                 }
                 elsif ( $unit_type eq 'P' ) {
                     my $val_psi = $val * $pa_to_psi;
@@ -1961,6 +2050,20 @@ EOM
         }
         else {
             $str = format_value( $val, 'E/L^2' );
+        }
+        return $str;
+    }
+    sub format_M {
+        my ( $val, $symmetry ) = @_;
+        my $str;
+        if ( $symmetry == 2 ) {
+            $str = format_value( $val, 'M' );
+        }
+        elsif ( $symmetry == 1 ) {
+            $str = format_value( $val, 'M/L' );
+        }
+        else {
+            $str = format_value( $val, 'M/L^2' );
         }
         return $str;
     }
