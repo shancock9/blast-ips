@@ -329,7 +329,8 @@ sub make_reference_table {
             }
         }
         else {
-            ( $jl, $ju ) = locate_2d( $dr, 0, $rseg_table, $jl, $ju );
+            ##( $jl, $ju ) = locate_2d( $dr, 0, $rseg_table, $jl, $ju );
+            ( $jl, $ju ) = locate_2d( $rseg_table, $dr, 0, $jl, $ju );
             if ( !defined($jl) || $jl < 0 ) {
                 unshift @{$rseg_table}, $item;
             }
@@ -581,7 +582,8 @@ sub _lookup_theta_profile {
     my $jlo  = $jmax - 1;
 
     # Find the starting interval
-    ( $jlo, $jhi ) = locate_2d( $rr->[$imax], 1, $rxr, $jlo, $jhi );
+    ##( $jlo, $jhi ) = locate_2d( $rr->[$imax], 1, $rxr, $jlo, $jhi );
+    ( $jlo, $jhi ) = locate_2d( $rxr, $rr->[$imax], 1, $jlo, $jhi );
 
     my ( $rgrid, $xlast, $rlast );
 

@@ -784,7 +784,8 @@ sub alpha_interpolate {
         return $alpha;
     };
 
-    ( $jl, $ju ) = locate_2d( $gamma, $icol, $rtab, $jl, $ju );
+    ##( $jl, $ju ) = locate_2d( $gamma, $icol, $rtab, $jl, $ju );
+    ( $jl, $ju ) = locate_2d( $rtab, $gamma, $icol, $jl, $ju );
     my ( $gamma_min, $alpha_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $alpha_max ) = @{ $rtab->[1] };
     if ( $jl < 0 ) {

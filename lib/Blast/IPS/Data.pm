@@ -33,14 +33,9 @@ my $is_builtin;
 # array with BlastInfo names
 my @vnames;
 
-##my $rindex_table; 
-
 BEGIN {
 
     my $rindex_table = Blast::IPS::Data::Index::get_index();
-##?    sub get_index {
-##?	return $rindex_table;
-##?    }
 
     # Make a hash for checking the existance of modules
     foreach my $symmetry ( 0, 1, 2 ) {
@@ -92,18 +87,6 @@ sub make_table_name {
     }
     return $sym . $gamma_x;
 }
-
-##?sub _decrypt_table_key {
-##?    my ($key) = @_;
-##?    my ( $symmetry, $gamma );
-##?    if ( $key =~ /^([SCP])(.*)$/ ) {
-##?        $symmetry = $1;
-##?        $gamma    = $2;
-##?        $symmetry = ( $symmetry eq 'S' ) ? 2 : ( $symmetry eq 'C' ) ? 1 : 0;
-##?	$gamma =~ s/x/\./;
-##?    }
-##?    return ( $symmetry, $gamma );
-##?}
 
 sub _merge_shock_and_energy_tables {
 

@@ -190,9 +190,10 @@ sub _setup {
     check_keys( $rinput_hash, \%valid_setup_keys,
         "Checking for valid input keys" );
 
-    # The following four quantities can be specified:
-    my $table_name = $rinput_hash->{table_name};
+    # The following quantities can be specified:
+    my $symmetry   = $rinput_hash->{symmetry};
     my $gamma      = $rinput_hash->{gamma};
+    my $table_name = $rinput_hash->{table_name};
     my $file       = $rinput_hash->{file};
     my $hide       = $rinput_hash->{hide};
     my $Ymax_clip  = $rinput_hash->{Ymax_clip};
@@ -201,7 +202,6 @@ sub _setup {
     # Convert symmetry to numeric value;
     # allow alphanumeric abbreviations for symmetry
     # i.e. 'S', 'sph', 'spherical' etc
-    my $symmetry   = $rinput_hash->{symmetry};
     if ( defined($symmetry) ) {
         if    ( $symmetry =~ /^S/i ) { $symmetry = 2 }
         elsif ( $symmetry =~ /^C/i ) { $symmetry = 1 }
@@ -255,6 +255,7 @@ EOM
         $error .= "Bad symmetry='$symmetry'\n";
     }
 
+    # Clip the tables if requested. This is only for diagnostic purposes.
     if ($Ymax_clip || $Ymin_clip) {
        _clip_tables($rTables, $Ymax_clip, $Ymin_clip);
     }
@@ -381,6 +382,21 @@ sub long_range_parameters {
         $Z_zero =
           exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
         $Z_zero = log($Z_zero);
+
+##?	# TESTING: Using the long range A made the long range value better but the
+##      # values closer to the point were less accurate. So keep the above formulation.
+##?        my $rinfo = $rTables->{blast_info};
+##?        my $Sint_pos                = $rinfo->{Sintegral_pos};
+##?	if ($Sint_pos) {
+##?	my $A_far_old=$A_far;
+##?	my $B_far_old=$B_far;
+##?	my $lambda = exp($X_far);
+##?	my $ovp = exp($Y_far);
+##?	$A_far = sqrt(4/($gamma+1)*$Sint_pos);
+##?	$B_far = (($gamma*$A_far)/(exp($X_far)*exp($Y_far)))**2-$X_far;
+##?	print "BUBBA: A changed from $A_far_old to $A_far; B from $B_far_old to $B_far; X=$X_far, lambda=$lambda, ovp=$ovp\n";
+##	}
+	
     }
     return ( $A_far, $B_far, $Z_zero, $msg );
 }
@@ -1003,7 +1019,8 @@ sub wavefront {
     #my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
     my $il = $self->{_jl};
     my $iu = $self->{_ju};
-    ( $il, $iu ) = locate_2d( $Q, $icol, $rtab, $il, $iu );
+    ##( $il, $iu ) = locate_2d( $Q, $icol, $rtab, $il, $iu );
+    ( $il, $iu ) = locate_2d( $rtab, $Q, $icol, $il, $iu );
     $self->{_jl} = $il;
     $self->{_ju} = $iu;
 
@@ -2058,7 +2075,8 @@ sub _gamma_lookup {
     my $ntab  = @{$rtab};
     my $icol  = 0;
 
-    my ($j2, $j3) = locate_2d($gamma, $icol, $rtab, undef,undef);
+    ##my ($j2, $j3) = locate_2d($gamma, $icol, $rtab, undef,undef);
+    my ($j2, $j3) = locate_2d( $rtab, $gamma, $icol, undef,undef);
 
     my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
     my ( $gamma_max, $key_max ) = @{ $rtab->[-1] };
@@ -2201,7 +2219,8 @@ EOM
         my $ntab  = @{$rtab};
 
         # Locate this point in the table
-        my ( $il, $iu ) = locate_2d( $Y, $icol, $rtab, undef, undef );
+        ##my ( $il, $iu ) = locate_2d( $Y, $icol, $rtab, undef, undef );
+        my ( $il, $iu ) = locate_2d( $rtab, $Y, $icol, undef, undef );
 
         # Handle case before start of the table
         if ( $il < 0 ) {
@@ -2452,7 +2471,8 @@ EOM
 
             # X and Z are more accurately interpolated from the shock table for
             # this Y value.
-            my ( $il, $iu ) = locate_2d( $Y, 1, $rshock_table );
+            ##my ( $il, $iu ) = locate_2d( $Y, 1, $rshock_table );
+            my ( $il, $iu ) = locate_2d( $rshock_table, $Y, 1);
             if ( $il >= 0 && $iu < @{$rshock_table} ) {
                 my $result =
                   _interpolate_shock_table_rows( $Y, 1, $rshock_table->[$il],

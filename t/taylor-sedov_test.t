@@ -44,9 +44,6 @@ my $VERBOSE = 0;
 my $err_stop = 0.1;
 
 print "symmetry\tgamma\tX\tY\n" if ($VERBOSE);
-##foreach my $table_name ( keys %{$rindex} ) {
-##    my $symmetry = $rindex->{$table_name}->{symmetry};
-##    my $gamma    = $rindex->{$table_name}->{gamma};
 
 foreach my $symmetry(0..2) {
     foreach my $item(@{$rindex->[$symmetry]}) {
@@ -58,13 +55,6 @@ foreach my $symmetry(0..2) {
     if ( !defined($blast_table) ) {
         die "missing table for sym=$symmetry, gamma=$gamma\n";
     }
-##?    my $table_name_check = $blast_table->get_table_name();
-##?    if ( $table_name ne $table_name_check ) {
-##?        die <<EOM;
-##?Asked for table '$table_name' but got '$table_name_check'
-##?gamma=$gamma, symmetry=$symmetry
-##?EOM
-##?    }
 
     # Use the blast table value of alpha. Another test verifies that this
     # value is accurate.

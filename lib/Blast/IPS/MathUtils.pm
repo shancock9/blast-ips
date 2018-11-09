@@ -486,6 +486,55 @@ sub set_interpolation_points {
 }
 
 sub locate_2d {
+    my ( $rx, $xx, $icol, $jl, $ju ) = @_;
+
+    # Binary search for two consecutive table row indexes, jl and ju, of a
+    # 2D matrix such that the value of x lies between these two table values.  
+    # $icol is the column of the variable x
+    # If x is out of bounds, returns either jl<0 or ju>=N
+
+    # Feed back old $jl and $ju for improved efficiency
+
+    $icol=0 unless defined($icol);
+    my $num=@{$rx};
+    if ( $icol > @{ $rx->[0] } - 1 ) {
+        print STDERR
+          "ERROR in MathUtils::locate_2d: column=$icol exceeds table size\n";
+	return;
+    }
+    if (!defined($xx)) {
+        print STDERR
+          "ERROR in MathUtils::locate_2d: x is undefined\n";
+	return;
+    }
+    my $dx_is_positive = $rx->[ -1 ]->[$icol] > $rx->[0]->[$icol];
+
+    # ... but reset to beyond end of table if no longer valid
+    $jl = -1
+      if ( !defined($jl)
+        || $jl < 0
+        || $jl >= $num
+        || ( $xx > $rx->[$jl]->[$icol] ne $dx_is_positive ) );
+    $ju = $num
+      if ( !defined($ju)
+        || $ju < 0
+        || $ju >= $num
+        || ( $xx > $rx->[$ju]->[$icol] eq $dx_is_positive ) );
+	
+    # Loop until the requested point lies in a single interval
+    while ( $ju - $jl > 1 ) {
+        my $jm = int( ( $jl + $ju ) / 2 );
+        if ( $xx > $rx->[$jm]->[$icol] eq $dx_is_positive ) {
+            $jl = $jm;
+        }
+        else {
+            $ju = $jm;
+        }
+    }
+    return ( $jl, $ju );
+}
+
+sub OLD_locate_2d {
     my ( $xx, $icol, $rtab, $jl, $ju ) = @_;
 
     # Binary search for two consecutive table row indexes, jl and ju, of a
@@ -558,7 +607,8 @@ sub table_row_interpolation {
 
     my $jpoly_l = -1;
 
-    ( $jl, $ju ) = locate_2d( $xx, $icx, $rtable, $jl, $ju );
+    ##( $jl, $ju ) = locate_2d( $xx, $icx, $rtable, $jl, $ju );
+    ( $jl, $ju ) = locate_2d( $rtable, $xx, $icx, $jl, $ju );
     my $rrow;
 
     # loop just to simplify break

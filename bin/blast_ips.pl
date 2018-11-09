@@ -707,7 +707,10 @@ EOM
             my $p_amb_str   = format_value($p_amb, 'P'); 
             my $sspd_amb_str   = format_value($sspd_amb, 'L/T'); 
             my $E0_str     = format_E($E0, $symmetry); 
-	    my $M0_str = ($sie_HE>0) ? format_M($E0/$sie_HE, $symmetry) : ""; 
+            my $M0_str =
+              ( $sie_HE > 0 && defined $E0 )
+              ? format_M( $E0 / $sie_HE, $symmetry )
+              : "?";
             $ground_factor = ground_factor( $symmetry, $ground_plane );
 
             print <<EOM;
