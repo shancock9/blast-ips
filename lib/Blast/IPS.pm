@@ -1019,7 +1019,6 @@ sub wavefront {
     #my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
     my $il = $self->{_jl};
     my $iu = $self->{_ju};
-    ##( $il, $iu ) = locate_2d( $Q, $icol, $rtab, $il, $iu );
     ( $il, $iu ) = locate_2d( $rtab, $Q, $icol, $il, $iu );
     $self->{_jl} = $il;
     $self->{_ju} = $iu;
@@ -1041,6 +1040,10 @@ sub wavefront {
         $result =
           _interpolate_shock_table_rows( $Q, $icol, $rtab->[$il], $rtab->[$iu], $interp );
     }
+
+    # return if no result; this can happen if user requests something out of bounds,
+    # such as residual energy = 5
+    return unless ($result);
 
     my (
         $X,   $Y,      $dYdX, $Z,     $dZdX, $T, $dTdX,
@@ -1415,6 +1418,8 @@ sub _long_range_calc {
         $result = $self->_long_range_non_sphere( $Q, $icol );
     }
 
+    return unless $result;
+
     # bring derived variables T and dT/dX up to date
     _update_toa_row($result);
     return $result;
@@ -1575,7 +1580,7 @@ sub _long_range_sphere {
         else {
 
             # FIXME: not yet programmed to interpolate E1, E at long range
-            carp "Unexpected column id=$icol";    # shouldn't happen
+            carp "long range sphere not programmed for variable column id=$icol";    # shouldn't happen
             return;
         }
 
@@ -1721,6 +1726,79 @@ sub _long_range_non_sphere {
 }
 
 sub _interpolate_shock_table_rows {
+    my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
+
+    # Interpolate all of the variables between two table rows. Each row has
+    # these values
+    # 	[X,Y,Z,dYdX,dZdX,T,ZmX, dZmXdX, dTdX,E1, dE1dX, Er, dErdX, ImX, dImXdX]
+
+##    my (
+##        $X_b,      $Y_b,     $dY_dX_b, $Z_b,       $dZ_dX_b,
+##        $T_b,      $dT_dX_b, $ZmX_b,   $dZmX_dX_b, $E1_b,
+##        $dE1_dX_b, $E_b,     $dE_dX_b, $ImX_b, $dImX_dX_b,
+##      )
+##      = @{$row_b}[
+##      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
+##      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
+##      ];
+##    my (
+##        $X_e,      $Y_e,     $dY_dX_e, $Z_e,       $dZ_dX_e,
+##        $T_e,      $dT_dX_e, $ZmX_e,   $dZmX_dX_e, $E1_e,
+##        $dE1_dX_e, $E_e,     $dE_dX_e, $ImX_e, $dImX_dX_e,
+##      )
+##      = @{$row_e}[
+##      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
+##      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX,
+##      ];
+
+    if ($icol < I_X || $icol > I_dImXdX) {
+        carp "unknown call type icol='$icol'";    # Shouldn't happen
+	return;
+    }
+    my ($X_b) = $row_b->[I_X];
+    my ($X_e) = $row_e->[I_X];
+
+    # Step 1: if this is an inverse problem, first find X=X_i
+    my $X_i;
+    if ( $icol == I_X ) {
+        $X_i = $Q;
+    }
+
+    # Use inverse cubic interpolation for odd index values Y, Z, ...
+    elsif ( $icol % 2 ) {
+	my ($Q_b, $dQ_dX_b) = @{$row_b}[$icol, $icol+1];
+	my ($Q_e, $dQ_dX_e) = @{$row_e}[$icol, $icol+1];
+        ( $X_i, my $dX_dQ_i, my $d2X_dQ2_i ) =
+          _interpolate_scalar( $Q, $Q_b, $X_b, 1 / $dQ_dX_b,
+            $Q_e, $X_e, 1 / $dQ_dX_e, $interp );
+    }
+
+    # Use linear interpolation for even values, which are slopes
+    # FIXME: for slope interpolation, we are currently doing liner interp
+    # We should either iterate or do parabolic interpolation using the
+    # second derivatives at the segment ends
+    else {
+	my ($dQ_dX_b) = @{$row_b}[$icol];
+	my ($dQ_dX_e) = @{$row_e}[$icol, $icol+1];
+        ( $X_i, my $slope1, my $slope2 ) =
+          _interpolate_scalar( $Q, $dQ_dX_b, $X_b, 0, $dQ_dX_e, $X_e, 0, 1 );
+    }
+
+    # Step 2: now given X, do a complete normal interpolation for all variables
+    my @vars;
+    $vars[0] = $X_i;
+    for ( my $icol = I_Y ; $icol <= I_ImX ; $icol += 2 ) {
+        my ( $Q_b, $dQ_dX_b ) = @{$row_b}[ $icol, $icol + 1 ];
+        my ( $Q_e, $dQ_dX_e ) = @{$row_e}[ $icol, $icol + 1 ];
+        my ( $Q_i, $dQ_dX_i, $d2Q_dX2_i ) =
+          _interpolate_scalar( $X_i, $X_b, $Q_b, $dQ_dX_b, $X_e, $Q_e, $dQ_dX_e,
+            $interp );
+        @vars[ $icol, $icol + 1 ] = ( $Q_i, $dQ_dX_i );
+    }
+    return [@vars];
+}
+
+sub OLD_interpolate_shock_table_rows {
     my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
 
     # Interpolate all of the variables between two table rows. Each row has

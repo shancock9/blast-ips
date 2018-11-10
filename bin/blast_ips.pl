@@ -265,6 +265,7 @@ EOM
     }
 }
 
+
 sub select_blast_table {
     my ( $blast_table, $medium ) = @_;
     my $symmetry_name = queryu("Enter symmetry: 'S', 'C' or 'P', <cr>='S'");
@@ -696,6 +697,15 @@ EOM
             return $imp;
         };
 
+        my $wavefront = sub {
+            my @args = @_;
+            my $ret  = $blast_table->wavefront(@args);
+            if ( !defined($ret) ) {
+                query("No solution; hit <cr> to continue");
+            }
+            return $ret;
+        };
+
         my $Nsym = $symmetry + 1;    # = (1,2 or 3)
         $set_dscale->();
         my $pstr = $symmetry == 0 ? "" : "^1/" . ( $symmetry + 1 );
@@ -801,7 +811,9 @@ EOM
                 next if ( !defined($range)   || $range <= 0 );
                 my $term =
                   log( ( $impulse * $sspd_amb ) / ( $p_amb * $range ) );
-                my $ret = $blast_table->wavefront( 'I-X' => $term );
+                ##my $ret = $blast_table->wavefront( 'I-X' => $term );
+                my $ret = $wavefront->( 'I-X' => $term );
+		next unless $ret;
                 my $X   = $ret->{X};
                 my $x   = exp($X);
                 $dscale = $range / $x;
@@ -820,7 +832,9 @@ EOM
                     next;
                 }
                 my $ff   = log( $z / $range );
-                my $ret  = $blast_table->wavefront( 'Z-X' => $ff );
+                ##my $ret  = $blast_table->wavefront( 'Z-X' => $ff );
+                my $ret  = $wavefront->( 'Z-X' => $ff );
+		next unless $ret;
                 my $X    = $ret->{X};
                 my $Y    = $ret->{Y};
                 my $T    = $ret->{T};
@@ -833,7 +847,9 @@ EOM
                 my $y = $ask_for_overpressure_ratio->($ans);
                 next if ( !defined($y) || $y <= 0 );
                 my $Y       = log($y);
-                my $ret     = $blast_table->wavefront( 'Y' => $Y );
+                ##my $ret     = $blast_table->wavefront( 'Y' => $Y );
+                my $ret     = $wavefront->( 'Y' => $Y );
+		next unless $ret;
                 my $X       = $ret->{X};
                 my $x       = exp($X);
                 my $Ixr_pos = $ret->{Ixr_pos};
@@ -849,7 +865,9 @@ EOM
 		my $y = $ask_for_overpressure_ratio->($ans);
                 next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
-                my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                ##my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                my $ret  = $wavefront->( 'Y' => $Y );
+		next unless $ret;
                 my $X    = $ret->{X};
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
@@ -861,7 +879,9 @@ EOM
 		my $y = $ask_for_overpressure_ratio->($ans);
                 next if ( !defined($y) || $y <= 0 );
                 my $Y    = log($y);
-                my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                ##my $ret  = $blast_table->wavefront( 'Y' => $Y );
+                my $ret  = $wavefront->( 'Y' => $Y );
+		next unless $ret;
                 my $X    = $ret->{X};
                 my $dYdX = $ret->{dYdX};
                 my $x    = exp($X);
@@ -873,7 +893,9 @@ EOM
                   "Enter toa, s:", 'T',undef,0);
                 next if ( $t <= 0 );
                 my $T    = log( $t * $sspd_amb / $dscale );
-                my $ret  = $blast_table->wavefront( 'T' => $T );
+                ##my $ret  = $blast_table->wavefront( 'T' => $T );
+                my $ret  = $wavefront->( 'T' => $T );
+		next unless $ret;
                 my $X    = $ret->{X};
                 my $Y    = $ret->{Y};
                 my $dYdX = $ret->{dYdX};
@@ -979,6 +1001,15 @@ sub point_evaluations_dimensionless {
     # to an actual geometry.
     # my $ground_factor = ground_factor( $symmetry, $ground_plane );
 
+    my $wavefront = sub {
+        my @args = @_;
+        my $ret  = $blast_table->wavefront(@args);
+        if ( !defined($ret) ) {
+            query("No solution; hit <cr> to continue");
+        }
+        return $ret;
+    };
+
     while (1) {
         my $val =
           query("Enter $another value for '$vname', or <cr> to quit:");
@@ -1042,7 +1073,8 @@ sub point_evaluations_dimensionless {
         else {
             die "coding incomplete for variable '$vname'";
         }
-        my $ret  = $blast_table->wavefront( $iQ => $Q );
+        my $ret  = $wavefront->( $iQ => $Q );
+	next unless $ret;
         my $X    = $ret->{X};
         my $Y    = $ret->{Y};
         my $Z    = $ret->{Z};
