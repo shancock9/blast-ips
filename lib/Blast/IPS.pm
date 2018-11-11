@@ -46,16 +46,22 @@ use Carp;
 
 use Blast::IPS::AlphaTable qw(alpha_interpolate);
 use Blast::IPS::MathUtils qw(
+  is_monotonic_list
   locate_2d
   polint
   set_interpolation_points
   table_row_interpolation
+  two_point_interpolation
 );
 use Blast::IPS::Medium;
 use Blast::IPS::Utils qw( check_keys );
 use Blast::IPS::Data;
 
 my %valid_query_keys;
+
+########################
+# Part 1: Setup Routines
+########################
 
 BEGIN {
 
@@ -75,8 +81,11 @@ BEGIN {
         I_dE1dX  => $i++,
         I_Er     => $i++,
         I_dErdX  => $i++,
-        I_ImX      => $i++,
-        I_dImXdX   => $i++,
+        I_ImX    => $i++,
+        I_dImXdX => $i++,
+
+        I_BEG => 0,
+        I_END => $i - 1,
     };
 
     # Allowed keys for queries to sub wavefront
@@ -115,6 +124,9 @@ BEGIN {
         J_ke_pos      => $j++,
         J_work_pos    => $j++,
         J_Disp_pos    => $j++,
+
+        J_BEG => 0,
+        J_END => $j - 1,
     };
 
     # Tail shock table variable layout scheme
@@ -124,6 +136,9 @@ BEGIN {
         K_z           => $k++,
         K_S1          => $k++,
         K_S2          => $k++,
+
+        K_BEG => 0,
+        K_END => $k - 1,
     };
 
 }
@@ -279,7 +294,7 @@ EOM
       Blast::IPS::Medium->new( symmetry => $symmetry, gamma => $gamma );
     $self->{medium}     = $medium;
 
-    # Copy the final tables into self.
+    # Copy the final tables into this object.
     foreach my $key (keys %{$rTables}) {
 	$self->{$key} = $rTables->{$key};
     }
@@ -344,64 +359,9 @@ sub _clip_tables {
     return;
 }
 
-sub alpha_from_shock_table {
-    my ($self)       = @_;
-    my $rshock_table = $self->{shock_table};
-    my $symmetry     = $self->{symmetry};
-    my $gamma        = $self->{gamma};
-
-    # we find the value of alpha at the first table point
-    # based on R^(symmetry+1)*u**2=constant
-    my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
-      @{ $rshock_table->[0] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
-    my $lambda = exp($X_near);
-    my $Prat   = exp($Y_near) + 1;
-    my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
-    my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
-    my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
-    my $alpha =
-      ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
-    return $alpha;
-}
-
-sub long_range_parameters {
-    my ( $symmetry, $gamma, $rTables ) = @_;
-    my $rtable = $rTables->{shock_table};
-
-    # Set asymptotic wave parameters for the distant region, given a table and gamma
-    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = 
-      @{ $rtable->[-1] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
-    my ( $A_far, $B_far, $Z_zero, $msg ) = ( 0, 0, 0, "" );
-    if ( $symmetry == 2 ) {
-        my $mu = -( $dYdX_far + 1 );
-        if ( $mu > 0 ) {
-            $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
-            $B_far = 0.5 / $mu - $X_far;
-        }
-        else { $msg = "ending dYdX=$dYdX_far is bad\n" }
-        $Z_zero =
-          exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
-        $Z_zero = log($Z_zero);
-
-##?	# TESTING: Using the long range A made the long range value better but the
-##      # values closer to the point were less accurate. So keep the above formulation.
-##?        my $rinfo = $rTables->{blast_info};
-##?        my $Sint_pos                = $rinfo->{Sintegral_pos};
-##?	if ($Sint_pos) {
-##?	my $A_far_old=$A_far;
-##?	my $B_far_old=$B_far;
-##?	my $lambda = exp($X_far);
-##?	my $ovp = exp($Y_far);
-##?	$A_far = sqrt(4/($gamma+1)*$Sint_pos);
-##?	$B_far = (($gamma*$A_far)/(exp($X_far)*exp($Y_far)))**2-$X_far;
-##?	print "BUBBA: A changed from $A_far_old to $A_far; B from $B_far_old to $B_far; X=$X_far, lambda=$lambda, ovp=$ovp\n";
-##	}
-	
-    }
-    return ( $A_far, $B_far, $Z_zero, $msg );
-}
-
 sub get_index {
+
+    # Returns an index to the available tables
     my @args=@_;
     return Blast::IPS::Data::Index::get_index(@args);
 }
@@ -530,19 +490,7 @@ sub _check_table {
         # returns 0 if table is non-monotonic
 
         my ($icol) = @_;
-        my $mono = 0;
-        my $i_non_mono;    # could be returned if needed
-        my $num = @{$rtable};
-        for ( my $i = 1 ; $i < $num ; $i++ ) {
-            my $dF = $rtable->[$i]->[$icol] - $rtable->[ $i - 1 ]->[$icol];
-            if ( $i == 1 ) { $mono = $dF > 0 ? 1 : $dF < 0 ? -1 : 0 }
-            elsif ( $dF * $mono < 0 ) {
-                $i_non_mono = $i;
-                $mono       = 0;
-                last;
-            }
-        }
-        return ($mono);
+	return is_monotonic_list($rtable, $icol);
     };
 
     # X must be increasing
@@ -667,6 +615,21 @@ sub _update_toa_table {
     return;
 }
 
+#########################
+# Part 2: Access Routines
+#########################
+
+# These routines are called to evaluate the solution
+# at any point or to get other information about the
+# the solution.  The main routine is 'wavefront'.
+
+sub get_error      { my $self = shift; return $self->{error} }
+sub get_symmetry   { my $self = shift; return $self->{symmetry} }
+sub get_gamma      { my $self = shift; return $self->{gamma} }
+sub get_alpha      { my $self = shift; return $self->{alpha} }
+sub get_table      { my $self = shift; return $self->{shock_table} }
+sub get_table_name { my $self = shift; return $self->{table_name} }
+
 sub get_z {
     my ( $self, $T, $rztab, $z_default ) = @_;
 
@@ -703,10 +666,7 @@ sub get_z {
         $zz = $z_default;
     }
     else {
-        #my $rrow = _interpolate_table_rows( $T, $rztab, $jl );
-        #if ($rrow) {
         $zz = $rrow->[1];
-        ##}
     }
     return $zz;
 }
@@ -746,13 +706,12 @@ sub get_impulse {
     # Handle case before start of the table
     if ( $jl < 0 ) {
 
-        $rrow = $rimpulse_table->[0]; # NOTE: Should not be needed; already done
+        $rrow = $rimpulse_table->[0]; # whould not really be needed; already done
         my (
             $X_b,         $Y_b,         $Z_b,         $rpint_pos_b,
             $rpint_neg_b, $z_pose_rs_b, $z_nege_rs_b, $Qint_pos_b,
             $rovp_min_b,  $z_pmin_rs_b, $ke_pos_b,    $work_pos_b,
             $Disp_pos_b,
-            ##) = @{$rrow};
           ) = @{$rrow}[
           J_X,         J_Y,         J_Z,         J_rpint_pos,
           J_rpint_neg, J_z_pose_rs, J_z_nege_rs, J_Qint_pos,
@@ -841,7 +800,6 @@ sub get_impulse {
             $rpint_neg_e, $z_pose_rs_e, $z_nege_rs_e, $Qint_pos_e,
             $rovp_min_e,  $z_pmin_rs_e, $ke_pos_e,    $work_pos_e,
             $Disp_pos_e,
-            ##) = @{$rrow};
           ) = @{$rrow}[
           J_X,         J_Y,         J_Z,         J_rpint_pos,
           J_rpint_neg, J_z_pose_rs, J_z_nege_rs, J_Qint_pos,
@@ -916,13 +874,6 @@ sub get_impulse {
     $rreturn_hash->{qint_pos}  = $qint_pos;
     return $rreturn_hash;
 }
-
-sub get_symmetry   { my $self = shift; return $self->{symmetry} }
-sub get_gamma      { my $self = shift; return $self->{gamma} }
-sub get_alpha      { my $self = shift; return $self->{alpha} }
-sub get_error      { my $self = shift; return $self->{error} }
-sub get_table      { my $self = shift; return $self->{shock_table} }
-sub get_table_name { my $self = shift; return $self->{table_name} }
 
 sub wavefront {
 
@@ -1016,7 +967,6 @@ sub wavefront {
     }
 
     # Locate this point in the table
-    #my ( $il, $iu ) = $self->_locate_2d( $Q, $icol );
     my $il = $self->{_jl};
     my $iu = $self->{_ju};
     ( $il, $iu ) = locate_2d( $rtab, $Q, $icol, $il, $iu );
@@ -1180,6 +1130,68 @@ sub wavefront {
     return $return_hash;
 }
 
+sub _interpolate_shock_table_rows {
+    my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
+
+    # Interpolate all of the variables between two table rows. Each row has
+    # these values:
+    # 	[X,Y,Z,dYdX,dZdX,T,ZmX, dZmXdX, dTdX,E1, dE1dX, Er, dErdX, ImX, dImXdX]
+    # Thus:
+    #    my (
+    #        $X_b,      $Y_b,     $dY_dX_b, $Z_b,       $dZ_dX_b,
+    #        $T_b,      $dT_dX_b, $ZmX_b,   $dZmX_dX_b, $E1_b,
+    #        $dE1_dX_b, $E_b,     $dE_dX_b, $ImX_b, $dImX_dX_b,
+    #      )
+    #      = @{$row_b}[
+    #      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
+    #      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
+    #      ];
+
+    if ($icol < I_BEG || $icol > I_END) {
+        carp "unknown call type icol='$icol'";    # Shouldn't happen
+	return;
+    }
+    my ($X_b) = $row_b->[I_X];
+    my ($X_e) = $row_e->[I_X];
+
+    # Step 1: if this is an inverse problem, first find X=X_i
+    my $X_i;
+    if ( $icol == I_X ) {
+        $X_i = $Q;
+    }
+
+    # Use inverse cubic interpolation for odd index values Y, Z, ...
+    elsif ( $icol % 2 ) {
+	my ($Q_b, $dQ_dX_b) = @{$row_b}[$icol, $icol+1];
+	my ($Q_e, $dQ_dX_e) = @{$row_e}[$icol, $icol+1];
+        ( $X_i, my $dX_dQ_i, my $d2X_dQ2_i ) =
+          two_point_interpolation( $Q, $Q_b, $X_b, 1 / $dQ_dX_b,
+            $Q_e, $X_e, 1 / $dQ_dX_e, $interp );
+    }
+
+    # Use linear interpolation for inverse interpolation of slopes, which are
+    # the even index values.
+    else {
+	my ($dQ_dX_b) = @{$row_b}[$icol];
+	my ($dQ_dX_e) = @{$row_e}[$icol, $icol+1];
+        ( $X_i, my $slope1, my $slope2 ) =
+          two_point_interpolation( $Q, $dQ_dX_b, $X_b, 0, $dQ_dX_e, $X_e, 0, 1 );
+    }
+
+    # Step 2: now given X, do a complete normal interpolation for all variables
+    my @vars;
+    $vars[0] = $X_i;
+    for ( my $icol = I_Y ; $icol <= I_ImX ; $icol += 2 ) {
+        my ( $Q_b, $dQ_dX_b ) = @{$row_b}[ $icol, $icol + 1 ];
+        my ( $Q_e, $dQ_dX_e ) = @{$row_e}[ $icol, $icol + 1 ];
+        my ( $Q_i, $dQ_dX_i, $d2Q_dX2_i ) =
+          two_point_interpolation( $X_i, $X_b, $Q_b, $dQ_dX_b, $X_e, $Q_e, $dQ_dX_e,
+            $interp );
+        @vars[ $icol, $icol + 1 ] = ( $Q_i, $dQ_dX_i );
+    }
+    return [@vars];
+}
+
 sub get_table_bounds {
 
     my ($self) = @_;
@@ -1222,6 +1234,33 @@ sub table_gen {
         $X += $dX;
     }
     return ($rtable_gen);
+}
+
+############################################
+# Part 3: Short Range Extrapolation Routines
+############################################
+
+# These routines are called to estimate values in the event that a requested
+# point falls before the first point in a table.
+
+sub alpha_from_shock_table {
+    my ($self)       = @_;
+    my $rshock_table = $self->{shock_table};
+    my $symmetry     = $self->{symmetry};
+    my $gamma        = $self->{gamma};
+
+    # we find the value of alpha at the first table point
+    # based on R^(symmetry+1)*u**2=constant
+    my ( $X_near, $Y_near, $dYdX_near, $Z_near, $dZdX_near ) =
+      @{ $rshock_table->[0] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
+    my $lambda = exp($X_near);
+    my $Prat   = exp($Y_near) + 1;
+    my $q      = 2 * $gamma / ( ( $gamma + 1 ) * $Prat + ( $gamma - 1 ) );
+    my $uovcsq = ( 2 / ( $gamma + 1 ) * ( 1 - $q ) )**2 / $q;
+    my $C      = $lambda**( $symmetry + 1 ) * $uovcsq;
+    my $alpha =
+      ( 4 / ( ( $gamma + 1 ) * ( $symmetry + 3 ) ) )**2 / ( $gamma * $C );
+    return $alpha;
 }
 
 sub _short_range_calc {
@@ -1402,6 +1441,35 @@ sub _short_range_calc {
     ];
 
     return $result_i;
+}
+
+###########################################
+# Part 4: Long Range Extrapolation Routines
+###########################################
+
+# These routines are called to estimate values in the event that a requested
+# point falls beyond the most distant point in a table.
+
+sub long_range_parameters {
+    my ( $symmetry, $gamma, $rTables ) = @_;
+    my $rtable = $rTables->{shock_table};
+
+    # Set asymptotic wave parameters for the distant region, given a table and gamma
+    my ( $X_far, $Y_far, $dYdX_far, $Z_far, $dZdX_far ) = 
+      @{ $rtable->[-1] }[ I_X, I_Y, I_dYdX, I_Z, I_dZdX ];
+    my ( $A_far, $B_far, $Z_zero, $msg ) = ( 0, 0, 0, "" );
+    if ( $symmetry == 2 ) {
+        my $mu = -( $dYdX_far + 1 );
+        if ( $mu > 0 ) {
+            $A_far = exp($X_far) * exp($Y_far) / ( $gamma * sqrt( 2 * $mu ) );
+            $B_far = 0.5 / $mu - $X_far;
+        }
+        else { $msg = "ending dYdX=$dYdX_far is bad\n" }
+        $Z_zero =
+          exp($Z_far) - 0.5 * ( $gamma + 1 ) * $A_far * sqrt( $X_far + $B_far );
+        $Z_zero = log($Z_zero);
+    }
+    return ( $A_far, $B_far, $Z_zero, $msg );
 }
 
 sub _long_range_calc {
@@ -1725,315 +1793,13 @@ sub _long_range_non_sphere {
     return $result_i;
 }
 
-sub _interpolate_shock_table_rows {
-    my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
+########################################################
+# Part 5: Routines to create new tables by interpolation 
+########################################################
 
-    # Interpolate all of the variables between two table rows. Each row has
-    # these values
-    # 	[X,Y,Z,dYdX,dZdX,T,ZmX, dZmXdX, dTdX,E1, dE1dX, Er, dErdX, ImX, dImXdX]
-
-##    my (
-##        $X_b,      $Y_b,     $dY_dX_b, $Z_b,       $dZ_dX_b,
-##        $T_b,      $dT_dX_b, $ZmX_b,   $dZmX_dX_b, $E1_b,
-##        $dE1_dX_b, $E_b,     $dE_dX_b, $ImX_b, $dImX_dX_b,
-##      )
-##      = @{$row_b}[
-##      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-##      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
-##      ];
-##    my (
-##        $X_e,      $Y_e,     $dY_dX_e, $Z_e,       $dZ_dX_e,
-##        $T_e,      $dT_dX_e, $ZmX_e,   $dZmX_dX_e, $E1_e,
-##        $dE1_dX_e, $E_e,     $dE_dX_e, $ImX_e, $dImX_dX_e,
-##      )
-##      = @{$row_e}[
-##      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-##      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX,
-##      ];
-
-    if ($icol < I_X || $icol > I_dImXdX) {
-        carp "unknown call type icol='$icol'";    # Shouldn't happen
-	return;
-    }
-    my ($X_b) = $row_b->[I_X];
-    my ($X_e) = $row_e->[I_X];
-
-    # Step 1: if this is an inverse problem, first find X=X_i
-    my $X_i;
-    if ( $icol == I_X ) {
-        $X_i = $Q;
-    }
-
-    # Use inverse cubic interpolation for odd index values Y, Z, ...
-    elsif ( $icol % 2 ) {
-	my ($Q_b, $dQ_dX_b) = @{$row_b}[$icol, $icol+1];
-	my ($Q_e, $dQ_dX_e) = @{$row_e}[$icol, $icol+1];
-        ( $X_i, my $dX_dQ_i, my $d2X_dQ2_i ) =
-          _interpolate_scalar( $Q, $Q_b, $X_b, 1 / $dQ_dX_b,
-            $Q_e, $X_e, 1 / $dQ_dX_e, $interp );
-    }
-
-    # Use linear interpolation for even values, which are slopes
-    # FIXME: for slope interpolation, we are currently doing liner interp
-    # We should either iterate or do parabolic interpolation using the
-    # second derivatives at the segment ends
-    else {
-	my ($dQ_dX_b) = @{$row_b}[$icol];
-	my ($dQ_dX_e) = @{$row_e}[$icol, $icol+1];
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dQ_dX_b, $X_b, 0, $dQ_dX_e, $X_e, 0, 1 );
-    }
-
-    # Step 2: now given X, do a complete normal interpolation for all variables
-    my @vars;
-    $vars[0] = $X_i;
-    for ( my $icol = I_Y ; $icol <= I_ImX ; $icol += 2 ) {
-        my ( $Q_b, $dQ_dX_b ) = @{$row_b}[ $icol, $icol + 1 ];
-        my ( $Q_e, $dQ_dX_e ) = @{$row_e}[ $icol, $icol + 1 ];
-        my ( $Q_i, $dQ_dX_i, $d2Q_dX2_i ) =
-          _interpolate_scalar( $X_i, $X_b, $Q_b, $dQ_dX_b, $X_e, $Q_e, $dQ_dX_e,
-            $interp );
-        @vars[ $icol, $icol + 1 ] = ( $Q_i, $dQ_dX_i );
-    }
-    return [@vars];
-}
-
-sub OLD_interpolate_shock_table_rows {
-    my ( $Q, $icol, $row_b, $row_e, $interp ) = @_;
-
-    # Interpolate all of the variables between two table rows. Each row has
-    # these values
-    # 	[X,Y,Z,dYdX,dZdX,T,ZmX, dZmXdX, dTdX,E1, dE1dX, E, dEdX]
-
-    my (
-        $X_b,      $Y_b,     $dY_dX_b, $Z_b,       $dZ_dX_b,
-        $T_b,      $dT_dX_b, $ZmX_b,   $dZmX_dX_b, $E1_b,
-        $dE1_dX_b, $E_b,     $dE_dX_b, $ImX_b, $dImX_dX_b,
-      )
-      = @{$row_b}[
-      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX
-      ];
-    my (
-        $X_e,      $Y_e,     $dY_dX_e, $Z_e,       $dZ_dX_e,
-        $T_e,      $dT_dX_e, $ZmX_e,   $dZmX_dX_e, $E1_e,
-        $dE1_dX_e, $E_e,     $dE_dX_e, $ImX_e, $dImX_dX_e,
-      )
-      = @{$row_e}[
-      I_X,      I_Y,  I_dYdX,  I_Z,  I_dZdX, I_T, I_dTdX, I_ZmX,
-      I_dZmXdX, I_E1, I_dE1dX, I_Er, I_dErdX, I_ImX, I_dImXdX,
-      ];
-
-    # FIXME: for slope interpolation, we are currently doing liner interp
-    # We should either iterate or do parabolic interpolation using the
-    # second derivatives at the segment ends
-
-    # ZERO: If this is an inverse problem, first find X=X_i
-    my $X_i;
-    if ( $icol == I_X ) {
-        $X_i = $Q;
-    }
-
-    # FIXME: these could be collapsed into two calls:
-    # ODD: icol%2==1 : if icol is odd do a cubic interpolation of icol with
-    # slope icol+1
-    elsif ( $icol == I_Y ) {
-        ( $X_i, my $dX_dY_i, my $d2X_dY2_i ) =
-          _interpolate_scalar( $Q, $Y_b, $X_b, 1 / $dY_dX_b,
-            $Y_e, $X_e, 1 / $dY_dX_e, $interp );
-    }
-
-    # EVEN: icol%2==0 : if icol is even do a slope interpolation
-    elsif ( $icol == I_dYdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dY_dX_b, $X_b, 0, $dY_dX_e, $X_e, 0, 1 );
-    }
-    elsif ( $icol == I_Z ) {
-        ( $X_i, my $dX_dZ_i, my $d2X_dZ2_i ) =
-          _interpolate_scalar( $Q, $Z_b, $X_b, 1 / $dZ_dX_b,
-            $Z_e, $X_e, 1 / $dZ_dX_e, $interp );
-    }
-    elsif ( $icol == I_dZdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dZ_dX_b, $X_b, 0, $dZ_dX_e, $X_e, 0, 1 );
-    }
-    elsif ( $icol == I_T ) {
-        ( $X_i, my $dX_dT_i, my $d2X_dT2_i ) =
-          _interpolate_scalar( $Q, $T_b, $X_b, 1 / $dT_dX_b,
-            $T_e, $X_e, 1 / $dT_dX_e, $interp );
-    }
-    elsif ( $icol == I_dTdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dT_dX_b, $X_b, 0, $dT_dX_e, $X_e, 0, 1 );
-    }
-    elsif ( $icol == I_ZmX ) {
-        ( $X_i, my $dX_dZmX_i, my $d2X_dZmX2_i ) =
-          _interpolate_scalar( $Q, $ZmX_b, $X_b, 1 / $dZmX_dX_b,
-            $ZmX_e, $X_e, 1 / $dZmX_dX_e, $interp );
-    }
-    elsif ( $icol == I_dZmXdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dZmX_dX_b, $X_b, 0, $dZmX_dX_e, $X_e, 0,
-            1 );
-    }
-    elsif ( $icol == I_E1 ) {
-        ( $X_i, my $dX_dE1_i, my $d2X_dE12_i ) =
-          _interpolate_scalar( $Q, $E1_b, $X_b, 1 / $dE1_dX_b,
-            $E1_e, $X_e, 1 / $dE1_dX_e, $interp );
-    }
-    elsif ( $icol == I_dE1dX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dE1_dX_b, $X_b, 0, $dE1_dX_e, $X_e, 0, 1 );
-    }
-    elsif ( $icol == I_Er ) {
-        ( $X_i, my $dX_dE_i, my $d2X_dE2_i ) =
-          _interpolate_scalar( $Q, $E_b, $X_b, 1 / $dE_dX_b,
-            $E_e, $X_e, 1 / $dE_dX_e, $interp );
-    }
-    elsif ( $icol == I_dErdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dE_dX_b, $X_b, 0, $dE_dX_e, $X_e, 0, 1 );
-    }
-    elsif ( $icol == I_ImX ) {
-        ( $X_i, my $dX_dI_i, my $d2X_dE2_i ) =
-          _interpolate_scalar( $Q, $ImX_b, $X_b, 1 / $dImX_dX_b,
-            $ImX_e, $X_e, 1 / $dImX_dX_e, $interp );
-    }
-    elsif ( $icol == I_dImXdX ) {
-        ( $X_i, my $slope1, my $slope2 ) =
-          _interpolate_scalar( $Q, $dImX_dX_b, $X_b, 0, $dImX_dX_e, $X_e, 0, 1 );
-    }
-    else {
-        carp "unknown call type icol='$icol'";    # Shouldn't happen
-    }
-
-    # Step 2: now given X, do a complete normal interpolation
-    my ( $Y_i, $dY_dX_i, $d2Y_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $Y_b, $dY_dX_b, $X_e, $Y_e, $dY_dX_e,
-        $interp );
-    my ( $Z_i, $dZ_dX_i, $d2Z_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $Z_b, $dZ_dX_b, $X_e, $Z_e, $dZ_dX_e,
-        $interp );
-    my ( $T_i, $dT_dX_i, $d2T_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $T_b, $dT_dX_b, $X_e, $T_e, $dT_dX_e,
-        $interp );
-    my ( $E1_i, $dE1_dX_i, $d2E1_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $E1_b, $dE1_dX_b, $X_e, $E1_e, $dE1_dX_e,
-        $interp );
-    my ( $E_i, $dE_dX_i, $d2E_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $E_b, $dE_dX_b, $X_e, $E_e, $dE_dX_e,
-        $interp );
-    my ( $ImX_i, $dImX_dX_i, $d2I_dX2_i ) =
-      _interpolate_scalar( $X_i, $X_b, $ImX_b, $dImX_dX_b, $X_e, $ImX_e, $dImX_dX_e,
-        $interp );
-
-    my @vars;
-    @vars[
-      I_X,   I_Y,      I_dYdX, I_Z,     I_dZdX, I_T, I_dTdX,
-      I_ZmX, I_dZmXdX, I_E1,   I_dE1dX, I_Er,   I_dErdX, I_ImX, I_dImXdX
-      ]
-      = (
-        $X_i,      $Y_i,     $dY_dX_i,    $Z_i,         $dZ_dX_i,
-        $T_i,      $dT_dX_i, $Z_i - $X_i, $dZ_dX_i - 1, $E1_i,
-        $dE1_dX_i, $E_i,     $dE_dX_i, $ImX_i, $dImX_dX_i,
-      );
-    return [@vars];
-}
-
-sub _interpolate_scalar {
-    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2, $linear ) = @_;
-    my ( $yy, $dydx, $d2ydx2, $d3ydx3 );
-
-    # Be sure all variables are defined
-    if ( defined($x1) && defined($y1) && defined($x2) && defined($y2) ) {
-	
-        $yy     = $y1;
-        $dydx   = $dydx1;
-        $d2ydx2 = $d3ydx3 = 0;
-        if ( $x1 != $x2 ) {
-
-            # drop down to linear intepolation if slopes not defined
-            if ( !defined($dydx1) || !defined($dydx2) ) { $linear = 1 }
-
-            if ( defined($linear) && $linear == 1 ) {
-                ( $yy, $dydx ) =
-                  _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
-                ( $dydx, $d2ydx2 ) =
-                  _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
-                $d3ydx3 = 0;
-            }
-            else {
-                ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
-                  _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2,
-                    $dydx2 );
-            }
-        }
-    }
-    return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
-}
-
-sub _linear_interpolation {
-    my ( $xx, $x1, $y1, $x2, $y2 ) = @_;
-    my $dx21 = $x2 - $x1;
-    my $dy21 = $y2 - $y1;
-    my $dydx = ( $dx21 == 0 ) ? 0 : $dy21 / $dx21;
-    my $yy   = $y1 + $dydx * ( $xx - $x1 );
-    return wantarray ? ( $yy, $dydx ) : $yy;
-}
-
-sub _cubic_interpolation {
-    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 ) = @_;
-
-    # Given the value of a function and its slope at two different points,
-    # Use a cubic polynomial to find the value of the function and its
-    # derivatives at an intermediate point
-
-    # let z=(x-x1)/(x2-x1)
-    #  y=a+b*z+c*z**2+d*z**3
-    my $dx21   = $x2 - $x1;
-    my $dy21   = $y2 - $y1;
-    my $deriv1 = $dydx1 * $dx21;
-    my $deriv2 = $dydx2 * $dx21;
-    my $aa     = $y1;
-    my $bb     = $deriv1;
-    my $cc     = 3 * $dy21 - 2 * $deriv1 - $deriv2;
-    my $dd     = -2 * $dy21 + $deriv1 + $deriv2;
-    my $zz     = ( $xx - $x1 ) / $dx21;
-    my $yy     = $aa + $zz * ( $bb + $zz * ( $cc + $zz * $dd ) );
-    my $yp1    = $bb + $zz * ( 2 * $cc + $zz * 3 * $dd );
-    my $yp2    = 2 * $cc + $zz * 6 * $dd;
-    my $yp3    = 6 * $dd;
-    my $dydx   = $yp1 / $dx21;
-    my $d2ydx2 = $yp2 / $dx21**2;
-    my $d3ydx3 = $yp3 / $dx21**3;
-    return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
-}
-
-sub is_monotonic_list {
-
-    # returns 1 if list is monotonic increasing
-    # returns -1 if list is monotonic decreasing
-    # returns 0 if list is non-monotonic
-
-    my ($rx) = @_;
-    my $mono = 0;
-    my $i_non_mono;    # index of non-monotonicity
-    my $num = @{$rx};
-    for ( my $i = 1 ; $i < $num ; $i++ ) {
-        my $dF = $rx->[$i] - $rx->[ $i - 1 ];
-        if ( $i == 1 ) { $mono = $dF > 0 ? 1 : $dF < 0 ? -1 : 0 }
-        elsif ( $dF * $mono < 0 ) {
-            $i_non_mono = $i;
-            $mono       = 0;
-            last;
-        }
-    }
-    return wantarray ? ( $mono, $i_non_mono ) : $mono;
-}
-
-##############################################################################
-# Routines to create new tables for intermediate gamma values by interpolation 
-##############################################################################
+# These routines are called to construct a set of tables
+# in the event that no table exists for the exact value
+# of gamma requested.
 
 sub _make_interpolated_tables {
     my ( $rinput_hash) =@_;
@@ -2153,7 +1919,6 @@ sub _gamma_lookup {
     my $ntab  = @{$rtab};
     my $icol  = 0;
 
-    ##my ($j2, $j3) = locate_2d($gamma, $icol, $rtab, undef,undef);
     my ($j2, $j3) = locate_2d( $rtab, $gamma, $icol, undef,undef);
 
     my ( $gamma_min, $key_min ) = @{ $rtab->[0] };
@@ -2297,7 +2062,6 @@ EOM
         my $ntab  = @{$rtab};
 
         # Locate this point in the table
-        ##my ( $il, $iu ) = locate_2d( $Y, $icol, $rtab, undef, undef );
         my ( $il, $iu ) = locate_2d( $rtab, $Y, $icol, undef, undef );
 
         # Handle case before start of the table
@@ -2549,7 +2313,6 @@ EOM
 
             # X and Z are more accurately interpolated from the shock table for
             # this Y value.
-            ##my ( $il, $iu ) = locate_2d( $Y, 1, $rshock_table );
             my ( $il, $iu ) = locate_2d( $rshock_table, $Y, 1);
             if ( $il >= 0 && $iu < @{$rshock_table} ) {
                 my $result =
@@ -2710,39 +2473,39 @@ sub _make_interpolated_blast_info {
                 $rblast_info->{$key} = $val;
             }
 
-            # Old Linear interpolation, for reference
-            # execute to see comparison with polynomial interpolation
-            if (0) {
-                my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
-                if ( $jl >= 0 && $ju < $num ) {
-                    my $rtab          = $rgtab;
-
-                    my ( $gamma_l, $table_name_l ) = @{$rtab->[$jl]};
-                    my ( $gamma_u, $table_name_u ) = @{$rtab->[$ju]};
-                    my $rblast_info_l = $rTables_loaded->{$table_name_l}->{blast_info};
-                    my $rblast_info_u = $rTables_loaded->{$table_name_u}->{blast_info};
-
-                    if ( defined($rblast_info_l) && defined($rblast_info_u) ) {
-                        foreach my $key ( keys %{$rblast_info_l} ) {
-                            my $val_l = $rblast_info_l->{$key};
-                            my $val_u = $rblast_info_u->{$key};
-
-                            if ( defined($val_l) && defined($val_u) ) {
-                                my $val = _linear_interpolation(
-                                    $gamma,   $gamma_l, $val_l,
-                                    $gamma_u, $val_u
-                                );
-                                my $vsave = $rblast_info->{$key};
-                                $rblast_info->{$key} = $val;
-
-                                # DEBUG: comparison of methods
-                                print STDERR
-                                  "key=$key polint=$vsave linear=$val\n";
-                            }
-                        }
-                    }
-                }
-            }
+##            # Old Linear interpolation, for reference
+##            # execute to see comparison with polynomial interpolation
+##            if (0) {
+##                my ( $jj, $jl, $ju, $num ) = @{$loc_gamma_table};
+##                if ( $jl >= 0 && $ju < $num ) {
+##                    my $rtab          = $rgtab;
+##
+##                    my ( $gamma_l, $table_name_l ) = @{$rtab->[$jl]};
+##                    my ( $gamma_u, $table_name_u ) = @{$rtab->[$ju]};
+##                    my $rblast_info_l = $rTables_loaded->{$table_name_l}->{blast_info};
+##                    my $rblast_info_u = $rTables_loaded->{$table_name_u}->{blast_info};
+##
+##                    if ( defined($rblast_info_l) && defined($rblast_info_u) ) {
+##                        foreach my $key ( keys %{$rblast_info_l} ) {
+##                            my $val_l = $rblast_info_l->{$key};
+##                            my $val_u = $rblast_info_u->{$key};
+##
+##                            if ( defined($val_l) && defined($val_u) ) {
+##                                my $val = _linear_interpolation(
+##                                    $gamma,   $gamma_l, $val_l,
+##                                    $gamma_u, $val_u
+##                                );
+##                                my $vsave = $rblast_info->{$key};
+##                                $rblast_info->{$key} = $val;
+##
+##                                # DEBUG: comparison of methods
+##                                print STDERR
+##                                  "key=$key polint=$vsave linear=$val\n";
+##                            }
+##                        }
+##                    }
+##                }
+##            }
         }
     }
     return $rblast_info;

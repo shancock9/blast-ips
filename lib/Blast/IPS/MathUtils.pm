@@ -26,6 +26,7 @@ package Blast::IPS::MathUtils;
 use strict;
 use warnings;
 our @EXPORT_OK = qw(
+  is_monotonic_list
   locate_2d
   macheps
   multiseg_integral
@@ -36,6 +37,7 @@ our @EXPORT_OK = qw(
   set_interpolation_points
   table_row_interpolation
   trapezoidal_integral
+  two_point_interpolation
 );
 use Exporter;
 our @ISA = qw(Exporter);
@@ -54,6 +56,135 @@ our @ISA = qw(Exporter);
         }
     }
     sub macheps { return $macheps }
+}
+
+sub two_point_interpolation {
+    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2, $linear ) = @_;
+    my ( $yy, $dydx, $d2ydx2, $d3ydx3 );
+
+    # Be sure all variables are defined
+    if ( defined($x1) && defined($y1) && defined($x2) && defined($y2) ) {
+	
+        $yy     = $y1;
+        $dydx   = $dydx1;
+        $d2ydx2 = $d3ydx3 = 0;
+        if ( $x1 != $x2 ) {
+
+            # drop down to linear intepolation if slopes not defined
+            if ( !defined($dydx1) || !defined($dydx2) ) { $linear = 1 }
+
+            if ( defined($linear) && $linear == 1 ) {
+                ( $yy, $dydx ) =
+                  _linear_interpolation( $xx, $x1, $y1, $x2, $y2 );
+                ( $dydx, $d2ydx2 ) =
+                  _linear_interpolation( $xx, $x1, $dydx1, $x2, $dydx2 );
+                $d3ydx3 = 0;
+            }
+            else {
+                ( $yy, $dydx, $d2ydx2, $d3ydx3 ) =
+                  _cubic_interpolation( $xx, $x1, $y1, $dydx1, $x2, $y2,
+                    $dydx2 );
+            }
+        }
+    }
+    return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
+}
+
+
+sub _linear_interpolation {
+    my ( $xx, $x1, $y1, $x2, $y2 ) = @_;
+    my $dx21 = $x2 - $x1;
+    my $dy21 = $y2 - $y1;
+    my $dydx = ( $dx21 == 0 ) ? 0 : $dy21 / $dx21;
+    my $yy   = $y1 + $dydx * ( $xx - $x1 );
+    return wantarray ? ( $yy, $dydx ) : $yy;
+}
+
+sub _cubic_interpolation {
+    my ( $xx, $x1, $y1, $dydx1, $x2, $y2, $dydx2 ) = @_;
+
+    # Given the value of a function and its slope at two different points,
+    # Use a cubic polynomial to find the value of the function and its
+    # derivatives at an intermediate point
+
+    # let z=(x-x1)/(x2-x1)
+    #  y=a+b*z+c*z**2+d*z**3
+    my $dx21   = $x2 - $x1;
+    my $dy21   = $y2 - $y1;
+    my $deriv1 = $dydx1 * $dx21;
+    my $deriv2 = $dydx2 * $dx21;
+    my $aa     = $y1;
+    my $bb     = $deriv1;
+    my $cc     = 3 * $dy21 - 2 * $deriv1 - $deriv2;
+    my $dd     = -2 * $dy21 + $deriv1 + $deriv2;
+    my $zz     = ( $xx - $x1 ) / $dx21;
+    my $yy     = $aa + $zz * ( $bb + $zz * ( $cc + $zz * $dd ) );
+    my $yp1    = $bb + $zz * ( 2 * $cc + $zz * 3 * $dd );
+    my $yp2    = 2 * $cc + $zz * 6 * $dd;
+    my $yp3    = 6 * $dd;
+    my $dydx   = $yp1 / $dx21;
+    my $d2ydx2 = $yp2 / $dx21**2;
+    my $d3ydx3 = $yp3 / $dx21**3;
+    return ( $yy, $dydx, $d2ydx2, $d3ydx3 );
+}
+
+sub is_monotonic_list {
+
+    # Given an array and optional column number, determine
+    # if the values are monotonic.
+    my ( $rx, $icol ) = @_;
+
+    # returns 1 if list is monotonic increasing
+    # returns -1 if list is monotonic decreasing
+    # returns 0 if list is non-monotonic
+
+    return unless defined($rx);
+    my $row1   = $rx->[0];
+    my $is_ref = ref($row1);
+
+    # setup return values
+    my $mono = 0;
+    my $i_non_mono;    # index of non-monotonicity
+
+    # handle case where rx is a ref to a list of references to a row of scalar
+    # values:
+    # rx = [ [ a, b, c,], [d,e,f], ...];
+    if ($is_ref) {
+        my $ncols = $is_ref ? @{$row1} : 0;
+        $icol = 0 unless defined($icol);
+        if ( $icol >= $ncols ) {
+            print STDERR
+              "is_monotonic called with column = $icol but ncols=$ncols\n";
+            return;
+        }
+
+        my $num = @{$rx};
+        for ( my $i = 1 ; $i < $num ; $i++ ) {
+            my $dF = $rx->[$i]->[$icol] - $rx->[ $i - 1 ]->[$icol];
+            if ( $i == 1 ) { $mono = $dF > 0 ? 1 : $dF < 0 ? -1 : 0 }
+            elsif ( $dF * $mono < 0 ) {
+                $i_non_mono = $i;
+                $mono       = 0;
+                last;
+            }
+        }
+    }
+
+    # handle case where rx is a ref to a list of scalar values:
+    # rx = [ a, b, c, d, e, f,...]
+    else {
+        my $num = @{$rx};
+        for ( my $i = 1 ; $i < $num ; $i++ ) {
+            my $dF = $rx->[$i] - $rx->[ $i - 1 ];
+            if ( $i == 1 ) { $mono = $dF > 0 ? 1 : $dF < 0 ? -1 : 0 }
+            elsif ( $dF * $mono < 0 ) {
+                $i_non_mono = $i;
+                $mono       = 0;
+                last;
+            }
+        }
+    }
+    return wantarray ? ( $mono, $i_non_mono ) : $mono;
 }
 
 sub multiseg_integral {
