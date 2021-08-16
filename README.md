@@ -4,7 +4,7 @@ Blast::IPS
 
 # Build Status
 
-+ [![Build Status](https://github.com/shancock9/blast-ips/actions/workflows/perltest.yml/badge.svg)](https://github.com/shancock9/blast-ips/actions/workflows/perltest.yml/badge.svg)
++ [![Build Status](https://github.com/shancock9/blast-ips/actions/workflows/perltest.yml/badge.svg)](https://github.com/shancock9/blast-ips/actions)
 
 ## SYNOPSIS
 
